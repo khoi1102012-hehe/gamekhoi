@@ -20,10 +20,47 @@ html, body {
   cursor:default;
   touch-action:none;
 }
+
+/* Ép giao diện hiển thị NGANG trên điện thoại bằng CSS xoay — hoạt động
+   trên mọi hệ điều hành/trình duyệt (kể cả iPhone Safari, vốn KHÔNG hỗ trợ
+   screen.orientation.lock()). Chỉ áp dụng khi JS xác định đây là thiết bị
+   cảm ứng (class "force-landscape" do JS gắn vào <html>). */
+html.force-landscape { width:100vw; height:100vh; }
+@media screen and (orientation:portrait) {
+  html.force-landscape {
+    transform: rotate(90deg);
+    transform-origin: top left;
+    width: 100vh;
+    height: 100vw;
+    position: absolute;
+    top: 0;
+    left: 100%;
+  }
+}
+
+/* Nút toàn màn hình (góc trên-phải), luôn nổi trên canvas.
+   - Chạm 1 lần để vào toàn màn hình + khoá ngang (nếu trình duyệt hỗ trợ).
+   - Chạm lại để thoát toàn màn hình bất cứ lúc nào. */
+#fsToggleBtn {
+  position:fixed; top:8px; left:8px; z-index:10000;
+  width:34px; height:34px; border-radius:50%;
+  background:rgba(20,20,20,0.55); color:#fff; border:1px solid rgba(255,255,255,0.35);
+  font-size:16px; line-height:1; display:flex; align-items:center; justify-content:center;
+  -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
+}
+/* Thông báo nhỏ khi trình duyệt (thường là iPhone) mất chế độ toàn màn hình
+   / không xoay đúng, hoặc mất kết nối cảm ứng — nhắc người chơi chạm lại. */
+#fsHint {
+  position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:10000;
+  background:rgba(0,0,0,0.6); color:#ffcc66; font:11px Arial; padding:5px 10px;
+  border-radius:6px; white-space:nowrap; display:none; pointer-events:none;
+}
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
+<button id="fsToggleBtn" title="Toàn màn hình / Thoát">⛶</button>
+<div id="fsHint"></div>
 <script>
 // ================================================================
 //  RED VS SHADOW — Full 2026 v2 + Mobile/PC Mode
@@ -121,7 +158,15 @@ function resizeCanvas() {
     const DESIGN_W = 1200, DESIGN_H = 700;
     canvas.width  = DESIGN_W;
     canvas.height = DESIGN_H;
-    const vw = window.innerWidth, vh = window.innerHeight;
+    // When the phone is physically held in portrait, our CSS trick rotates
+    // <html> 90° to force a landscape view (needed on iPhone, which has no
+    // real orientation-lock API). After that rotation the axis the player
+    // actually sees swaps, so the "visible width/height" for fitting the
+    // canvas must swap too — otherwise the game would render tiny/cropped.
+    const rotated = document.documentElement.classList.contains('force-landscape')
+                    && window.matchMedia('(orientation: portrait)').matches;
+    const vw = rotated ? window.innerHeight : window.innerWidth;
+    const vh = rotated ? window.innerWidth  : window.innerHeight;
     const scale = Math.min(vw/DESIGN_W, vh/DESIGN_H);
     canvas.style.width  = Math.round(DESIGN_W*scale) + "px";
     canvas.style.height = Math.round(DESIGN_H*scale) + "px";
@@ -141,6 +186,98 @@ window.addEventListener('resize', () => {
   if (p1) p1.y = H*FLOOR_Y_RATIO;
   if (p2) p2.y = H*FLOOR_Y_RATIO;
 });
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    resizeCanvas();
+    if (p1) p1.y = H*FLOOR_Y_RATIO;
+    if (p2) p2.y = H*FLOOR_Y_RATIO;
+    if (platformMode === "MOBILE") tryLockLandscape();
+  }, 200);
+});
+
+// ================================================================
+//  FULLSCREEN + FORCE-LANDSCAPE (works across PC / Android / iPhone)
+// ================================================================
+// - On Android Chrome: real Fullscreen API + screen.orientation.lock('landscape')
+//   both work, so the phone is actually locked to landscape.
+// - On iPhone Safari: neither the Fullscreen API on arbitrary elements nor
+//   orientation.lock() are reliably supported, so as a fallback we rotate
+//   the whole page with CSS (the "force-landscape" class + the portrait
+//   media query above) whenever the phone is held upright. This guarantees
+//   the game always DISPLAYS landscape everywhere, even where the OS-level
+//   lock is unavailable — the iPhone will just still show its own status
+//   bar/browser chrome since Safari won't hide that for a webpage.
+function isFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+}
+function requestFullscreenLandscape() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  try {
+    if (req && !isFullscreenActive()) {
+      const p = req.call(el);
+      if (p && p.catch) p.catch(()=>{}); // some browsers (iPhone Safari) reject this — ignore, CSS fallback still applies
+    }
+  } catch(e) {}
+  if (platformMode === "MOBILE") tryLockLandscape();
+}
+function tryLockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(()=>{}); // unsupported on iPhone — silently falls back to the CSS rotate trick
+    }
+  } catch(e) {}
+}
+function exitFullscreenNow() {
+  const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  try { if (exit && isFullscreenActive()) exit.call(document); } catch(e) {}
+}
+function updateFsBtn() {
+  const btn = document.getElementById('fsToggleBtn');
+  if (!btn) return;
+  btn.textContent = isFullscreenActive() ? '✕' : '⛶';
+  btn.title = isFullscreenActive() ? 'Thoát toàn màn hình' : 'Toàn màn hình';
+}
+function showFsHint(msg, ms) {
+  const hint = document.getElementById('fsHint');
+  if (!hint) return;
+  hint.textContent = msg;
+  hint.style.display = 'block';
+  clearTimeout(showFsHint._t);
+  showFsHint._t = setTimeout(() => { hint.style.display = 'none'; }, ms || 3000);
+}
+if (_isTouchDevice) document.documentElement.classList.add('force-landscape');
+['fullscreenchange','webkitfullscreenchange','MSFullscreenChange'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    updateFsBtn();
+    resizeCanvas();
+    if (p1) p1.y = H*FLOOR_Y_RATIO;
+    if (p2) p2.y = H*FLOOR_Y_RATIO;
+    // Fullscreen can drop on its own (some Android skins do this on rotation,
+    // or after several minutes) without the player pressing the exit button.
+    // Let them know one tap on the corner button brings it straight back.
+    if (!isFullscreenActive() && gameState !== "MENU") showFsHint('Đã thoát toàn màn hình — chạm nút ⛶ góc trên để bật lại', 4000);
+  });
+});
+document.getElementById('fsToggleBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (isFullscreenActive()) exitFullscreenNow(); else requestFullscreenLandscape();
+});
+document.getElementById('fsToggleBtn').addEventListener('touchstart', (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (isFullscreenActive()) exitFullscreenNow(); else requestFullscreenLandscape();
+}, { passive:false });
+// Auto-request fullscreen + landscape lock on the player's very first tap/
+// click anywhere (browsers require a real user gesture before allowing
+// fullscreen/orientation-lock — it cannot be done automatically on page load).
+function _firstGestureFS() {
+  requestFullscreenLandscape();
+  document.removeEventListener('touchstart', _firstGestureFS);
+  document.removeEventListener('mousedown', _firstGestureFS);
+}
+document.addEventListener('touchstart', _firstGestureFS, { passive:true });
+document.addEventListener('mousedown', _firstGestureFS);
+updateFsBtn();
 
 // ================================================================
 //  TOUCH / VIRTUAL BUTTON STATE
@@ -160,7 +297,9 @@ let mobileLayoutCfg = {
   s1:{dx:0,dy:0,scale:1}, s2:{dx:0,dy:0,scale:1}, s3:{dx:0,dy:0,scale:1}, s4:{dx:0,dy:0,scale:1},
   shield:{dx:0,dy:0,scale:1}, v4:{dx:0,dy:0,scale:1}
 };
+let touchMoveStyle = "joystick"; // "joystick" (drag circle) | "dpad" (Minecraft PE style directional buttons)
 let mobileLayoutVersion = 0; // bump whenever mobileLayoutCfg changes to force buildVBtns() to recompute
+
 let touchEditorSelKey = null; // which button is currently selected in the touch editor
 let touchEditorDrag = null;   // {key, startX, startY, baseDx, baseDy} while dragging
 let _editorMouseDown = false;
@@ -237,6 +376,52 @@ function drawJoystick(j, active) {
   ctx.restore();
 }
 
+// Minecraft-PE-style 4-button directional pad, anchored on the same spot as
+// the joystick (reuses vb.joystick.x/y/r so the touch editor's drag/scale
+// controls work for either style without extra bookkeeping).
+function _dpadButtons(vb) {
+  const j = vb.joystick; if (!j) return null;
+  const s = j.r * 0.78;
+  const off = j.r * 1.08;
+  return {
+    up:    { x: j.x,       y: j.y - off, s },
+    down:  { x: j.x,       y: j.y + off, s },
+    left:  { x: j.x - off, y: j.y,       s },
+    right: { x: j.x + off, y: j.y,       s },
+  };
+}
+function _drawDpadBtn(b, active, arrow) {
+  ctx.save();
+  ctx.beginPath(); _roundRectPath(b.x-b.s/2, b.y-b.s/2, b.s, b.s, 6);
+  ctx.fillStyle = active ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.15)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = "white";
+  ctx.font = `bold ${Math.floor(b.s*0.5)}px Arial`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(arrow, b.x, b.y);
+  ctx.restore();
+}
+function _roundRectPath(x,y,w,h,r){
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function drawDpad(vb, tstate) {
+  const d = _dpadButtons(vb); if (!d) return;
+  _drawDpadBtn(d.up,    tstate.up,    "▲");
+  _drawDpadBtn(d.down,  tstate.down,  "▼");
+  _drawDpadBtn(d.left,  tstate.left,  "◀");
+  _drawDpadBtn(d.right, tstate.right, "▶");
+}
+function _applyDpadTouch(pt, tstate, vb) {
+  const d = _dpadButtons(vb); if (!d) return false;
+  let hit = false;
+  Object.keys(d).forEach(dir => {
+    const b = d[dir];
+    if (Math.abs(pt.x-b.x) <= b.s/2*1.15 && Math.abs(pt.y-b.y) <= b.s/2*1.15) { tstate[dir] = true; hit = true; }
+  });
+}
+
 function drawSkillBtn(btn, state, skillKey) {
   const { x, y, r, label } = btn;
   const active = state && state[skillKey];
@@ -274,11 +459,13 @@ function drawMobileControls() {
   if (platformMode !== "MOBILE") return;
   buildVBtns();
   ctx.save();
-  if (vBtns1.joystick) drawJoystick(vBtns1.joystick, touch1._joyActive);
+  if (touchMoveStyle === "dpad") { if (vBtns1.joystick) drawDpad(vBtns1, touch1); }
+  else if (vBtns1.joystick) drawJoystick(vBtns1.joystick, touch1._joyActive);
   ["s1","s2","s3","s4","shield"].forEach(k => { if (vBtns1[k]) drawSkillBtn(vBtns1[k], touch1, k); });
   if (vBtns1.v4) drawUltiBtn(vBtns1.v4, touch1.v4, p1.cds.s5<=0, p1.transformActive);
   if (gameMode === "PVP") {
-    if (vBtns2.joystick) drawJoystick(vBtns2.joystick, touch2._joyActive);
+    if (touchMoveStyle === "dpad") { if (vBtns2.joystick) drawDpad(vBtns2, touch2); }
+    else if (vBtns2.joystick) drawJoystick(vBtns2.joystick, touch2._joyActive);
     ["s1","s2","s3","s4","shield"].forEach(k => { if (vBtns2[k]) drawSkillBtn(vBtns2[k], touch2, k); });
     if (vBtns2.v4) drawUltiBtn(vBtns2.v4, touch2.v4, p2.cds.s5<=0, p2.transformActive);
   }
@@ -333,9 +520,14 @@ function updateTouchState(touches) {
   buildVBtns();
   touches.forEach(pt => {
     const {x, y} = pt;
-    // Joystick drag takes priority over the skill cluster for this finger
-    if (_applyJoystickTouch(pt, touch1, vBtns1)) return;
-    if (gameMode === "PVP" && _applyJoystickTouch(pt, touch2, vBtns2)) return;
+    // Joystick/D-pad drag takes priority over the skill cluster for this finger
+    if (touchMoveStyle === "dpad") {
+      if (_applyDpadTouch(pt, touch1, vBtns1)) return;
+      if (gameMode === "PVP" && _applyDpadTouch(pt, touch2, vBtns2)) return;
+    } else {
+      if (_applyJoystickTouch(pt, touch1, vBtns1)) return;
+      if (gameMode === "PVP" && _applyJoystickTouch(pt, touch2, vBtns2)) return;
+    }
 
     // P1 skills + ulti ("BIẾN HÌNH")
     ["s1","s2","s3","s4","shield"].forEach(k => {
@@ -542,11 +734,24 @@ function spawnBossDeathBurst(x,y){
   hitEffects.push({x,y:y-60,life:42,maxLife:42,color:"gold",ring:true,big:true});
   hitEffects.push({x,y:y-60,life:60,maxLife:60,color:"white",ring:true,big:true,delay:6});
 }
+function spawnJumpSmoke(x,y){
+  // Puff of dust bursting from the feet — makes double/triple jumps feel like a hard stomp-off.
+  for(let i=0;i<10;i++){
+    const ang=Math.PI+(rng()-0.5)*Math.PI*0.9,spd=rng()*2.2+0.6;
+    hitEffects.push({x:x+rndInt(-6,6),y:y-4,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd*0.4-0.3,life:26,maxLife:26,smoke:true,r0:rndInt(5,9),color:rndChoice(["#e8e8e8","#d4d4d4","#ffffff","#bfbfbf"])});
+  }
+}
 function updateAndDrawHitEffects(){
   hitEffects=hitEffects.filter(fx=>fx.life>0);
   hitEffects.forEach(fx=>{
     fx.life--;
-    if(fx.particle){
+    if(fx.smoke){
+      fx.x+=fx.vx;fx.y+=fx.vy;fx.vy+=0.02;
+      const t=1-fx.life/fx.maxLife,r=fx.r0+t*14,a=Math.max(0,fx.life/fx.maxLife)*0.55;
+      ctx.save();ctx.globalAlpha=a;ctx.fillStyle=fx.color;
+      ctx.beginPath();ctx.arc(fx.x,fx.y,r,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }else if(fx.particle){
       fx.x+=fx.vx;fx.y+=fx.vy;fx.vy+=0.22;
       const a=Math.max(0,fx.life/fx.maxLife);
       ctx.save();ctx.globalAlpha=a;
@@ -663,7 +868,11 @@ class Fighter {
     if(this.stunTimer>0||this.transformWindupTimer>0)return;
     if(this.transformActive&&this.charType==="frost"&&this.isFlying){this.vy=-10;return;}
     if(this.onGround){this.vy=JUMP_POWER;this.onGround=false;this.jumpsUsed=1;}
-    else if(this.jumpsUsed<2){this.vy=JUMP_POWER*0.92;this.jumpsUsed=2;}
+    else if(this.jumpsUsed<3){
+      this.jumpsUsed++;
+      this.vy=JUMP_POWER*(this.jumpsUsed===2?0.92:0.85);
+      spawnJumpSmoke(this.x,this.y);
+    }
   }
   getTransformBuffs(){
     if(!this.transformActive)return{};
@@ -1670,10 +1879,15 @@ class RoadBoss{
     if(this.type===1){
       this.hp=this.maxHp=320;this.skillTimer={summon:260};this.bobPhase=0;
     }else if(this.type===2){
-      this.hp=this.maxHp=420;this.state="SURFACE";this.stateTimer=120;
-      this.skillTimer={action:150,summon:560,rain:340};
-      this.projectilesOut=[];this.spikeTelegraphs=[];this.visible=true;
-      this.sandRainActive=0;this.sandRainCenterX=this.x;this.targetSpikeX=this.x;
+      // Vua Bọ Cạp Cát (Sand Scorpion King)
+      this.hp=this.maxHp=420;this.moveSpeed=4.3125*0.85;
+      this.action="IDLE";this.actionTimer=0;
+      this.cd={basic:0,claw:0,tail:0,sand:0,skillGate:180};
+      this.postSkillRest=0;this.armorActive=false;this.summonedOnce=false;
+      this.clawWarnX=this.x;this.clawHitDone=false;this.tailHitDone=false;
+      this.sandStormTimer=0;this.sandStormCenterX=this.x;
+      this.legPhase=0;this.dustP=[];
+      this.dying=false;this.deathTimer=0;
     }else{
       this.hp=this.maxHp=520;this.phase=1;
       this.skillTimer={spike:280,dive:360,roar:540};
@@ -1686,6 +1900,7 @@ class RoadBoss{
   update(player){
     this.anim++;
     if(this.hitFlash>0)this.hitFlash--;
+    if(this.type===2&&this.dying){this._updateDeath2();return;}
     if(this.stunTimer>0){this.stunTimer--;return;}
     for(const k in this.skillTimer)if(this.skillTimer[k]>0)this.skillTimer[k]--;
     if(this.type===1)this._update1(player);
@@ -1702,54 +1917,143 @@ class RoadBoss{
       this.hitFlash=Math.max(this.hitFlash,10);screenShake=Math.max(screenShake,10);
     }
   }
+  // ---- Vua Bọ Cạp Cát (Sand Scorpion King) — AI, combat & movement ----
   _update2(player){
-    const s=this.skillTimer,isP2=this.hp<=this.maxHp*0.5;
-    if(this.state==="SURFACE"){
-      this.y=this.floorY;
-      const dx=player.x-this.x;this.x+=1.5*(dx>0?1:-1);this.direction=dx>0?1:-1;
-      if(s.action<=0){
-        s.action=isP2?110:150;
-        if(rng()<0.5&&player.hp>0){
-          for(let i=-1;i<=1;i++){
-            const rad=Math.atan2(player.y-this.y,player.x-this.x)+i*0.15;
-            this.projectilesOut.push({x:this.x,y:this.y-40,vx:Math.cos(rad)*8,vy:Math.sin(rad)*8,life:120,dmg:5});
-          }
-        }else{this.state="BURROWING";this.stateTimer=40;this.targetSpikeX=player.x;}
-      }
-      if(s.summon<=0){s.summon=560;this.summonQueue.push(new RoadEnemy(this.x+rndInt(-160,160),this.floorY,3,true,false));}
-    }else if(this.state==="BURROWING"){
-      this.y+=6;this.stateTimer--;
-      if(this.stateTimer<=0){this.state="BURROWED";this.stateTimer=45;this.visible=false;}
-    }else if(this.state==="BURROWED"){
-      this.stateTimer--;
-      if(this.stateTimer<=0){
-        const ex=this.targetSpikeX;
-        this.spikeTelegraphs=[];
-        for(let i=-2;i<=2;i++)this.spikeTelegraphs.push({x:ex+i*45,timer:30});
-        this.state="ERUPT_WAIT";this.stateTimer=32;
-      }
-    }else if(this.state==="ERUPT_WAIT"){
-      this.stateTimer--;this.spikeTelegraphs.forEach(t=>t.timer--);
-      if(this.stateTimer<=0){
-        this.spikeTelegraphs.forEach(t=>{if(player.hp>0&&Math.abs(t.x-player.x)<30)applyDamage(player,7,null);});
-        this.eruptFlash={x:this.targetSpikeX,timer:14};
-        this.spikeTelegraphs=[];
-        this.x=clamp(player.x+rndInt(-60,60),roadCameraX+80,roadCameraX+W-80);
-        this.y=this.floorY;this.visible=true;this.state="SURFACE";this.stateTimer=150;
-        screenShake=Math.max(screenShake,14);
+    const s=this.cd;
+    this.y=this.floorY;
+    this.legPhase+=0.15;
+    // Nội tại: Giáp Cát khi HP < 50%
+    const wasArmor=this.armorActive;
+    this.armorActive=this.hp<=this.maxHp*0.5;
+    if(this.armorActive&&!wasArmor)screenShake=Math.max(screenShake,8);
+    // tick cooldowns
+    if(s.basic>0)s.basic--; if(s.claw>0)s.claw--; if(s.tail>0)s.tail--; if(s.sand>0)s.sand--;
+    if(s.skillGate>0)s.skillGate--;
+    if(this.postSkillRest>0)this.postSkillRest--;
+    // Bão Cát (Chiêu 3) ongoing effect
+    if(this.sandStormTimer>0){
+      this.sandStormTimer--;
+      if(player.hp>0&&this.sandStormTimer%15===0&&Math.abs(player.x-this.sandStormCenterX)<230){
+        player.slowTimer=Math.max(player.slowTimer,20);player._slowPct=Math.max(player._slowPct||0.3,0.3);
       }
     }
-    if(s.rain<=0){s.rain=420;this.sandRainActive=90;this.sandRainCenterX=player.x;}
-    if(this.sandRainActive>0){
-      this.sandRainActive--;
-      if(this.sandRainActive%12===0&&player.hp>0&&Math.abs(player.x-this.sandRainCenterX)<160)applyDamage(player,1,null);
+    // dust trail particles while moving
+    if(rng()<0.5)this.dustP.push({x:this.x-30*this.direction,y:this.floorY-6,life:22,maxLife:22,r:rndInt(3,7)});
+    this.dustP=this.dustP.filter(d=>{d.x-=1.2*this.direction;d.life--;return d.life>0;});
+
+    // Chiêu 4 — Triệu Hồi Bọ Cạp Con (chỉ một lần khi HP < 50%)
+    if(!this.summonedOnce&&this.hp<=this.maxHp*0.5&&this.action==="IDLE"){
+      this.action="SUMMON_WARN";this.actionTimer=45;this.summonedOnce=true;return;
     }
-    this.projectilesOut=this.projectilesOut.filter(p=>{
-      p.x+=p.vx;p.y+=p.vy;p.life--;
-      if(player.hp>0&&Math.abs(p.x-player.x)<40&&Math.abs(p.y-player.y)<70){applyDamage(player,p.dmg,null);return false;}
-      return p.life>0;
-    });
-    if(this.eruptFlash&&this.eruptFlash.timer>0)this.eruptFlash.timer--;
+
+    const dx=player.x-this.x,dist=Math.abs(dx);
+
+    if(this.action==="IDLE"){
+      this.direction=dx>0?1:-1;
+      if(dist>90)this.x+=this.moveSpeed*(dx>0?1:-1); // Boss luôn cố gắng tiến lại gần người chơi
+      // Ưu tiên đánh thường trước; chỉ dùng kỹ năng sau khi hết "skillGate" và không đang nghỉ sau chiêu trước
+      if(s.basic<=0&&dist<=95&&player.hp>0){
+        this.action="BASIC_WINDUP";this.actionTimer=22;return;
+      }
+      if(s.skillGate<=0&&this.postSkillRest<=0){
+        if(dist>260&&s.sand<=0){ // người chơi ở xa -> ưu tiên kỹ năng tầm xa (Bão Cát)
+          this.action="SAND_CAST";this.actionTimer=60;this.sandStormCenterX=player.x;return;
+        }
+        if(dist<=150&&s.claw<=0&&rng()<0.5){
+          this.action="CLAW_WARN";this.actionTimer=48;this.clawWarnX=player.x;this.clawHitDone=false;return;
+        }
+        if(dist<=230&&s.tail<=0){
+          this.action="TAIL_WARN";this.actionTimer=26;this.tailHitDone=false;return;
+        }
+      }
+    }
+    // Đánh thường — Boss dùng hai càng để tấn công
+    else if(this.action==="BASIC_WINDUP"){
+      this.actionTimer--;
+      if(this.actionTimer<=0){this.action="BASIC_STRIKE";this.actionTimer=10;}
+    }else if(this.action==="BASIC_STRIKE"){
+      this.actionTimer--;
+      if(this.actionTimer===6&&player.hp>0&&Math.abs(player.x-this.x)<95){
+        applyDamage(player,12,null);screenShake=Math.max(screenShake,6);
+      }
+      if(this.actionTimer<=0){this.action="BASIC_RECOVER";this.actionTimer=28;s.basic=70;}
+    }else if(this.action==="BASIC_RECOVER"){
+      this.actionTimer--;if(this.actionTimer<=0)this.action="IDLE";
+    }
+    // Chiêu 1 — Càng Khổng Lồ
+    else if(this.action==="CLAW_WARN"){
+      this.actionTimer--;
+      if(this.actionTimer<=0){this.action="CLAW_STRIKE";this.actionTimer=14;}
+    }else if(this.action==="CLAW_STRIKE"){
+      this.actionTimer--;
+      if(!this.clawHitDone&&this.actionTimer===8){
+        this.clawHitDone=true;
+        if(player.hp>0&&Math.abs(player.x-this.clawWarnX)<80){
+          applyDamage(player,15,null);
+          player.x=clamp(player.x+(player.x>this.x?1:-1)*90,roadCameraX+40,roadCameraX+W-40);
+          player.stunTimer=Math.max(player.stunTimer,30);
+        }
+        screenShake=Math.max(screenShake,16);
+      }
+      if(this.actionTimer<=0){this.action="CLAW_RECOVER";this.actionTimer=40;s.claw=300;this.postSkillRest=90;}
+    }else if(this.action==="CLAW_RECOVER"){
+      this.actionTimer--;if(this.actionTimer<=0)this.action="IDLE";
+    }
+    // Chiêu 2 — Đuôi Độc
+    else if(this.action==="TAIL_WARN"){
+      this.direction=dx>0?1:-1;
+      this.actionTimer--;
+      if(this.actionTimer<=0){this.action="TAIL_STRIKE";this.actionTimer=16;this.tailHitDone=false;}
+    }else if(this.action==="TAIL_STRIKE"){
+      this.actionTimer--;
+      this.x+=this.moveSpeed*1.6*this.direction;
+      if(!this.tailHitDone&&player.hp>0&&Math.abs(player.x-this.x)<70){
+        this.tailHitDone=true;
+        applyDamage(player,20,null);
+        player.poisonTimer=Math.max(player.poisonTimer||0,300);
+        screenShake=Math.max(screenShake,10);
+      }
+      if(this.actionTimer<=0){this.action="TAIL_RECOVER";this.actionTimer=30;s.tail=210;this.postSkillRest=70;}
+    }else if(this.action==="TAIL_RECOVER"){
+      this.actionTimer--;if(this.actionTimer<=0)this.action="IDLE";
+    }
+    // Chiêu 3 — Bão Cát (cắm đuôi xuống đất rồi tạo bão)
+    else if(this.action==="SAND_CAST"){
+      this.actionTimer--;
+      if(this.actionTimer<=0){
+        this.sandStormTimer=360;this.sandStormCenterX=this.x;
+        s.sand=520;this.postSkillRest=100;screenShake=Math.max(screenShake,18);
+        this.action="IDLE";
+      }
+    }
+    // Chiêu 4 — Triệu Hồi Bọ Cạp Con
+    else if(this.action==="SUMMON_WARN"){
+      this.actionTimer--;
+      if(this.actionTimer<=0)this.action="SUMMON_ACT";
+    }else if(this.action==="SUMMON_ACT"){
+      for(let i=0;i<3;i++){
+        const e=new RoadEnemy(this.x+rndInt(-140,140),this.floorY,3,false,false,false);
+        e.hp=e.maxHp=30;e.dmg=5;e.spd=3.2;
+        this.summonQueue.push(e);
+      }
+      screenShake=Math.max(screenShake,20);
+      this.action="IDLE";this.postSkillRest=60;
+    }
+  }
+  // ---- Death sequence: roar -> nứt -> nổ tung thành cát -> tan dần ----
+  _updateDeath2(){
+    this.deathTimer--;
+    if(this.deathTimer===55)screenShake=Math.max(screenShake,8); // gầm lên
+    if(this.deathTimer===35)screenShake=Math.max(screenShake,10); // vết nứt lan ra
+    if(this.deathTimer===18){ // nổ tung thành cát
+      spawnBossDeathBurst(this.x,this.y-50);
+      for(let i=0;i<26;i++){
+        const ang=rng()*Math.PI*2,spd=rng()*7+2;
+        hitEffects.push({x:this.x+rndInt(-40,40),y:this.y-50-rndInt(0,60),vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:44,maxLife:44,particle:true,color:rndChoice(["#c9a165","#7a5a30","#e8cfa0"])});
+      }
+      screenShake=Math.max(screenShake,32);
+    }
+    if(this.deathTimer<=0){this.dead=true;this.dying=false;}
   }
   _update3(player){
     this.wingAngle=(this.wingAngle+5)%360;
@@ -1802,7 +2106,7 @@ class RoadBoss{
     }
     if(this.roarActive>0)this.roarActive--;
   }
-  draw(){if(this.type===1)this._draw1();else if(this.type===2)this._draw2();else this._draw3();}
+  draw(){if(this.type===1)this._draw1();else if(this.type===2){if(this.dying)this._drawDeath2();else this._draw2();}else this._draw3();}
   _draw1(){
     const rx=this.x,ry=this.y,pulse=Math.sin(this.bobPhase)*6;
     ctx.save();
@@ -1826,40 +2130,117 @@ class RoadBoss{
     for(let i=0;i<3;i++){const dripY=ry-40+(this.anim*1.2+i*60)%150;_oval(rx-60+i*55-4,dripY-6,8,14,"#6a8f2a",null);}
     this._drawHpBar(rx,ry,"🥚 MA THÚ TRỨNG","#9ecb5c");
   }
+  // ---- Vua Bọ Cạp Cát (Sand Scorpion King) — rendering ----
   _draw2(){
-    const rx=this.x,ry=this.y;
-    if(this.eruptFlash&&this.eruptFlash.timer>0){
-      const t=this.eruptFlash;
-      for(let i=0;i<8;i++)_oval(t.x-6+rndInt(-14,14),this.floorY-rndInt(6,50),12,12,"#c9a165",null);
+    const rx=this.x,ry=this.y,d=this.direction,a=this.action;
+    // bụi cát phía sau khi di chuyển
+    this.dustP.forEach(p=>{const al=p.life/p.maxLife;ctx.save();ctx.globalAlpha=al*0.5;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,"#cba36a",null);ctx.restore();});
+    // cảnh báo Chiêu 1 - Càng Khổng Lồ (vòng đỏ dưới đất)
+    if(a==="CLAW_WARN"){
+      const t=Math.max(0,this.actionTimer)/48;
+      ctx.save();ctx.strokeStyle=`rgba(255,40,40,${0.4+0.5*(1-t)})`;ctx.lineWidth=3;
+      ctx.beginPath();ctx.ellipse(this.clawWarnX,this.floorY,60,16,0,0,Math.PI*2);ctx.stroke();ctx.restore();
     }
-    if(!this.visible){
-      this.spikeTelegraphs.forEach(t=>{
-        const a=Math.max(0,t.timer)/30;
-        ctx.strokeStyle=`rgba(255,80,0,${0.3+0.5*(1-a)})`;ctx.lineWidth=2;
-        ctx.beginPath();ctx.ellipse(t.x,this.floorY,22,8,0,0,Math.PI*2);ctx.stroke();
-        if(t.timer<=0){ctx.fillStyle="#7a5a30";ctx.strokeStyle="#4a3218";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(t.x-10,this.floorY);ctx.lineTo(t.x,this.floorY-70);ctx.lineTo(t.x+10,this.floorY);ctx.closePath();ctx.fill();ctx.stroke();}
-      });
-      this._drawHpBar(rx,this.floorY,"🐛 MA THÚ SÂU CÁT (ẨN NÁU)","#c9a165");
-      return;
+    // tia đỏ báo trước Chiêu 2 - Đuôi Độc
+    if(a==="TAIL_WARN"){
+      ctx.save();ctx.strokeStyle="rgba(255,30,30,0.75)";ctx.lineWidth=3;ctx.setLineDash([6,4]);
+      ctx.beginPath();ctx.moveTo(rx,ry-70);ctx.lineTo(rx+d*230,ry-70);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+    }
+    // Bão Cát đang hoạt động
+    if(this.sandStormTimer>0){
+      const cx=this.sandStormCenterX;
+      for(let i=0;i<14;i++){const ang=(this.anim*0.09+i*0.9)%(Math.PI*2),rr=20+ (i%5)*22;
+        _oval(cx+Math.cos(ang)*rr-4,this.floorY-40+Math.sin(ang)*rr*0.4-4,8,8,"#d9b478",null);}
+      _text(cx,ry-280,"🏜️ BÃO CÁT 🏜️","#d9b478","12px Arial bold");
     }
     ctx.save();
-    if(this.hitFlash>0)ctx.filter="brightness(1.6)";
-    for(let i=0;i<5;i++){
-      const segX=rx-i*34*this.direction,segY=ry-30+Math.sin(this.anim*0.1+i)*4,segR=32-i*3;
-      _oval(segX-segR,segY-segR,segR*2,segR*2,"#c9a165","#7a5a30",2);
+    if(this.hitFlash>0)ctx.filter="brightness(1.7)";
+    if(this.armorActive){ctx.shadowColor="#f0c878";ctx.shadowBlur=22;}
+    else{ctx.shadowColor="#c9a165";ctx.shadowBlur=10;}
+
+    const bob=Math.sin(this.legPhase)*3;
+    // 6 chân
+    ctx.strokeStyle="#5a4021";ctx.lineWidth=6;
+    for(let i=0;i<3;i++){
+      const lx=rx-(i-1)*26*d,legSw=Math.sin(this.legPhase+i)*8;
+      ctx.beginPath();ctx.moveTo(lx,ry-50);ctx.lineTo(lx-14*d+legSw,ry-14);ctx.lineTo(lx-24*d+legSw,ry);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(lx,ry-50);ctx.lineTo(lx+14*d-legSw,ry-14);ctx.lineTo(lx+24*d-legSw,ry);ctx.stroke();
     }
-    const hx=rx+10*this.direction;
-    _oval(hx-30,ry-70,60,60,"#d9b478","#7a5a30",3);
-    ctx.fillStyle="#3a2810";
-    for(let i=0;i<4;i++){const tx6=hx-15+i*10*this.direction;ctx.beginPath();ctx.moveTo(tx6,ry-40);ctx.lineTo(tx6+4,ry-25);ctx.lineTo(tx6-4,ry-25);ctx.closePath();ctx.fill();}
-    _oval(hx+6*this.direction-5,ry-58,10,10,"red",null);
+    // thân — màu vàng nâu cát, giáp dày trên lưng
+    const bodyGrad=ctx.createLinearGradient(rx,ry-110,rx,ry-30);
+    bodyGrad.addColorStop(0,"#caa46c");bodyGrad.addColorStop(1,"#7a5a30");
+    ctx.fillStyle=bodyGrad;ctx.strokeStyle="#4a3218";ctx.lineWidth=3;
+    ctx.beginPath();ctx.ellipse(rx,ry-58+bob,72,44,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // mảng giáp lưng
+    for(let i=0;i<4;i++){
+      const px2=rx-40+i*26*d;
+      ctx.fillStyle="#8a6838";ctx.beginPath();
+      ctx.moveTo(px2-12,ry-78+bob);ctx.lineTo(px2,ry-98+bob);ctx.lineTo(px2+12,ry-78+bob);ctx.closePath();ctx.fill();ctx.stroke();
+    }
+    // đầu
+    const hx=rx+58*d,hy=ry-64+bob;
+    ctx.fillStyle="#caa46c";ctx.beginPath();ctx.ellipse(hx,hy,30,26,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    // mắt phát sáng đỏ
+    ctx.shadowColor="red";ctx.shadowBlur=10;ctx.fillStyle="#ff2222";
+    _oval(hx+10*d-6,hy-8,10,10,"#ff2222",null);_oval(hx+10*d-6,hy+6,10,10,"#ff2222",null);
+    ctx.shadowBlur=0;
+    // Giáp Cát nội tại — cát xoay quanh cơ thể khi HP<50%
+    if(this.armorActive){
+      for(let i=0;i<8;i++){
+        const ang=this.anim*0.06+i*(Math.PI/4),rr=90;
+        _oval(rx+Math.cos(ang)*rr-4,ry-58+Math.sin(ang)*rr*0.5-4,8,8,"rgba(240,200,120,0.75)",null);
+      }
+    }
+    // hai càng
+    const clawUp = (a==="CLAW_WARN") ? 1-Math.max(0,this.actionTimer)/48 : (a==="CLAW_STRIKE"?1:0);
+    const clawSwing = a==="CLAW_STRIKE"||a==="BASIC_STRIKE"?1:(a==="BASIC_WINDUP"?0.5:0);
+    for(const side of[-1,1]){
+      const cx2=rx+34*d+side*26,cy2=ry-70+bob-clawUp*40;
+      ctx.save();ctx.translate(cx2,cy2);ctx.rotate(side*0.5-clawSwing*side*0.6*d);
+      ctx.fillStyle="#8a6838";ctx.strokeStyle="#4a3218";ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(24*d,-6);ctx.lineTo(30*d,10);ctx.lineTo(24*d,20);ctx.lineTo(0,14);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.restore();
+    }
+    // đuôi cong với kim độc — vươn xa khi Đuôi Độc
+    const tailExt = a==="TAIL_STRIKE"?1:(a==="TAIL_WARN"?0.4:0);
+    const tx0=rx-40*d,ty0=ry-90+bob;
+    ctx.strokeStyle="#7a5a30";ctx.lineWidth=10;ctx.lineCap="round";
+    ctx.beginPath();ctx.moveTo(rx-10*d,ry-70+bob);
+    ctx.quadraticCurveTo(tx0-20*d*(1-tailExt*0.5),ty0-40-tailExt*20,tx0-70*d-tailExt*90*d,ty0-50-tailExt*30);
+    ctx.stroke();
+    const stingerX=tx0-70*d-tailExt*90*d,stingerY=ty0-50-tailExt*30;
+    ctx.fillStyle="#3a1010";ctx.strokeStyle="#c00030";ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(stingerX,stingerY-8);ctx.lineTo(stingerX-16*d,stingerY);ctx.lineTo(stingerX,stingerY+8);ctx.closePath();ctx.fill();ctx.stroke();
     ctx.restore();
-    if(this.sandRainActive>0){
-      for(let i=0;i<10;i++){const sx=this.sandRainCenterX+rndInt(-160,160),sy=ry-rndInt(0,300);_oval(sx-3,sy-3,6,6,"#d9b478",null);}
-      _text(this.sandRainCenterX,ry-260,"🏜️ MƯA CÁT 🏜️","#d9b478","12px Arial bold");
+
+    // nhãn trạng thái nội tại
+    if(this.armorActive)_text(rx,ry-230,"🛡️ GIÁP CÁT","#f0c878","11px Arial bold");
+    this._drawHpBar(rx,ry,"🦂 VUA BỌ CẠP CÁT",this.armorActive?"#f0c878":"#c9a165");
+  }
+  _drawDeath2(){
+    const rx=this.x,ry=this.y,t=this.deathTimer;
+    if(t>18){
+      // gầm lên rồi xuất hiện vết nứt trên toàn thân
+      ctx.save();ctx.shadowColor="#c9a165";ctx.shadowBlur=16;
+      const bodyGrad=ctx.createLinearGradient(rx,ry-110,rx,ry-30);
+      bodyGrad.addColorStop(0,"#caa46c");bodyGrad.addColorStop(1,"#7a5a30");
+      ctx.fillStyle=bodyGrad;ctx.strokeStyle="#4a3218";ctx.lineWidth=3;
+      ctx.beginPath();ctx.ellipse(rx,ry-58,72,44,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+      if(t<=48){
+        const crackA=1-(t-18)/30;
+        ctx.strokeStyle=`rgba(20,10,0,${0.6+0.4*crackA})`;ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(rx-40,ry-80);ctx.lineTo(rx-10,ry-55);ctx.lineTo(rx-30,ry-30);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(rx+20,ry-90);ctx.lineTo(rx+10,ry-60);ctx.lineTo(rx+45,ry-35);ctx.stroke();
+      }
+      if(t>50)_text(rx,ry-240,"🦂 GẦM LÊN 🦂","#ff6a2a","14px Arial bold");
+      ctx.restore();
+    }else{
+      // nổ tung thành cát — bụi cát bay lên rồi tan dần
+      const fade=Math.max(0,t)/18;
+      ctx.save();ctx.globalAlpha=fade;
+      for(let i=0;i<10;i++){_oval(rx-50+rndInt(-10,10)+i*10,ry-60-rndInt(0,40),10,10,"#c9a165",null);}
+      ctx.restore();
     }
-    this.projectilesOut.forEach(p=>{_oval(p.x-8,p.y-8,16,16,"#c9a165","#7a5a30",1);});
-    this._drawHpBar(rx,ry,"🐛 MA THÚ SÂU CÁT",this.hp<=this.maxHp*0.5?"#ff6633":"#c9a165");
   }
   _draw3(){
     const rx=this.x,ry=this.y,isP2=this.phase===2;
@@ -1963,11 +2344,16 @@ function applyDamage(target,damage,attacker){
   else if(target instanceof RoadWall){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,H*FLOOR_Y_RATIO-90,"#e8a33d");}
   else if(target instanceof RoadEnemy){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-50,"#ffaa33");}
   else if(target instanceof RoadBoss){
-    if(target.dead||target.hp<=0)return;
+    if(target.dead||target.dying||target.hp<=0)return;
     if(target.type===2&&target.visible===false)return;
+    if(target.type===2&&target.armorActive)damage*=0.8; // Nội tại: Giáp Cát giảm 20% sát thương
     target.hp-=damage;target.hitFlash=8;
     spawnHitEffect(target.x,target.y-100,"crimson");
-    if(target.hp<=0){target.hp=0;target.dead=true;spawnBossDeathBurst(target.x,target.y);}
+    if(target.hp<=0){
+      target.hp=0;
+      if(target.type===2){target.dying=true;target.deathTimer=70;}
+      else{target.dead=true;spawnBossDeathBurst(target.x,target.y);}
+    }
   }
 }
 function aoeHit(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(Math.abs(tgt.x-attacker.x)<radius&&Math.abs(tgt.y-attacker.y)<radius*0.8)applyDamage(tgt,damage,attacker);});}
@@ -2003,9 +2389,10 @@ function castSkill(attacker,target,skillNum){
   const skillId=`${attacker.charType}_s${skillNum}`;
   const chTarget=gameState==="CHALLENGE"?getChallengeTarget(attacker):(gameState==="ROAD"?getRoadTarget(attacker):target);
   const combatTarget=chTarget;
-  if((gameState==="CHALLENGE"||gameState==="ROAD")&&combatTarget)attacker.direction=combatTarget.x>attacker.x?1:-1;
+  const _isRedDash=attacker.charType==="red"&&skillNum===2; // plain forward gap-closer, not a targeted teleport — must not face backward toward a trailing enemy
+  if((gameState==="CHALLENGE"||gameState==="ROAD")&&combatTarget&&!_isRedDash)attacker.direction=combatTarget.x>attacker.x?1:-1;
   if(attacker.charType==="wind"){
-    if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=30;const targets=gameState==="GAMEPLAY"?[combatTarget].filter(Boolean):getAllEnemies(attacker).filter(t=>Math.abs(attacker.x-t.x)<280*SR&&Math.abs(attacker.y-t.y)<90*SR);targets.forEach(t=>{if(t&&t.hp>0){applyDamage(t,10,attacker);if(isPushable(t))t.x=clamp(t.x+(t.x>attacker.x?1:-1)*160,40,W-40);}});}
+    if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=30;const targets=getAllEnemies(attacker).filter(t=>Math.abs(attacker.x-t.x)<280*SR&&Math.abs(attacker.y-t.y)<90*SR);targets.forEach(t=>{if(t&&t.hp>0){applyDamage(t,10,attacker);if(isPushable(t))t.x=clamp(t.x+(t.x>attacker.x?1:-1)*160,40,W-40);}});}
     else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=300;attacker.windBoostTimer=180;}
     else if(skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=180;getAllEnemies(attacker).forEach(t=>{if(t&&t.hp>0)applyDamage(t,30,attacker);});screenShake=Math.max(screenShake,14);}
     else if(skillNum===4){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s4=600;attacker.windTornadoActive=true;attacker.windTornadoX=attacker.x;attacker.windTornadoDir=attacker.direction;attacker._tornadoHitTargets=new Set();attacker._tornadoDmg=35;}
@@ -2346,7 +2733,11 @@ function drawTouchEditor(){
   _text(W/2,24,"📱 CHỈNH NÚT CẢM ỨNG","gold","15px Arial bold");
   _text(W/2,46,"Kéo nút để di chuyển · Chọn nút rồi bấm − / + để đổi cỡ","#aaa","10px Arial");
 
-  if (vBtns1.joystick) drawJoystick(vBtns1.joystick, false);
+  _rect(W/2-115,56,230,30,"#2d4a6a","white",1);
+  _text(W/2,71, touchMoveStyle==="dpad" ? "🎮 Di chuyển: D-PAD (chạm hướng)" : "🕹️ Di chuyển: CẦN ĐIỀU KHIỂN", "white","10px Arial bold");
+
+  if (touchMoveStyle==="dpad") { if (vBtns1.joystick) drawDpad(vBtns1, {}); }
+  else if (vBtns1.joystick) drawJoystick(vBtns1.joystick, false);
   ["s1","s2","s3","s4","shield"].forEach(k => { if (vBtns1[k]) drawSkillBtn(vBtns1[k], {}, k); });
   if (vBtns1.v4) drawUltiBtn(vBtns1.v4, false, true, false);
 
@@ -2378,6 +2769,9 @@ function handleTouchEditorPointer(x,y,phase){
       mobileLayoutVersion++; touchEditorSelKey=null; touchEditorDrag=null; return;
     }
     if(x>=W-140&&x<=W-20&&y>=16&&y<=48){ gameState="MENU"; touchEditorDrag=null; return; }
+    if(x>=W/2-115&&x<=W/2+115&&y>=56&&y<=86){
+      touchMoveStyle = touchMoveStyle==="dpad" ? "joystick" : "dpad"; return;
+    }
     if(touchEditorSelKey){
       const by=H-70;
       if(x>=W/2-140&&x<=W/2-96&&y>=by-16&&y<=by+28){
@@ -2393,7 +2787,8 @@ function handleTouchEditorPointer(x,y,phase){
     buildVBtns();
     const order=["joystick","s1","s2","s3","s4","shield","v4"];
     for(const k of order){
-      if(_hitTestVBtn(x,y,vBtns1[k])){
+      const testBtn = (k==="joystick"&&touchMoveStyle==="dpad") ? {x:vBtns1.joystick.x,y:vBtns1.joystick.y,r:vBtns1.joystick.r*1.6} : vBtns1[k];
+      if(_hitTestVBtn(x,y,testBtn)){
         touchEditorSelKey=k;
         touchEditorDrag={key:k, startX:x, startY:y, baseDx:mobileLayoutCfg[k].dx, baseDy:mobileLayoutCfg[k].dy};
         return;
@@ -2410,6 +2805,7 @@ function handleTouchEditorPointer(x,y,phase){
     touchEditorDrag=null;
   }
 }
+
 
 // ================================================================
 //  GEAR ICON DRAW
@@ -2933,6 +3329,7 @@ function updateRoad(){
   drawRoadSky(roadState==="BOSS");
 
   if(p1.slowTimer>0)p1.slowTimer--; if(p1.stunTimer>0)p1.stunTimer--;
+  if(p1.poisonTimer>0){p1.poisonTimer--;if(p1.poisonTimer%60===0&&p1.hp>0)applyDamage(p1,2,null);}
   if(p1.thunderFTimer>0){p1.thunderFTimer--; if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds) if(p1.cds[s]>0)p1.cds[s]--;
   tickV4(p1); tickWaterCloud(p1);
@@ -3031,7 +3428,7 @@ function updateRoad(){
     }
   }else if(roadState==="BOSS"){
     if(roadBoss){
-      if(!roadBoss.dead && roadBoss.hp>0 && p1.hp>0) roadBoss.update(p1);
+      if(!roadBoss.dead && (roadBoss.hp>0 || roadBoss.dying) && p1.hp>0) roadBoss.update(p1);
       if(roadBoss.summonQueue && roadBoss.summonQueue.length){ roadEnemies.push(...roadBoss.summonQueue); roadBoss.summonQueue=[]; }
       if(roadBoss.dead){
         _roadBossClearDelay++;
@@ -3064,6 +3461,12 @@ function updateRoad(){
   puppets.forEach(pu=>pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W));
   puppets.forEach(pu=>pu.draw());
   p1.draw();
+  if(p1.poisonTimer>0){
+    for(let i=0;i<3;i++){
+      const px=p1.x+rndInt(-16,16),py=p1.y-30-rndInt(0,55);
+      _oval(px-7,py-7,14,14,"rgba(170,60,220,0.45)",null);
+    }
+  }
   updateAndDrawHitEffects();
   ctx.restore();
 
@@ -3073,7 +3476,7 @@ function updateRoad(){
   _text(150,30,`P1 (${p1.charType.toUpperCase()}): ${getHPDisplay(p1.hp)}/${MAX_HP} HP`,"white","10px Arial bold");
   drawRageBar(50,63,200,14,p1);
   if(platformMode==="PC")drawCooldownChallenge();
-  const bossNames=["🥚 Trứng Ma Thú","🐛 Sâu Cát","🦇 Dơi Khổng Lồ"];
+  const bossNames=["🥚 Trứng Ma Thú","🦂 Vua Bọ Cạp Cát","🦇 Dơi Khổng Lồ"];
   _text(W-160,30,`Quãng đường: ${roadDistanceM}m`,"white","11px Arial bold");
   if(roadState==="RUN" && roadBossZoneIndex<3){
     const remainM=Math.max(0,Math.ceil((roadBossTriggersPx[roadBossZoneIndex]-p1.x)/ROAD_METER_PX));
