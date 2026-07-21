@@ -20,47 +20,10 @@ html, body {
   cursor:default;
   touch-action:none;
 }
-
-/* Ép giao diện hiển thị NGANG trên điện thoại bằng CSS xoay — hoạt động
-   trên mọi hệ điều hành/trình duyệt (kể cả iPhone Safari, vốn KHÔNG hỗ trợ
-   screen.orientation.lock()). Chỉ áp dụng khi JS xác định đây là thiết bị
-   cảm ứng (class "force-landscape" do JS gắn vào <html>). */
-html.force-landscape { width:100vw; height:100vh; }
-@media screen and (orientation:portrait) {
-  html.force-landscape {
-    transform: rotate(90deg);
-    transform-origin: top left;
-    width: 100vh;
-    height: 100vw;
-    position: absolute;
-    top: 0;
-    left: 100%;
-  }
-}
-
-/* Nút toàn màn hình (góc trên-phải), luôn nổi trên canvas.
-   - Chạm 1 lần để vào toàn màn hình + khoá ngang (nếu trình duyệt hỗ trợ).
-   - Chạm lại để thoát toàn màn hình bất cứ lúc nào. */
-#fsToggleBtn {
-  position:fixed; top:8px; left:8px; z-index:10000;
-  width:34px; height:34px; border-radius:50%;
-  background:rgba(20,20,20,0.55); color:#fff; border:1px solid rgba(255,255,255,0.35);
-  font-size:16px; line-height:1; display:flex; align-items:center; justify-content:center;
-  -webkit-tap-highlight-color:transparent; user-select:none; touch-action:manipulation;
-}
-/* Thông báo nhỏ khi trình duyệt (thường là iPhone) mất chế độ toàn màn hình
-   / không xoay đúng, hoặc mất kết nối cảm ứng — nhắc người chơi chạm lại. */
-#fsHint {
-  position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:10000;
-  background:rgba(0,0,0,0.6); color:#ffcc66; font:11px Arial; padding:5px 10px;
-  border-radius:6px; white-space:nowrap; display:none; pointer-events:none;
-}
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
-<button id="fsToggleBtn" title="Toàn màn hình / Thoát">⛶</button>
-<div id="fsHint"></div>
 <script>
 // ================================================================
 //  RED VS SHADOW — Full 2026 v2 + Mobile/PC Mode
@@ -158,15 +121,7 @@ function resizeCanvas() {
     const DESIGN_W = 1200, DESIGN_H = 700;
     canvas.width  = DESIGN_W;
     canvas.height = DESIGN_H;
-    // When the phone is physically held in portrait, our CSS trick rotates
-    // <html> 90° to force a landscape view (needed on iPhone, which has no
-    // real orientation-lock API). After that rotation the axis the player
-    // actually sees swaps, so the "visible width/height" for fitting the
-    // canvas must swap too — otherwise the game would render tiny/cropped.
-    const rotated = document.documentElement.classList.contains('force-landscape')
-                    && window.matchMedia('(orientation: portrait)').matches;
-    const vw = rotated ? window.innerHeight : window.innerWidth;
-    const vh = rotated ? window.innerWidth  : window.innerHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
     const scale = Math.min(vw/DESIGN_W, vh/DESIGN_H);
     canvas.style.width  = Math.round(DESIGN_W*scale) + "px";
     canvas.style.height = Math.round(DESIGN_H*scale) + "px";
@@ -186,98 +141,6 @@ window.addEventListener('resize', () => {
   if (p1) p1.y = H*FLOOR_Y_RATIO;
   if (p2) p2.y = H*FLOOR_Y_RATIO;
 });
-window.addEventListener('orientationchange', () => {
-  setTimeout(() => {
-    resizeCanvas();
-    if (p1) p1.y = H*FLOOR_Y_RATIO;
-    if (p2) p2.y = H*FLOOR_Y_RATIO;
-    if (platformMode === "MOBILE") tryLockLandscape();
-  }, 200);
-});
-
-// ================================================================
-//  FULLSCREEN + FORCE-LANDSCAPE (works across PC / Android / iPhone)
-// ================================================================
-// - On Android Chrome: real Fullscreen API + screen.orientation.lock('landscape')
-//   both work, so the phone is actually locked to landscape.
-// - On iPhone Safari: neither the Fullscreen API on arbitrary elements nor
-//   orientation.lock() are reliably supported, so as a fallback we rotate
-//   the whole page with CSS (the "force-landscape" class + the portrait
-//   media query above) whenever the phone is held upright. This guarantees
-//   the game always DISPLAYS landscape everywhere, even where the OS-level
-//   lock is unavailable — the iPhone will just still show its own status
-//   bar/browser chrome since Safari won't hide that for a webpage.
-function isFullscreenActive() {
-  return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
-}
-function requestFullscreenLandscape() {
-  const el = document.documentElement;
-  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-  try {
-    if (req && !isFullscreenActive()) {
-      const p = req.call(el);
-      if (p && p.catch) p.catch(()=>{}); // some browsers (iPhone Safari) reject this — ignore, CSS fallback still applies
-    }
-  } catch(e) {}
-  if (platformMode === "MOBILE") tryLockLandscape();
-}
-function tryLockLandscape() {
-  try {
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(()=>{}); // unsupported on iPhone — silently falls back to the CSS rotate trick
-    }
-  } catch(e) {}
-}
-function exitFullscreenNow() {
-  const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
-  try { if (exit && isFullscreenActive()) exit.call(document); } catch(e) {}
-}
-function updateFsBtn() {
-  const btn = document.getElementById('fsToggleBtn');
-  if (!btn) return;
-  btn.textContent = isFullscreenActive() ? '✕' : '⛶';
-  btn.title = isFullscreenActive() ? 'Thoát toàn màn hình' : 'Toàn màn hình';
-}
-function showFsHint(msg, ms) {
-  const hint = document.getElementById('fsHint');
-  if (!hint) return;
-  hint.textContent = msg;
-  hint.style.display = 'block';
-  clearTimeout(showFsHint._t);
-  showFsHint._t = setTimeout(() => { hint.style.display = 'none'; }, ms || 3000);
-}
-if (_isTouchDevice) document.documentElement.classList.add('force-landscape');
-['fullscreenchange','webkitfullscreenchange','MSFullscreenChange'].forEach(evt => {
-  document.addEventListener(evt, () => {
-    updateFsBtn();
-    resizeCanvas();
-    if (p1) p1.y = H*FLOOR_Y_RATIO;
-    if (p2) p2.y = H*FLOOR_Y_RATIO;
-    // Fullscreen can drop on its own (some Android skins do this on rotation,
-    // or after several minutes) without the player pressing the exit button.
-    // Let them know one tap on the corner button brings it straight back.
-    if (!isFullscreenActive() && gameState !== "MENU") showFsHint('Đã thoát toàn màn hình — chạm nút ⛶ góc trên để bật lại', 4000);
-  });
-});
-document.getElementById('fsToggleBtn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (isFullscreenActive()) exitFullscreenNow(); else requestFullscreenLandscape();
-});
-document.getElementById('fsToggleBtn').addEventListener('touchstart', (e) => {
-  e.preventDefault(); e.stopPropagation();
-  if (isFullscreenActive()) exitFullscreenNow(); else requestFullscreenLandscape();
-}, { passive:false });
-// Auto-request fullscreen + landscape lock on the player's very first tap/
-// click anywhere (browsers require a real user gesture before allowing
-// fullscreen/orientation-lock — it cannot be done automatically on page load).
-function _firstGestureFS() {
-  requestFullscreenLandscape();
-  document.removeEventListener('touchstart', _firstGestureFS);
-  document.removeEventListener('mousedown', _firstGestureFS);
-}
-document.addEventListener('touchstart', _firstGestureFS, { passive:true });
-document.addEventListener('mousedown', _firstGestureFS);
-updateFsBtn();
 
 // ================================================================
 //  TOUCH / VIRTUAL BUTTON STATE
