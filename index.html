@@ -523,6 +523,19 @@ function rng(){return Math.random();}
 function rndInt(a,b){return Math.floor(rng()*(b-a+1))+a;}
 function rndChoice(arr){return arr[Math.floor(rng()*arr.length)];}
 function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+// Skill/dash/teleport code (castSkill, aoePush) historically clamped the
+// mover's x to the fixed screen-space range [40, W-40]. That's correct in
+// GAMEPLAY/CHALLENGE, where the arena is a bounded worldW starting at 0.
+// But in ROAD mode the player's x keeps growing with roadDistanceM and the
+// camera (roadCameraX) scrolls forward indefinitely, so [40, W-40] is only
+// valid near the very start of the road. Any teleport/dash/knockback that
+// clamped to that fixed range in ROAD mode would silently snap the mover
+// back toward x≈0..W — i.e. yank them 100-200m backward — the moment they
+// were far enough down the road. These two helpers give the *current*
+// valid on-screen x range for whichever mode is active, so movement clamps
+// stay correct as the road camera scrolls.
+function moveBoundLo(){return gameState==="ROAD"?roadCameraX+40:40;}
+function moveBoundHi(){return gameState==="ROAD"?roadCameraX+W-40:W-40;}
 function dist(ax,ay,bx,by){return Math.sqrt((ax-bx)**2+(ay-by)**2);}
 function getHPDisplay(hp){const v=Math.floor(hp);return v>0||hp<=0?v:1;}
 
@@ -681,6 +694,14 @@ class Fighter {
     this.auraParticles=[];this.afterImages=[];this.transformBurstTimer=0;
     this.transformWindupTimer=0;this._ringAngle=0;
     this._runTrailTick=0;this._lastX=x;
+    // --- Frost-only skill state (namespaced so other characters are unaffected) ---
+    this.frostSlideTrail=[];this.frostSlideActive=0;
+    this.frostDomainActive=false;this.frostDomainTimer=0;this.frostDomainTick=0;
+    this._domainSnow=[];
+    this.frostPillarTick=0;
+    this.frostComboLog=[];this.frostComboFX=0;this.frostComboBonusPct=0;
+    this._icePrisonedTargets=[];
+    this._frostAbsZeroTimer=0;this._frostAbsZeroCrystals=[];
   }
   applyGravity(floorY){
     if(this.stunTimer>0)this.stunTimer--;
@@ -1011,21 +1032,41 @@ class Fighter {
       ctx.restore();
     }
     else if(sk==="shadow_s1"){
-      const sbx=rx+(50*this.direction),sby=ry-20;
+      const dir=this.direction;
+      const cx=rx+26*dir, cy=ry-70;
+      const ang=dir>0?55:125; // three near-parallel claw slashes sweeping from upper-back down to lower-forward
+      _text(rx,ry-118,"🐾 BÓNG VUỐT 🐾","#cc66ff","10px Arial bold");
       ctx.save();ctx.shadowColor="#aa00ff";ctx.shadowBlur=16;
-      _oval(sbx-22,sby-22,44,44,"#1a0030",null);
-      _oval(sbx-16,sby-16,32,32,"#551a8b","#cc66ff",1);
-      _oval(sbx-8,sby-8,16,16,"#cc00ff",null);
+      const perpX=-Math.sin(ang*Math.PI/180), perpY=Math.cos(ang*Math.PI/180);
+      const claws=[{off:-18,len:96,w:10,bow:9,col:"#e6ccff"},{off:0,len:112,w:12,bow:11,col:"#cc66ff"},{off:18,len:94,w:10,bow:9,col:"#9933ff"}];
+      claws.forEach(c=>{
+        const sx=cx+perpX*c.off, sy=cy+perpY*c.off;
+        _clawMark(sx,sy,ang,c.len,c.w,c.bow,c.col,"#1a0030");
+      });
       ctx.restore();
-      for(let i=0;i<4;i++){const ang=(af*9+i*90)*Math.PI/180,fr=22+Math.sin(af*0.2+i)*4,fx=sbx+fr*Math.cos(ang),fy=sby+fr*Math.sin(ang),s=rndInt(3,7);_oval(fx-s,fy-s,s*2,s*2,rndChoice(["purple","magenta","#330055"]),null);}
+      for(let i=0;i<6;i++){const a2=(af*9+i*60)*Math.PI/180,fr=26+Math.sin(af*0.2+i)*5,fx=cx+fr*Math.cos(a2),fy=cy+fr*Math.sin(a2),s=rndInt(3,6);_oval(fx-s,fy-s,s*2,s*2,rndChoice(["purple","magenta","#330055"]),null);}
     }
     else if(sk==="shadow_s2"){_text(rx,ry-110,"❌ SHADOW CLAW ❌","magenta","11px Arial bold");_line(rx-30,ry-30,rx+30,ry+30,"magenta",4);_line(rx-10,ry-40,rx+50,ry+20,"purple",3);}
     else if(sk==="shadow_s3"){
-      _text(rx,ry-110,"🔊 SONIC WAVE 🔊","violet","10px Arial bold");
-      ctx.save();ctx.shadowColor="#cc66ff";ctx.shadowBlur=10;
-      for(let ring=1;ring<=5;ring++){const rs=ring*24+(af%18);ctx.strokeStyle=["#3a0a55","purple","#9933ff","orchid","plum"][ring-1];ctx.lineWidth=6-ring;ctx.beginPath();ctx.ellipse(rx+rs*this.direction/2,ry,Math.abs(rs),Math.abs(rs)/3,0,0,Math.PI*2);ctx.stroke();}
+      _text(rx,ry-130,"🔊 SONIC WAVE 🔊","violet","12px Arial bold");
+      const maxRange=560*SR; // matches the actual push/damage radius so the FX reads as accurate, not just decorative
+      ctx.save();
+      const pulse=af%50;
+      ctx.globalAlpha=0.16;ctx.fillStyle="#9933ff";
+      ctx.beginPath();ctx.ellipse(rx,ry,maxRange*0.5+pulse*3,(maxRange*0.5+pulse*3)*0.4,0,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;ctx.shadowColor="#cc66ff";ctx.shadowBlur=20;
+      const ringColors=["#3a0a55","#6a1aa8","#9933ff","#c07bff","#f0e0ff"];
+      for(let ring=1;ring<=5;ring++){
+        const rs=ring*(maxRange/5)+pulse;
+        ctx.strokeStyle=ringColors[ring-1];ctx.lineWidth=9-ring;
+        ctx.beginPath();ctx.ellipse(rx,ry,rs,rs*0.36,0,0,Math.PI*2);ctx.stroke();
+      }
       ctx.restore();
-      for(let i=0;i<10;i++){const ang=rng()*Math.PI*2,r2=rndInt(20,90);const wx=rx+r2*Math.cos(ang)*this.direction,wy=ry+r2*Math.sin(ang)*0.4;ctx.strokeStyle=rndChoice(["#cc66ff","violet","#9933ff"]);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(wx,wy);ctx.lineTo(wx+rndInt(-12,12),wy+rndInt(-12,12));ctx.stroke();}
+      for(let i=0;i<14;i++){
+        const ang=(af*6+i*(360/14))*Math.PI/180,r2=maxRange*0.35+Math.sin(af*0.15+i)*maxRange*0.12;
+        const sx=rx+r2*Math.cos(ang),sy=ry+r2*Math.sin(ang)*0.36,s=rndInt(3,5);
+        _oval(sx-s,sy-s,s*2,s*2,rndChoice(["#f0e0ff","#cc66ff","white"]),null);
+      }
     }
     else if(sk==="thunder_s1"){
       _text(rx,ry-110,"⚡ LÔI CHƯỞNG ⚡","yellow","10px Arial bold");
@@ -1064,20 +1105,27 @@ class Fighter {
       });
     }
     else if(sk==="frost_s1"){
-      _text(rx,ry-110,"❄️ BĂNG TRẢM ❄️","deepskyblue","10px Arial bold");
+      _text(rx,ry-110,"❄️ ICE SPEARS ❄️","deepskyblue","10px Arial bold");
       ctx.save();ctx.shadowColor="cyan";ctx.shadowBlur=14;
       for(let i=0;i<4;i++){
-        const bx=rx+(30*this.direction)+(i*32*this.direction),by=ry-18+(i*10);
+        const bx=rx-(20*this.direction)-(i*14*this.direction),by=ry-18+(i*8);
         ctx.fillStyle="#AEEBFF";ctx.strokeStyle="white";ctx.lineWidth=1.5;
         ctx.beginPath();
         ctx.moveTo(bx,by-10);ctx.lineTo(bx+(38*this.direction),by);ctx.lineTo(bx+(20*this.direction),by+10);ctx.lineTo(bx-(6*this.direction),by+2);
         ctx.closePath();ctx.fill();ctx.stroke();
       }
       ctx.restore();
-      for(let i=0;i<6;i++){const sx=rx+rndInt(20,80)*this.direction,sy=ry+rndInt(-25,15),ss=rndInt(2,5);_oval(sx-ss,sy-ss,ss*2,ss*2,"white",null);}
+      for(let i=0;i<6;i++){const sx=rx-rndInt(10,60)*this.direction,sy=ry+rndInt(-25,15),ss=rndInt(2,5);_oval(sx-ss,sy-ss,ss*2,ss*2,"white",null);}
     }
-    else if(sk==="frost_s2"){_text(rx,ry-110,"⛄ TRIỆU HỒI RỐI BĂNG ⛄","cyan","10px Arial bold");}
-    else if(sk==="frost_s3"){_text(rx,ry-110,"❄️ TRẢM BĂNG ❄️","deepskyblue","10px Arial bold");}
+    else if(sk==="frost_s2"){
+      _text(rx,ry-110,"🧊 ICE SLIDE 🧊","cyan","10px Arial bold");
+      ctx.save();ctx.shadowColor="cyan";ctx.shadowBlur=12;
+      for(let i=0;i<10;i++){const tx=rx-(i+1)*14*this.direction,ty=ry+rndInt(-6,20),s=rndInt(5,12);_oval(tx-s,ty-s,s*2,s*2,rndChoice(["#AEEBFF","white","#66CFFF"]),null);}
+      ctx.restore();
+      _oval(rx-30*this.direction-30,ry+18,60,10,"rgba(180,230,255,0.55)",null);
+    }
+    else if(sk==="frost_s3"){_text(rx,ry-110,"❄️ FROZEN DOMAIN ❄️","deepskyblue","10px Arial bold");}
+    else if(sk==="frost_s4"){_text(rx,ry-110,"🧊 ICE PRISON 🧊","deepskyblue","10px Arial bold");}
     else if(sk==="earth_s1"){
       _text(rx,ry-110,"🧱 GAI ĐẤT TRỖI DẬY 🧱","burlywood","10px Arial bold");
       for(let i=0;i<8;i++){
@@ -1166,7 +1214,39 @@ class Fighter {
         for(let j=0;j<pCount;j++){const ang=(af*6+j*(360/pCount))*Math.PI/180,fx=rx+r*Math.cos(ang),fy=ry+r*Math.sin(ang)*0.6,s=rndInt(4,9);_oval(fx-s,fy-s,s*2,s*2,_h?rndChoice(["#0099FF","#66DFFF","white"]):rndChoice(["red","orange","yellow"]),null);}
       }}
     }
-    else if(this.activeSkill==="shadow_s4"){ctx.fillStyle="black";ctx.strokeStyle="purple";ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(rx,ry+52,320,25,0,0,Math.PI*2);ctx.fill();ctx.stroke();}
+    else if(this.activeSkill==="shadow_s4"){
+      const range=500*SR; // visual width tracks the actual damage radius below
+      if(!this._smoke)this._smoke=[];
+      if(this._smoke.length<50 && rng()<0.9){
+        this._smoke.push({x:rndInt(-range,range),y:rndInt(-120,55),r:rndInt(45,95),vx:(rng()-0.5)*0.4,vy:-rng()*0.5-0.15,life:0,maxLife:rndInt(70,130)});
+      }
+      ctx.save();ctx.shadowColor="#3a0a55";ctx.shadowBlur=22;
+      this._smoke=this._smoke.filter(p=>p.life<p.maxLife);
+      this._smoke.forEach(p=>{
+        p.x+=p.vx;p.y+=p.vy;p.life++;
+        const t=p.life/p.maxLife,fade=Math.sin(t*Math.PI);
+        ctx.globalAlpha=fade*0.4;
+        const g=ctx.createRadialGradient(rx+p.x,ry+p.y,0,rx+p.x,ry+p.y,p.r);
+        g.addColorStop(0,"rgba(80,20,120,0.95)");g.addColorStop(0.6,"rgba(40,5,70,0.6)");g.addColorStop(1,"rgba(10,0,20,0)");
+        ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(rx+p.x,ry+p.y,p.r,p.r*0.75,0,0,Math.PI*2);ctx.fill();
+      });
+      ctx.restore();
+      // dense fog band hugging the ground across the whole ability range
+      ctx.save();ctx.globalAlpha=0.55;
+      const band=ctx.createLinearGradient(rx-range,0,rx+range,0);
+      band.addColorStop(0,"rgba(15,0,30,0)");band.addColorStop(0.12,"rgba(60,15,95,0.6)");band.addColorStop(0.88,"rgba(60,15,95,0.6)");band.addColorStop(1,"rgba(15,0,30,0)");
+      ctx.fillStyle=band;ctx.beginPath();ctx.ellipse(rx,ry+45,range,60,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+      // wisps curling up around the character so it reads as fully enveloped
+      ctx.save();ctx.strokeStyle="rgba(210,150,255,0.5)";ctx.lineWidth=3;ctx.lineCap="round";
+      for(let i=0;i<5;i++){
+        const wx=rx+Math.sin(af*0.05+i*1.6)*45;
+        ctx.beginPath();ctx.moveTo(wx,ry+45);
+        ctx.quadraticCurveTo(wx+Math.sin(af*0.09+i)*35,ry-40,wx+Math.sin(af*0.11+i)*45,ry-125);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     else if(this.activeSkill==="thunder_s4"){
       if(af%10===0){this.lightningBolts=[];for(let b=0;b<3;b++){let sx=rx+rndInt(-400,400),pts=[sx,0],cx=sx,cy=0;while(cy<ry+100){cy+=rndInt(50,100);cx+=rndInt(-40,40);pts.push(cx,cy);}this.lightningBolts.push(pts);}}
       this.lightningBolts.forEach(bolt=>{ctx.strokeStyle="lightyellow";ctx.lineWidth=4;ctx.beginPath();for(let i=0;i<bolt.length;i+=2){i===0?ctx.moveTo(bolt[i],bolt[i+1]):ctx.lineTo(bolt[i],bolt[i+1]);}ctx.stroke();});
@@ -2164,6 +2244,22 @@ function _rectOutline(x,y,w,h,stroke,lw){if(w<0){x+=w;w=-w;}if(h<0){y+=h;h=-h;}c
 function _oval(x,y,w,h,fill,stroke,lw=1){ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}}
 function _line(x1,y1,x2,y2,stroke,lw){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
 function _text(x,y,txt,fill,font){ctx.fillStyle=fill;ctx.font=font;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(txt,x,y);}
+// Tapered claw/scratch-mark shape: a thin curved leaf pointed at both ends,
+// following a gentle bow along its length — reads as a slash mark rather
+// than a plain stroked line.
+function _clawMark(cx,cy,angleDeg,length,maxWidth,bow,color,outline){
+  const rad=angleDeg*Math.PI/180,dx=Math.cos(rad),dy=Math.sin(rad),nx=-dy,ny=dx,segs=14,pts=[];
+  for(let i=0;i<=segs;i++){
+    const t=i/segs,taper=Math.sin(t*Math.PI),curve=Math.sin(t*Math.PI)*bow;
+    pts.push({px:cx+dx*length*t+nx*curve,py:cy+dy*length*t+ny*curve,ox:nx*taper*maxWidth,oy:ny*taper*maxWidth});
+  }
+  ctx.beginPath();
+  pts.forEach((p,i)=>{const x=p.px+p.ox,y=p.py+p.oy;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  for(let i=segs;i>=0;i--){const p=pts[i];ctx.lineTo(p.px-p.ox,p.py-p.oy);}
+  ctx.closePath();
+  ctx.fillStyle=color;ctx.fill();
+  if(outline){ctx.strokeStyle=outline;ctx.lineWidth=1.2;ctx.stroke();}
+}
 
 // ================================================================
 //  DAMAGE & SKILL UTILS
@@ -2189,6 +2285,7 @@ function isPushable(t){return !(t instanceof RoadWall) && !(t instanceof RoadBos
 function getRoadTarget(attacker){const cands=getAllEnemies(attacker);if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 function applyDamage(target,damage,attacker){
   if(attacker&&attacker.charType==="red")damage*=1.2;
+  if(attacker&&attacker.charType==="frost"&&attacker.frostComboBonusPct>0){damage*=1+attacker.frostComboBonusPct;attacker.frostComboBonusPct=0;}
   if(attacker&&attacker.transformActive){const buffs=attacker.getTransformBuffs();damage*=buffs.dmg_mult||1;const ls=buffs.lifesteal||0;if(ls>0&&attacker.hp!==undefined)attacker.hp=Math.min(MAX_HP,attacker.hp+damage*ls);}
   if(target instanceof Fighter){
     if(target.hp<=0)return;
@@ -2221,7 +2318,7 @@ function applyDamage(target,damage,attacker){
 }
 function aoeHit(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(Math.abs(tgt.x-attacker.x)<radius&&Math.abs(tgt.y-attacker.y)<radius*0.8)applyDamage(tgt,damage,attacker);});}
 function aoeHitAt(attacker,damage,cx,cy,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(Math.abs(tgt.x-cx)<radius&&Math.abs(tgt.y-cy)<radius*0.9)applyDamage(tgt,damage,attacker);});}
-function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),40,W-40);if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
+function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
 function getChallengeTarget(attacker){const cands=[...challengeEnemies.filter(e=>e.hp>0),...challengeBosses.filter(b=>!b.dead&&b.hp>0)];if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 
 
@@ -2255,17 +2352,73 @@ function castSkill(attacker,target,skillNum){
   const _isRedDash=attacker.charType==="red"&&skillNum===2; // plain forward gap-closer, not a targeted teleport — must not face backward toward a trailing enemy
   if((gameState==="CHALLENGE"||gameState==="ROAD")&&combatTarget&&!_isRedDash)attacker.direction=combatTarget.x>attacker.x?1:-1;
   if(attacker.charType==="wind"){
-    if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=30;const targets=getAllEnemies(attacker).filter(t=>Math.abs(attacker.x-t.x)<280*SR&&Math.abs(attacker.y-t.y)<90*SR);targets.forEach(t=>{if(t&&t.hp>0){applyDamage(t,10,attacker);if(isPushable(t))t.x=clamp(t.x+(t.x>attacker.x?1:-1)*160,40,W-40);}});}
+    if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=30;const targets=getAllEnemies(attacker).filter(t=>Math.abs(attacker.x-t.x)<280*SR&&Math.abs(attacker.y-t.y)<90*SR);targets.forEach(t=>{if(t&&t.hp>0){applyDamage(t,10,attacker);if(isPushable(t))t.x=clamp(t.x+(t.x>attacker.x?1:-1)*160,moveBoundLo(),moveBoundHi());}});}
     else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=300;attacker.windBoostTimer=180;}
     else if(skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=180;getAllEnemies(attacker).forEach(t=>{if(t&&t.hp>0)applyDamage(t,30,attacker);});screenShake=Math.max(screenShake,14);}
     else if(skillNum===4){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s4=600;attacker.windTornadoActive=true;attacker.windTornadoX=attacker.x;attacker.windTornadoDir=attacker.direction;attacker._tornadoHitTargets=new Set();attacker._tornadoDmg=35;}
     return;
   }
-  if(attacker.charType==="frost"&&skillNum===3){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s3=60;projectiles.push({x:attacker.x+40*attacker.direction,y:attacker.y-10,vx:16*attacker.direction,vy:0,owner:attacker,target:combatTarget,damage:11,slow:180,slow_pct:0.7,color:"#AEEBFF",type:"ice_slash"});return;}
+  if(attacker.charType==="frost"){
+    // Log this cast for the Frozen Combo detector (Ice Prison -> Ice Slide -> Ice Spears -> Frozen Domain within 5s)
+    attacker.frostComboLog.push({skill:skillNum,t:frameCount});
+    if(attacker.frostComboLog.length>12)attacker.frostComboLog.shift();
+    checkFrostCombo(attacker);
+    if(skillNum===1){
+      // ICE SPEARS — 6-8 shards appear behind the player, pause 0.3s, then rocket forward
+      attacker.attackCooldown=22;attacker.activeSkill=skillId;attacker.cds.s1=110;
+      const cnt=rndInt(6,8);
+      for(let i=0;i<cnt;i++){
+        const spawnX=attacker.x-34*attacker.direction+rndInt(-16,16);
+        const spawnY=attacker.y-40-i*7+rndInt(-6,6);
+        projectiles.push({x:spawnX,y:spawnY,vx:0,vy:0,owner:attacker,target:combatTarget,
+          damage:9,slow:40,slow_pct:0.4,color:"#AEEBFF",type:"ice_spear",dir:attacker.direction,launchDelay:18});
+      }
+      return;
+    }
+    if(skillNum===2){
+      // ICE SLIDE — knockback-immune dash that lays a slick ice trail (slows foes for ~3s)
+      attacker.attackCooldown=18;attacker.activeSkill=skillId;attacker.cds.s2=260;
+      const oldX=attacker.x,oldY=attacker.y;
+      attacker.frostSlideActive=26;
+      _dashCapture(attacker,oldX,oldY);
+      attacker.x+=180*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());
+      const steps=9;
+      for(let i=0;i<=steps;i++){const t=i/steps;attacker.frostSlideTrail.push({x:oldX+(attacker.x-oldX)*t,y:attacker.y,life:180,maxLife:180});}
+      aoeHit(attacker,10,110);
+      getAllEnemies(attacker).forEach(t2=>{if(t2.hp>0&&Math.abs(t2.x-attacker.x)<110*SR&&Math.abs(t2.y-attacker.y)<90*SR&&isPushable(t2)){t2.x=clamp(t2.x+(t2.x>=attacker.x?1:-1)*36,moveBoundLo(),moveBoundHi());}});
+      screenShake=Math.max(screenShake,8);
+      return;
+    }
+    if(skillNum===3){
+      // FROZEN DOMAIN — a lingering ice zone that slows/chills anyone standing in it
+      attacker.attackCooldown=26;attacker.activeSkill=skillId;attacker.cds.s3=520;
+      attacker.frostDomainActive=true;attacker.frostDomainTimer=210;attacker.frostDomainTick=0;
+      screenShake=Math.max(screenShake,10);
+      return;
+    }
+    if(skillNum===4){
+      // ICE PRISON — locks the target in a block of ice; explodes after 2s or early if hit; bosses are only slowed
+      attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s4=420;
+      const _icyTargets=getAllEnemies(attacker).filter(t=>t&&t.hp>0);
+      _icyTargets.forEach(tgt=>{
+        const isBoss=(typeof Boss!=="undefined"&&tgt instanceof Boss)||(typeof RoadBoss!=="undefined"&&tgt instanceof RoadBoss);
+        applyDamage(tgt,13,attacker);
+        if(tgt.hp>0){
+          const dur=isBoss?146:240; // ~2.4s slow for bosses, ~4s full lock for everyone else (base + 2s)
+          tgt.stunTimer=Math.max(tgt.stunTimer||0,dur);
+          tgt._icePrisonTimer=dur;tgt._icePrisonMax=dur;
+          tgt._icePrisonHpLast=tgt.hp;
+          attacker._icePrisonedTargets.push(tgt);
+        }
+        spawnHitEffect(tgt.x,tgt.y-40,"#AEEBFF");
+      });
+      return;
+    }
+  }
   if(attacker.charType==="shadow"&&skillNum===2){attacker.attackCooldown=16;attacker.activeSkill=skillId;attacker.cds.s2=140;
     const oldX=attacker.x,oldY=attacker.y;
     for(let i=0;i<12;i++)attacker._dashSmoke.push({x:oldX+rndInt(-25,25),y:oldY-30+rndInt(-25,15),vx:(rng()-0.5)*1.4,vy:-rng()*1.3-0.3,life:32,r:rndInt(10,24)});
-    if(combatTarget){attacker.direction=combatTarget.x>attacker.x?1:-1;attacker.x=clamp(combatTarget.x-70*attacker.direction,40,W-40);attacker.y=combatTarget.y||attacker.y;}
+    if(combatTarget){attacker.direction=combatTarget.x>attacker.x?1:-1;attacker.x=clamp(combatTarget.x-70*attacker.direction,moveBoundLo(),moveBoundHi());attacker.y=combatTarget.y||attacker.y;}
     _dashCapture(attacker,oldX,oldY);
     for(let i=0;i<14;i++)attacker._dashSmoke.push({x:attacker.x+rndInt(-25,25),y:attacker.y-30+rndInt(-25,15),vx:(rng()-0.5)*1.6,vy:-rng()*1.4-0.3,life:34,r:rndInt(12,26)});
     aoeHit(attacker,10,160);screenShake=10;return;}
@@ -2279,20 +2432,19 @@ function castSkill(attacker,target,skillNum){
     targets.forEach(t=>aoeHitAt(attacker,15,t.x,t.y,140));
     screenShake=25;return;
   }
-  if(attacker.charType==="thunder"&&skillNum===2){const d=combatTarget?Math.abs(attacker.x-combatTarget.x):400;const _oldX=attacker.x,_oldY=attacker.y;if(d<W/2)attacker.x-=220*attacker.direction;else attacker.x+=220*attacker.direction;attacker.x=clamp(attacker.x,40,W-40);_dashCapture(attacker,_oldX,_oldY);attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;return;}
+  if(attacker.charType==="thunder"&&skillNum===2){const d=combatTarget?Math.abs(attacker.x-combatTarget.x):400;const _oldX=attacker.x,_oldY=attacker.y;if(d<W/2)attacker.x-=220*attacker.direction;else attacker.x+=220*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());_dashCapture(attacker,_oldX,_oldY);attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;return;}
   if(attacker.charType==="red"&&skillNum===3){attacker.attackCooldown=120;attacker.activeSkill=skillId;attacker.cds.s3=360;return;}
   if(attacker.charType==="water"){
     if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=120;projectiles.push({x:attacker.x+40*attacker.direction,y:attacker.y-42,vx:15*attacker.direction,vy:0,owner:attacker,target:combatTarget,damage:6,slow:0,slow_pct:0,color:"dodgerblue",type:"water_orb",radius:15});}
     else if(skillNum===2){attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=480;attacker.waterCloudTimer=300;attacker.waterCloudTick=0;attacker.waterCloudDrops=[];}
     else if(skillNum===3){attacker.attackCooldown=30;attacker.activeSkill=skillId;attacker.cds.s3=480;aoePush(attacker,15,520);screenShake=20;}
-    else if(skillNum===4){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.ultiTimer=120;attacker.cds.s4=1080;attacker.tsunamiWaveXL=attacker.x-80;attacker.tsunamiWaveXR=attacker.x+80;getAllEnemies(attacker).forEach(t=>{if(isPushable(t)){const pd=t.x>attacker.x?1:-1;t.x=clamp(t.x+pd*500,40,W-40);if(t instanceof Fighter){t.slowTimer=Math.max(t.slowTimer,120);t.vy=-8;}}applyDamage(t,20,attacker);});screenShake=40;}
+    else if(skillNum===4){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.ultiTimer=120;attacker.cds.s4=1080;attacker.tsunamiWaveXL=attacker.x-80;attacker.tsunamiWaveXR=attacker.x+80;getAllEnemies(attacker).forEach(t=>{if(isPushable(t)){const pd=t.x>attacker.x?1:-1;t.x=clamp(t.x+pd*500,moveBoundLo(),moveBoundHi());if(t instanceof Fighter){t.slowTimer=Math.max(t.slowTimer,120);t.vy=-8;}}applyDamage(t,20,attacker);});screenShake=40;}
     return;
   }
-  if(attacker.charType==="shadow"&&skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=300;aoePush(attacker,8,400);screenShake=15;return;}
+  if(attacker.charType==="shadow"&&skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=300;aoePush(attacker,10,560);screenShake=15;return;}
   if(attacker.charType!=="earth"){
     if(skillNum===1){attacker.attackCooldown=8;attacker.activeSkill=skillId;attacker.cds.s1=90;aoeHit(attacker,7,160);}
-    else if(skillNum===2){if(attacker.charType==="frost"){attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=420;puppets.push(new IcePuppet(attacker,attacker.x+50*attacker.direction,attacker.y,attacker.direction));}else{attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=180;const _oldX2=attacker.x,_oldY2=attacker.y;attacker.x+=160*attacker.direction;attacker.x=clamp(attacker.x,40,W-40);_dashCapture(attacker,_oldX2,_oldY2);aoeHit(attacker,12,100);}}
-    else if(skillNum===3&&attacker.charType==="frost"){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s1=90;aoeHit(attacker,14,320);}
+    else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=180;const _oldX2=attacker.x,_oldY2=attacker.y;attacker.x+=160*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());_dashCapture(attacker,_oldX2,_oldY2);aoeHit(attacker,12,100);}
     else if(skillNum===4){attacker.attackCooldown=180;attacker.activeSkill=skillId;attacker.ultiTimer=180;attacker.cds.s4=1080;}
   }else{
     if(skillNum===1){attacker.attackCooldown=16;attacker.activeSkill=skillId;attacker.cds.s1=100;aoeHit(attacker,12,160);}
@@ -2319,6 +2471,18 @@ function updateBot(){
 function updateProjectiles(floorY,player2){
   const active=[];
   for(const proj of projectiles){
+    if(proj.type==="ice_spear"&&proj.launchDelay>0){
+      // Ice Spears: hover in place behind the caster for 0.3s before rocketing forward
+      proj.launchDelay--;
+      if(rng()<0.5)hitEffects.push({x:proj.x+rndInt(-4,4),y:proj.y+rndInt(-4,4),vx:0,vy:-0.3,life:12,maxLife:12,particle:true,color:"#DFF7FF"});
+      ctx.save();ctx.translate(proj.x,proj.y);ctx.scale(CHAR_VISUAL_SCALE,CHAR_VISUAL_SCALE);ctx.translate(-proj.x,-proj.y);
+      ctx.save();ctx.shadowColor="cyan";ctx.shadowBlur=8;ctx.fillStyle="#AEEBFF";ctx.strokeStyle="white";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(proj.x,proj.y-9);ctx.lineTo(proj.x+5,proj.y);ctx.lineTo(proj.x,proj.y+9);ctx.lineTo(proj.x-5,proj.y);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.restore();ctx.restore();
+      active.push(proj);
+      continue;
+    }
+    if(proj.type==="ice_spear"&&proj.vx===0&&proj.launchDelay<=0)proj.vx=17*(proj.dir||1);
     proj.x+=proj.vx;if(proj.vy!==undefined)proj.y+=proj.vy;
     const px=proj.x,py=proj.y,pDir=proj.vx>=0?1:-1,color=proj.color||"cyan",pType=proj.type||"";
     ctx.save();ctx.translate(px,py);ctx.scale(CHAR_VISUAL_SCALE,CHAR_VISUAL_SCALE);ctx.translate(-px,-py);
@@ -2330,6 +2494,16 @@ function updateProjectiles(floorY,player2){
       _oval(px-r*0.35,py-r*0.55,r*0.55,r*0.4,"#D6F3FF",null);
       ctx.restore();
       for(let i=0;i<3;i++)_oval(px+rndInt(-r,r)*0.6-2,py+rndInt(-r,r)*0.6-2,4,4,"rgba(200,240,255,0.6)",null);
+    }
+    else if(pType==="ice_spear"){
+      ctx.save();ctx.shadowColor="cyan";ctx.shadowBlur=10;
+      ctx.fillStyle="#AEEBFF";ctx.strokeStyle="white";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(px+15*pDir,py);ctx.lineTo(px-5*pDir,py-7);ctx.lineTo(px-17*pDir,py);ctx.lineTo(px-5*pDir,py+7);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.restore();
+      if(!proj.trail)proj.trail=[];
+      proj.trail.push({x:px,y:py,life:12});
+      proj.trail=proj.trail.filter(t=>{t.life--;return t.life>0;});
+      proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/12)*0.45;_oval(t.x-4,t.y-4,8,8,"white",null);ctx.restore();});
     }
     else if(pType==="ice_arrow"){ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(px,py-8);ctx.lineTo(px+20*pDir,py);ctx.lineTo(px,py+8);ctx.lineTo(px-8*pDir,py);ctx.closePath();ctx.fill();}
     else if(pType==="ice_slash"){
@@ -2344,15 +2518,15 @@ function updateProjectiles(floorY,player2){
     ctx.restore();
     let hit=false;
     const owner=proj.owner,dmg=proj.damage,slowF=proj.slow||0,slowP=proj.slow_pct||0;
-    if(gameState==="GAMEPLAY"&&player2){const tgt=proj.target;if(tgt instanceof Fighter&&tgt.hp>0&&Math.abs(px-tgt.x)<55*SR&&Math.abs(py-tgt.y)<85*SR){applyDamage(tgt,dmg,owner);if(slowF>0){tgt.slowTimer=Math.max(tgt.slowTimer,slowF);tgt._slowPct=slowP;}hit=true;}}
-    else if(gameState==="CHALLENGE"){if(owner instanceof Fighter){let exploded=false;challengeEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<60*SR&&Math.abs(py-e.y)<80*SR){applyDamage(e,dmg,owner);hit=true;exploded=true;}});challengeBosses.forEach(b=>{if(!b.dead&&b.hp>0&&Math.abs(px-b.x)<70*SR&&Math.abs(py-b.y)<100*SR){applyDamage(b,dmg,owner);hit=true;exploded=true;}});if(exploded){[...challengeEnemies].forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<120*SR&&Math.abs(py-e.y)<120*SR)applyDamage(e,dmg*0.5,owner);});}}else{if(p1.hp>0&&Math.abs(px-p1.x)<55*SR&&Math.abs(py-p1.y)<85*SR){applyDamage(p1,dmg,owner);if(slowF>0){p1.slowTimer=Math.max(p1.slowTimer,slowF);p1._slowPct=slowP;}hit=true;}}}
+    if(gameState==="GAMEPLAY"&&player2){const tgt=proj.target;if(tgt instanceof Fighter&&tgt.hp>0&&Math.abs(px-tgt.x)<55*SR&&Math.abs(py-tgt.y)<85*SR){applyDamage(tgt,dmg,owner);if(slowF>0){tgt.slowTimer=Math.max(tgt.slowTimer,slowF);tgt._slowPct=slowP;}if(pType==="ice_spear")tgt.stunTimer=Math.max(tgt.stunTimer||0,30);hit=true;}}
+    else if(gameState==="CHALLENGE"){if(owner instanceof Fighter){let exploded=false;challengeEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<60*SR&&Math.abs(py-e.y)<80*SR){applyDamage(e,dmg,owner);if(pType==="ice_spear")e.stunTimer=Math.max(e.stunTimer||0,30);hit=true;exploded=true;}});challengeBosses.forEach(b=>{if(!b.dead&&b.hp>0&&Math.abs(px-b.x)<70*SR&&Math.abs(py-b.y)<100*SR){applyDamage(b,dmg,owner);if(pType==="ice_spear")b.stunTimer=Math.max(b.stunTimer||0,18);hit=true;exploded=true;}});if(exploded){[...challengeEnemies].forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<120*SR&&Math.abs(py-e.y)<120*SR)applyDamage(e,dmg*0.5,owner);});}}else{if(p1.hp>0&&Math.abs(px-p1.x)<55*SR&&Math.abs(py-p1.y)<85*SR){applyDamage(p1,dmg,owner);if(slowF>0){p1.slowTimer=Math.max(p1.slowTimer,slowF);p1._slowPct=slowP;}hit=true;}}}
     else if(gameState==="ROAD"){
       if(owner instanceof Fighter){
         let exploded=false;
-        roadEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<50*SR&&Math.abs(py-e.y)<80*SR){applyDamage(e,dmg,owner);hit=true;exploded=true;}});
+        roadEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<50*SR&&Math.abs(py-e.y)<80*SR){applyDamage(e,dmg,owner);if(pType==="ice_spear")e.stunTimer=Math.max(e.stunTimer||0,30);hit=true;exploded=true;}});
         const fw=getFrontWall();
         if(fw&&Math.abs(px-fw.x)<50*SR&&py>H*0.25){applyDamage(fw,dmg,owner);hit=true;exploded=true;}
-        if(roadBoss&&!roadBoss.dead&&Math.abs(px-roadBoss.x)<80*SR&&Math.abs(py-roadBoss.y)<160*SR){applyDamage(roadBoss,dmg,owner);hit=true;exploded=true;}
+        if(roadBoss&&!roadBoss.dead&&Math.abs(px-roadBoss.x)<80*SR&&Math.abs(py-roadBoss.y)<160*SR){applyDamage(roadBoss,dmg,owner);if(pType==="ice_spear")roadBoss.stunTimer=Math.max(roadBoss.stunTimer||0,18);hit=true;exploded=true;}
         if(exploded)roadEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<120*SR&&Math.abs(py-e.y)<120*SR)applyDamage(e,dmg*0.5,owner);});
       }else{
         if(p1.hp>0&&Math.abs(px-p1.x)<45*SR&&Math.abs(py-p1.y)<80*SR){applyDamage(p1,dmg,owner);if(slowF>0){p1.slowTimer=Math.max(p1.slowTimer,slowF);p1._slowPct=slowP;}hit=true;}
@@ -2390,6 +2564,126 @@ function _spawnChallengeWave(floorY,worldW){
   }
 }
 
+// ================================================================
+//  FROST COMBO — Ice Prison(4) -> Ice Slide(2) -> Ice Spears(1) -> Frozen Domain(3) within 5s
+// ================================================================
+function checkFrostCombo(p){
+  const log=p.frostComboLog;
+  if(log.length<4)return;
+  const last4=log.slice(-4);
+  const seq=last4.map(e=>e.skill).join(",");
+  if(seq==="4,2,1,3"&&(last4[3].t-last4[0].t)<=300){
+    p.frostComboLog=[]; // consumed — must redo the full sequence to trigger again
+    p.frostComboBonusPct=0.30;
+    p.frostComboFX=40;
+    screenShake=Math.max(screenShake,16);
+    spawnHitEffect(p.x,p.y-60,"white");
+    for(let i=0;i<24;i++){const ang=rng()*Math.PI*2,spd=rng()*6+2;hitEffects.push({x:p.x,y:p.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:34,maxLife:34,particle:true,color:rndChoice(["white","#AEEBFF","cyan"])});}
+  }
+}
+// ================================================================
+//  FROST PER-FRAME TICK — slide trail, Frozen Domain aura, Ice Prison timing, V4 innate pillars
+// ================================================================
+function tickFrost(p){
+  if(p.charType!=="frost")return;
+  if(p.frostSlideActive>0)p.frostSlideActive--;
+  if(p.frostComboFX>0)p.frostComboFX--;
+  // age the ice slide trail and slow anyone standing on it
+  if(p.frostSlideTrail.length){
+    p.frostSlideTrail.forEach(t=>t.life--);
+    p.frostSlideTrail=p.frostSlideTrail.filter(t=>t.life>0);
+    if(p.frostSlideTrail.length){
+      getAllEnemies(p).forEach(opp=>{
+        if(opp.hp<=0)return;
+        const onTrail=p.frostSlideTrail.some(t=>Math.abs(t.x-opp.x)<30*SR&&Math.abs(opp.y-p.y)<50*SR);
+        if(onTrail){opp.slowTimer=Math.max(opp.slowTimer||0,20);opp._slowPct=Math.max(opp._slowPct||0,0.35);}
+      });
+    }
+  }
+  // Frozen Domain — persistent chilling zone
+  if(p.frostDomainActive){
+    p.frostDomainTimer--;
+    p.frostDomainTick++;
+    const isBossTgt=t=>(typeof Boss!=="undefined"&&t instanceof Boss)||(typeof RoadBoss!=="undefined"&&t instanceof RoadBoss);
+    getAllEnemies(p).forEach(opp=>{
+      if(opp.hp<=0)return;
+      const d=dist(p.x,p.y,opp.x,opp.y);
+      if(d<650*SR){
+        const boss=isBossTgt(opp);
+        opp.slowTimer=Math.max(opp.slowTimer||0,10);opp._slowPct=Math.max(opp._slowPct||0,boss?0.18:0.35);
+        if(p.frostDomainTick%50===0){ // short chill pulse every ~0.8s
+          if(boss)opp.stunTimer=Math.max(opp.stunTimer||0,8);
+          else opp.stunTimer=Math.max(opp.stunTimer||0,16);
+        }
+      }
+    });
+    if(p.frostDomainTimer<=0)p.frostDomainActive=false;
+  }
+  // Ice Prison — tracks all locked targets, each explodes on expiry or if it's hit early
+  if(p._icePrisonedTargets&&p._icePrisonedTargets.length){
+    p._icePrisonedTargets=p._icePrisonedTargets.filter(tgt=>{
+      if(!tgt||tgt.hp<=0)return false;
+      const tookDamage=tgt._icePrisonHpLast!==undefined&&tgt.hp<tgt._icePrisonHpLast-0.01;
+      tgt._icePrisonHpLast=tgt.hp;
+      if(tgt._icePrisonTimer>0)tgt._icePrisonTimer--;
+      if(tookDamage||tgt._icePrisonTimer<=0){
+        aoeHitAt(p,10,tgt.x,tgt.y,90);
+        spawnHitEffect(tgt.x,tgt.y-40,"#AEEBFF");
+        for(let i=0;i<14;i++){const ang=rng()*Math.PI*2,spd=rng()*5+2;hitEffects.push({x:tgt.x,y:tgt.y-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:26,maxLife:26,particle:true,color:"#DFF7FF"});}
+        tgt._icePrisonTimer=0;
+        return false;
+      }
+      return true;
+    });
+  }
+  // V4 innate: every 5s while transformed, 5 ice pillars erupt under the nearest foes
+  if(p.transformActive){
+    p.frostPillarTick++;
+    if(p.frostPillarTick>=300){
+      p.frostPillarTick=0;
+      const picks=getAllEnemies(p).filter(e=>e.hp>0).sort((a,b)=>dist(p.x,p.y,a.x,a.y)-dist(p.x,p.y,b.x,b.y)).slice(0,5);
+      picks.forEach(tgt=>{
+        aoeHitAt(p,6,tgt.x,tgt.y,60);
+        tgt.slowTimer=Math.max(tgt.slowTimer||0,40);tgt._slowPct=Math.max(tgt._slowPct||0,0.3);
+        for(let i=0;i<10;i++)hitEffects.push({x:tgt.x+rndInt(-8,8),y:tgt.y-10,vx:(rng()-0.5)*2,vy:-rng()*3-1,life:22,maxLife:22,particle:true,color:"#AEEBFF"});
+      });
+      if(picks.length)screenShake=Math.max(screenShake,4);
+    }
+  }else p.frostPillarTick=0;
+}
+// ================================================================
+//  FROST WORLD-SPACE FX — drawn in absolute coordinates (not the per-fighter scaled transform)
+// ================================================================
+function drawFrostSlideTrail(p){
+  if(p.charType!=="frost"||!p.frostSlideTrail.length)return;
+  p.frostSlideTrail.forEach(t=>{
+    const a=Math.max(0,t.life/t.maxLife);
+    ctx.save();ctx.globalAlpha=a*0.5;ctx.fillStyle="#AEEBFF";ctx.strokeStyle="white";ctx.lineWidth=1;
+    ctx.beginPath();ctx.ellipse(t.x,t.y+4,24,7,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.restore();
+  });
+}
+function drawFrostDomain(p){
+  if(p.charType!=="frost"||!p.frostDomainActive)return;
+  const rx=p.x,ry=p.y-16,rad=650*SR;
+  ctx.save();ctx.globalAlpha=0.16;ctx.fillStyle="#BEEBFF";ctx.beginPath();ctx.ellipse(rx,ry,rad,rad*0.45,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.save();ctx.globalAlpha=0.7;ctx.strokeStyle="deepskyblue";ctx.lineWidth=2;ctx.setLineDash([6,5]);
+  ctx.beginPath();ctx.ellipse(rx,ry,rad,rad*0.45,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+  if(p._domainSnow.length<36&&rng()<0.6)p._domainSnow.push({x:rx+rndInt(-rad,rad),y:ry-rndInt(60,160),vy:rng()*1.4+1,r:rndInt(2,4)});
+  p._domainSnow=p._domainSnow.filter(s=>s.y<ry+30);
+  p._domainSnow.forEach(s=>{s.y+=s.vy;_oval(s.x-s.r,s.y-s.r,s.r*2,s.r*2,"white",null);});
+  _text(rx,ry-rad*0.45-14,"❄️ FROZEN DOMAIN ❄️","deepskyblue","11px Arial bold");
+}
+function drawFrostIcePrison(target){
+  if(!target||!(target._icePrisonTimer>0))return;
+  const rx=target.x,ry=target.y-40;
+  ctx.save();ctx.globalAlpha=0.8;ctx.fillStyle="rgba(190,235,255,0.5)";ctx.strokeStyle="white";ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(rx,ry,40,56,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.strokeStyle="rgba(255,255,255,0.55)";ctx.lineWidth=1;
+  for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(rx-28+i*18,ry-46);ctx.lineTo(rx-20+i*18,ry+46);ctx.stroke();}
+  ctx.restore();
+  _text(rx,ry-64,"🧊 ICE PRISON 🧊","deepskyblue","9px Arial bold");
+}
 // ================================================================
 //  V4 TRANSFORM TICK
 // ================================================================
@@ -2829,6 +3123,7 @@ function updateGameplay(floorY){
     for(const s in p.cds)if(p.cds[s]>0)p.cds[s]--;
     tickV4(p);
     tickWaterCloud(p);
+    tickFrost(p);
   }
   for(const[attacker,pvpTarget]of[[p1,p2],[p2,p1]]){
     if(attacker.ultiTimer>0){
@@ -2838,7 +3133,7 @@ function updateGameplay(floorY){
       else if(attacker.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(pvpTarget,0.30,attacker);
       else if(attacker.activeSkill==="frost_s4"&&d<450*SR){applyDamage(pvpTarget,0.18,attacker);pvpTarget.slowTimer=Math.max(pvpTarget.slowTimer,10);}
       else if(attacker.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(pvpTarget.x-attacker.targetSpikeX)<60*SR))applyDamage(pvpTarget,0.26,attacker);
-      else if(attacker.activeSkill==="shadow_s4"&&Math.abs(attacker.x-pvpTarget.x)<360*SR)applyDamage(pvpTarget,0.40,attacker);
+      else if(attacker.activeSkill==="shadow_s4"&&Math.abs(attacker.x-pvpTarget.x)<500*SR)applyDamage(pvpTarget,0.40,attacker);
       if(attacker.ultiTimer===0){attacker.isAttacking=false;attacker.activeSkill=null;if(attacker.charType==="earth")attacker.earthPillars=[];}
     }
     if(attacker.attackCooldown>0&&attacker.activeSkill==="red_s3"){if(Math.abs(attacker.y-pvpTarget.y)<60*SR&&0<(pvpTarget.x-attacker.x)*attacker.direction&&(pvpTarget.x-attacker.x)*attacker.direction<600*SR)applyDamage(pvpTarget,0.18,attacker);}
@@ -2889,6 +3184,8 @@ function updateGameplay(floorY){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
+  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);
   p1.draw();p2.draw();
   updateAndDrawHitEffects();
   ctx.restore();
@@ -2917,6 +3214,7 @@ function updateChallenge(w,h){
   for(const s in p1.cds)if(p1.cds[s]>0)p1.cds[s]--;
   tickV4(p1);
   tickWaterCloud(p1);
+  tickFrost(p1);
   if(frameCount%60===0&&p1.charType==="red"&&p1.hp>0)p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0&&p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
   if(p1.stunTimer<=0&&p1.hp>0){
@@ -2947,7 +3245,7 @@ function updateChallenge(w,h){
       else if(p1.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(tgt,0.30,p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
-      else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<360*SR)applyDamage(tgt,0.40,p1);
+      else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
       else if(p1.activeSkill==="water_s4"&&p1.tsunamiWaveXL<tgt.x&&tgt.x<p1.tsunamiWaveXR){applyDamage(tgt,0.35,p1);tgt.slowTimer=Math.max(tgt.slowTimer||0,20);tgt._slowPct=0.5;}
     });
     if(p1.ultiTimer===0){p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
@@ -2982,6 +3280,7 @@ function updateChallenge(w,h){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
   p1.draw();
   challengeEnemies.forEach(e=>e.draw());
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
@@ -3195,7 +3494,7 @@ function updateRoad(){
   if(p1.poisonTimer>0){p1.poisonTimer--;if(p1.poisonTimer%60===0&&p1.hp>0)applyDamage(p1,2,null);}
   if(p1.thunderFTimer>0){p1.thunderFTimer--; if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds) if(p1.cds[s]>0)p1.cds[s]--;
-  tickV4(p1); tickWaterCloud(p1);
+  tickV4(p1); tickWaterCloud(p1); tickFrost(p1);
   if(frameCount%60===0 && p1.charType==="red" && p1.hp>0) p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0 && p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
 
@@ -3246,7 +3545,7 @@ function updateRoad(){
       else if(p1.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(tgt,0.30,p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
-      else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<360*SR)applyDamage(tgt,0.40,p1);
+      else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
       else if(p1.activeSkill==="water_s4"&&p1.tsunamiWaveXL<tgt.x&&tgt.x<p1.tsunamiWaveXR){applyDamage(tgt,0.35,p1);tgt.slowTimer=Math.max(tgt.slowTimer||0,20);tgt._slowPct=0.5;}
     });
     if(p1.ultiTimer===0){p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
@@ -3323,6 +3622,7 @@ function updateRoad(){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W));
   puppets.forEach(pu=>pu.draw());
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
   p1.draw();
   if(p1.poisonTimer>0){
     for(let i=0;i<3;i++){
