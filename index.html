@@ -542,7 +542,9 @@ function getHPDisplay(hp){const v=Math.floor(hp);return v>0||hp<=0?v:1;}
 // ================================================================
 //  VISUAL FX: elemental colors, hit effects, dash trails, bursts
 // ================================================================
-const ELEMENT_COLORS={red:"#ff5533",shadow:"#bb44ff",thunder:"#ffee55",frost:"#66ccff",earth:"#c68a4a",water:"#44bbff",wind:"#a6f0a6"};
+const ELEMENT_COLORS={red:"#ff5533",shadow:"#bb44ff",thunder:"#FFD700",frost:"#66ccff",earth:"#c68a4a",water:"#44bbff",wind:"#a6f0a6"};
+// Thunder (Lôi) rework palette — pure white + electric gold only, no purple anywhere.
+const THUNDER_WHITE="#FFFFFF",THUNDER_GOLD="#FFD700",THUNDER_YELLOW="#FFF176",THUNDER_ARC="#EAF6FF";
 // The fire (red) fighter automatically switches every fire visual to a blue
 // "hellfire" palette for the whole duration of its V4 transform, then reverts
 // to normal red/orange the instant the transform ends. No toggle, no persistent
@@ -635,7 +637,7 @@ function updateAndDrawHitEffects(){
       ctx.restore();
     }else if(fx.ring){
       const a=Math.max(0,fx.life/fx.maxLife);
-      const maxR=fx.big?160:40;
+      const maxR=fx.big?80:40;
       const r=(1-a)*maxR+10;
       ctx.save();ctx.globalAlpha=a*0.8;ctx.strokeStyle=fx.color;ctx.lineWidth=fx.big?5:3;
       ctx.beginPath();ctx.arc(fx.x,fx.y,r,0,Math.PI*2);ctx.stroke();
@@ -681,7 +683,8 @@ class Fighter {
     this.stunTimer=0;
     this.transformTimer=0;this.transformActive=false;
     this.transformInvisTimer=0;this.transformInvisActive=false;
-    this.ghostHp=0;this.thunderAuraTick=0;
+    this.ghostHp=0;this.thunderAuraTick=0;this.shockStack=0;
+    this.thunderDashTimer=0;this.thunderDashTrail=[];this.thunderPrisonTimer=0;this.thunderPrisonBreakCd=0;
     this.waterRegenTick=0;this.windMiniTornadoTick=0;
     this.crowAngle=0;this.isFlying=false;
     this.v4InvisScheduled=false;this.v4LifestealPct=0;
@@ -692,7 +695,7 @@ class Fighter {
     this.boulderY=-320;this.boulderLanded=false;
     this.waterCloudTimer=0;this.waterCloudTick=0;this.waterCloudDrops=[];
     this.auraParticles=[];this.afterImages=[];this.transformBurstTimer=0;
-    this.transformWindupTimer=0;this._ringAngle=0;
+    this.transformWindupTimer=0;this.transformLandingTimer=0;this._ringAngle=0;
     this._runTrailTick=0;this._lastX=x;
     // --- Frost-only skill state (namespaced so other characters are unaffected) ---
     this.frostSlideTrail=[];this.frostSlideActive=0;
@@ -705,15 +708,50 @@ class Fighter {
   }
   applyGravity(floorY){
     if(this.stunTimer>0)this.stunTimer--;
+    if(this.thunderDashTimer>0)this.thunderDashTimer--;
+    // Thunder Prison: while caged, periodically zap + snap the victim back
+    // toward the cage center the instant they try to drift away.
+    if(this.thunderPrisonTimer>0){
+      this.thunderPrisonTimer--;
+      const dxp=this.x-(this.thunderPrisonCenterX||this.x);
+      if(Math.abs(dxp)>70*SR){
+        this.x=(this.thunderPrisonCenterX||this.x)+Math.sign(dxp)*70*SR;
+        spawnHitEffect(this.x,this.y-60,"#FFFFFF");
+        screenShake=Math.max(screenShake,6);
+      }
+      if(this.thunderPrisonTimer%20===0)applyDamage(this,3,this._thunderPrisonCaster);
+    }
     if(this.transformWindupTimer>0){
-      // Stand perfectly still and float upward while the V4 transformation charges up.
+      // 3-phase V4 transform: rise (2s), hover+burst (2s), descend (1.5s)
       this.transformWindupTimer--;
       this._windupFloorY=floorY;
-      const capY=floorY-72;
-      this.y-=1.7;
-      if(this.y<capY)this.y=capY;
+      const remaining=this.transformWindupTimer;
+      const total=360;
+      if(remaining>240){
+        // Phase 1: Rise up slowly (frames 360->240, ~2s)
+        this.y-=1.8;
+        if(this.y<floorY-160)this.y=floorY-160;
+      }else if(remaining>90){
+        // Phase 2: Hover in air with elemental burst (frames 240->90, ~2.5s)
+        // Gentle bobbing motion while hovering
+        this.y=floorY-160+Math.sin(frameCount*0.08)*3;
+      }else{
+        // Phase 3: Descend (frames 90->0, ~1.5s)
+        this.y+=3.2;
+        // Use the actual ground level at current x (accounts for terrain dips)
+        const actualFloor = this._windupFloorY;
+        if(this.y>=actualFloor){this.y=actualFloor;this.transformWindupTimer=0;this._finalizeTransform(actualFloor);return;}
+      }
       this.vy=0;this.onGround=false;
-      if(this.transformWindupTimer===0)this._finalizeTransform(floorY);
+      // If windup reaches 0 but we haven't landed yet, finalize anyway
+      if(this.transformWindupTimer===0&&this.y>=this._windupFloorY-5)this._finalizeTransform(this._windupFloorY);
+      return;
+    }
+    if(this.transformLandingTimer>0){
+      this.transformLandingTimer--;
+      this.vy=0; // Không dùng trọng lực bình thường
+      this.y+=3.5; // Đáp xuống từ từ
+      if(this.y>=floorY){this.y=floorY;this.transformLandingTimer=0;this.onGround=true;}
       return;
     }
     if(this.transformActive&&this.charType==="frost"&&this.isFlying){
@@ -730,23 +768,43 @@ class Fighter {
   // the moment the powerful 20-ray spark explosion happens and the V4 skin
   // actually switches on.
   _finalizeTransform(floorY){
-    this.y=floorY;this.vy=0;this.onGround=true;
+    this.transformLandingTimer=30;
     this.transformActive=true;this.transformTimer=600;this.attackCooldown=20;
     const buffs=this.getTransformBuffs();
     if(this.charType==="frost")this.isFlying=buffs.can_fly||false;
     if(this.charType==="shadow")this.v4LifestealPct=buffs.lifesteal||0;
     if(this.charType==="red"){this.v4InvisScheduled=true;this.transformInvisActive=false;this.transformInvisTimer=0;}
-    if(this.charType==="earth")this.ghostHp=130;
-    this.transformBurstTimer=30;
-    screenShake=Math.max(screenShake,26);
+    if(this.charType==="earth"){this.ghostHp=130;this._earthRockArmor=true;this._earthRockTimer=0;this._earthRockAngle=0;}
+    this.transformBurstTimer=25;
+    screenShake=Math.max(screenShake,12);
     const _tCol=this.charType==="red"?"#00AEFF":(ELEMENT_COLORS[this.charType]||"white");
     sfxExplosion();
-    const _rays=20; // "tia lửa cực mạnh 20 dạng sóng" — 20 strong spark rays bursting outward
-    for(let i=0;i<_rays;i++){
-      const ang=(i/_rays)*Math.PI*2,spd=rng()*7+12;
-      hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-4,life:44,maxLife:44,particle:true,color:_tCol});
+    // 12 spark rays bursting outward (reduced from 30)
+    for(let i=0;i<12;i++){
+      const ang=(i/12)*Math.PI*2,spd=rng()*6+8;
+      hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-5,life:35,maxLife:35,particle:true,color:_tCol});
     }
-    for(let i=0;i<24;i++){const ang=rng()*Math.PI*2,spd=rng()*7+3;hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:36,maxLife:36,particle:true,color:_tCol});}
+    // Ground shockwave ring (reduced size)
+    hitEffects.push({x:this.x,y:this.y,life:25,maxLife:25,color:_tCol,ring:true,big:true});
+    hitEffects.push({x:this.x,y:this.y,life:35,maxLife:35,color:"white",ring:true,big:true,delay:5});
+    // Element-specific landing burst (reduced counts)
+    if(this.charType==="red"){
+      for(let i=0;i<10;i++){const fx=this.x+rndInt(-60,60),fy=this.y+rndInt(-10,20);hitEffects.push({x:fx,y:fy,vx:(rng()-0.5)*2,vy:-rng()*4-2,life:30,maxLife:30,particle:true,color:rndChoice(["#FF6600","#FF4400","orange","yellow"])});}
+    }else if(this.charType==="earth"){
+      for(let i=0;i<12;i++){const ang=Math.PI+(rng()-0.5)*Math.PI,spd=rng()*6+3;hitEffects.push({x:this.x+rndInt(-40,40),y:this.y,vx:Math.cos(ang)*spd,vy:-Math.abs(Math.sin(ang))*spd-1,life:35,maxLife:35,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#4a3524","#c68a4a"])});}
+      for(let i=0;i<5;i++){const cx=this.x+(i-2)*25;hitEffects.push({x:cx,y:this.y,life:35,maxLife:35,particle:true,color:"#4a3524",vx:(rng()-0.5)*0.8,vy:-0.2});}
+    }else if(this.charType==="thunder"){
+      for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*5+3;hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:25,maxLife:25,particle:true,color:rndChoice(["#FFD700","white","#FFF176"])});}
+      for(let i=0;i<3;i++){spawnLightningArc(this.x+rndInt(-80,80),this.y-150,this.x+rndInt(-30,30),this.y-40);}
+    }else if(this.charType==="frost"){
+      for(let i=0;i<10;i++){const ang=rng()*Math.PI*2,spd=rng()*4+2;hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1,life:30,maxLife:30,particle:true,color:rndChoice(["white","#AEEBFF","cyan"])});}
+    }else if(this.charType==="water"){
+      for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*5+3;hitEffects.push({x:this.x,y:this.y-40,vx:Math.cos(ang)*spd,vy:-Math.abs(Math.sin(ang))*spd-1,life:30,maxLife:30,particle:true,color:rndChoice(["aqua","dodgerblue","white"])});}
+    }else if(this.charType==="wind"){
+      for(let i=0;i<8;i++){const ang=(i/8)*Math.PI*2,spd=rng()*7+4;hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:30,maxLife:30,particle:true,color:rndChoice(["#90EE90","white","#CCFFCC"])});}
+    }
+    // Secondary particles (reduced)
+    for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*3+1;hitEffects.push({x:this.x,y:this.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1,life:20,maxLife:20,particle:true,color:_tCol});}
   }
   jump(){
     if(this.stunTimer>0||this.transformWindupTimer>0)return;
@@ -761,13 +819,13 @@ class Fighter {
   getTransformBuffs(){
     if(!this.transformActive)return{};
     switch(this.charType){
-      case"red":    return{dmg_mult:1.5,speed:1.2};
-      case"shadow": return{dmg_mult:1.6,lifesteal:0.25,speed:1.3};
-      case"thunder":return{dmg_mult:1.4,speed:1.5};
-      case"frost":  return{dmg_mult:1.3,can_fly:true};
-      case"water":  return{dmg_mult:1.3,shield_regen:3};
-      case"earth":  return{dmg_mult:1.4,slow_aura:true};
-      case"wind":   return{dmg_mult:1.2,speed:2.0};
+      case"red":    return{dmg_mult:1.15,speed:1.2};
+      case"shadow": return{dmg_mult:1.2,lifesteal:0.15,speed:1.3};
+      case"thunder":return{dmg_mult:1.1,speed:1.5};
+      case"frost":  return{dmg_mult:1.1,can_fly:true};
+      case"water":  return{dmg_mult:1.1,shield_regen:1.5};
+      case"earth":  return{dmg_mult:1.25,speed:0.9,slow_aura:true};
+      case"wind":   return{dmg_mult:1.05,speed:2.0};
     }
     return{};
   }
@@ -786,20 +844,22 @@ class Fighter {
     this.animFrame++;
     const COLOR_MAP={red:"red",shadow:"#551a8b",thunder:"gold",frost:"deepskyblue",earth:"sienna",water:"dodgerblue",wind:"#90EE90"};
     const isRedV4=this.charType==="red"&&this.transformActive;
-    let cFill=isRedV4?"#FF6644":(COLOR_MAP[this.charType]||"white"); // body glows brighter/hotter while V4 is active
+    const isThunderV4=this.charType==="thunder"&&this.transformActive;
+    let cFill=isRedV4?"#FF6644":(isThunderV4?THUNDER_WHITE:(COLOR_MAP[this.charType]||"white")); // body glows brighter/hotter while V4 is active
     const rx=this.x+ox,ry=this.y+oy-52;
     let cOut;
     if(this.stunTimer>0)cOut="orange";
     else if(this.slowTimer>0)cOut="deepskyblue";
     else if(isRedV4)cOut="#00CFFF"; // glowing blue outline while transformed
+    else if(isThunderV4)cOut=THUNDER_GOLD; // glowing gold outline while transformed
     else cOut=this.isAttacking?"cyan":"white";
-    // Leave a blue afterimage behind on every running step while V4 is active
-    if(isRedV4&&this.onGround){
+    // Leave a blue/gold afterimage behind on every running step while V4 is active
+    if((isRedV4||isThunderV4)&&this.onGround){
       if(this._lastX===undefined)this._lastX=this.x;
       const moved=this.x-this._lastX;
       this._runTrailTick=(this._runTrailTick||0)+1;
       if(Math.abs(moved)>1.2&&this._runTrailTick%5===0){
-        this.afterImages.push({x:this.x,y:this.y,dir:this.direction,life:14,maxLife:14,color:"#00AEFF"});
+        this.afterImages.push({x:this.x,y:this.y,dir:this.direction,life:14,maxLife:14,color:isThunderV4?THUNDER_GOLD:"#00AEFF"});
       }
     }
     this._lastX=this.x;
@@ -807,10 +867,11 @@ class Fighter {
     this._drawLivingAura(rx,ry);
     this._drawAmbientFX(rx,ry);
     if(isRedV4){ctx.save();ctx.shadowColor="#00AEFF";ctx.shadowBlur=16;}
+    else if(isThunderV4){ctx.save();ctx.shadowColor=THUNDER_GOLD;ctx.shadowBlur=18;}
     _rect(rx-28,ry,56,52,cFill,cOut,2);
     _rect(rx-12,ry-20,24,20,cFill,cOut,1);
     _rect(rx-20,ry-60,40,40,cFill,cOut,2);
-    if(isRedV4)ctx.restore();
+    if(isRedV4||isThunderV4)ctx.restore();
     const eyeX=rx+(10*this.direction);
     _oval(eyeX-3,ry-44,6,6,this.charType==="shadow"?"red":"white",null);
     let hatFill="black";
@@ -818,7 +879,14 @@ class Fighter {
     _rect(rx-24,ry-74,48,10,"black",cOut,1);
     _rect(rx-16,ry-82,32,8,"black",cOut,1);
     _rect(rx-8,ry-88,16,6,"black",cOut,1);
-    if(this.transformWindupTimer>0) _text(rx,ry-105,this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":"⚡ ĐANG BIẾN HÌNH ⚡","white","9px Arial bold");
+    if(this.transformWindupTimer>0){
+      const _windupProg=1-(this.transformWindupTimer/360);
+      const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
+      _text(rx,ry-105,_windupText,"white","9px Arial bold");
+      // Show phase indicator (timing: rise 0-0.33, hover 0.33-0.75, descend 0.75-1.0)
+      const _phase=_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống";
+      _text(rx,ry-115,`[${_phase}]`,"#aaa","7px Arial");
+    }
     else if(this.stunTimer>0) _text(rx,ry-105,"⛓ STUNNED ⛓","orange","9px Arial bold");
     else if(this.slowTimer>0) _text(rx,ry-105,"❄️ SLOWED ❄️","deepskyblue","9px Arial bold");
     if(this.charType==="wind"&&this.windBoostTimer>0){
@@ -859,21 +927,97 @@ class Fighter {
   // and upward around the still-frozen, rising fighter, building in intensity
   // until the moment it detonates into the finishing spark explosion.
   _drawTransformWindup(rx,ry){
-    const af=this.animFrame,total=48,t=Math.max(0,this.transformWindupTimer),age=total-t,prog=age/total;
+    const af=this.animFrame,total=360,t=Math.max(0,this.transformWindupTimer),age=total-t,prog=age/total;
     const _h=this.charType==="red";
     const col=_h?"#00AEFF":(ELEMENT_COLORS[this.charType]||"#FFAA33");
     const glow=_h?"#AEEFFF":"#FFEE99";
     if(_h&&!this._windupCrackled&&prog>0.4){this._windupCrackled=true;sfxFireCrackle();}
     if(t===0)this._windupCrackled=false;
+    if(this.charType==="thunder"){
+      // THUNDER V4 WINDUP: screen dims, sky-bolts crash down around the
+      // fighter as they rise, then one huge column of lightning strikes them.
+      ctx.save();
+      // Draw outside camera context for full screen coverage
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.globalAlpha=Math.min(0.5,prog*0.6);ctx.fillStyle="#000010";ctx.fillRect(0,0,W,H);
+      ctx.restore();
+      if(!this._windupBolts||af%6===0){
+        this._windupBolts=[];
+        for(let b=0;b<4;b++){const sx=rx+rndInt(-220,220);this._windupBolts.push({x:sx,y0:ry-320,y1:ry-30});}
+      }
+      this._windupBolts.forEach(b=>{
+        ctx.save();ctx.globalAlpha=0.8;ctx.strokeStyle="white";ctx.shadowColor="#FFD700";ctx.shadowBlur=16;ctx.lineWidth=3;
+        ctx.beginPath();let cy3=b.y0,cx3=b.x;ctx.moveTo(cx3,cy3);
+        while(cy3<b.y1){cx3+=rndInt(-16,16);cy3+=rndInt(20,40);ctx.lineTo(cx3,cy3);}
+        ctx.stroke();ctx.restore();
+      });
+      if(prog>0.5){
+        // giant strike column right on top of the fighter as the windup finishes
+        // Cải tiến: tia sét tụ lại rồi phình to gấp 3 (từ prog 0.5 đến 1.0)
+        const boltProg = (prog - 0.5) / 0.5; // 0.0 -> 1.0
+        const baseWidth = 4;
+        const targetWidth = 30; // To gấp 3 lần bình thường (10 * 3)
+        const currentWidth = baseWidth + (targetWidth - baseWidth) * boltProg;
+        
+        ctx.save();
+        ctx.globalAlpha=Math.min(1, boltProg * 1.5);
+        ctx.strokeStyle="white";ctx.shadowColor="white";ctx.shadowBlur=30 + boltProg * 20;
+        ctx.lineWidth=currentWidth;
+        ctx.beginPath();ctx.moveTo(rx+rndInt(-4,4),ry-600);ctx.lineTo(rx,ry-30);ctx.stroke();
+        
+        ctx.strokeStyle="#FFD700";
+        ctx.lineWidth=currentWidth * 0.4;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    // Earth-specific windup: ground cracks and rocks fly toward the character
+    if(this.charType==="earth"){
+      ctx.save();ctx.setTransform(1,0,0,1,0,0);
+      // Screen shake intensifies during earth windup
+      if(prog>0.3)screenShake=Math.max(screenShake,15);
+      // Ground cracking effect
+      if(prog>0.2&&af%8===0){
+        for(let c=0;c<3;c++){
+          const cx=rx+rndInt(-200,200),cy=ry+52+rndInt(-5,5);
+          hitEffects.push({x:cx,y:cy,life:30,maxLife:30,particle:true,color:"#4a3524",vx:(rng()-0.5)*0.5,vy:-rng()*0.3});
+        }
+      }
+      // Rocks being sucked toward the character
+      const rockCount=Math.floor(prog*15)+3;
+      for(let i=0;i<rockCount;i++){
+        const ang=(af*3+i*24)*Math.PI/180;
+        const dist2=180-(prog*160)+Math.sin(af*0.1+i)*20;
+        const rsx=rx+Math.cos(ang)*dist2,rsy=ry-20+Math.sin(ang)*dist2*0.4;
+        const rs=rndInt(4,12);
+        ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=6;
+        ctx.fillStyle=rndChoice(["#8a6a4a","#6a4a2a","#7a5a3a"]);ctx.strokeStyle="#3a2518";ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(rsx-rs,rsy+rs*0.5);ctx.lineTo(rsx-rs*0.3,rsy-rs*0.7);ctx.lineTo(rsx+rs*0.5,rsy-rs*0.8);ctx.lineTo(rsx+rs,rsy);ctx.lineTo(rsx+rs*0.4,rsy+rs*0.6);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.restore();
+      }
+      // As prog increases, rocks merge into armor
+      if(prog>0.7){
+        const mergeAlpha=(prog-0.7)/0.3;
+        for(let i=0;i<8;i++){
+          const ang=(af*5+i*45)*Math.PI/180;
+          const mdist=60*(1-prog)+20;
+          const mx=rx+Math.cos(ang)*mdist,my=ry-20+Math.sin(ang)*mdist*0.5;
+          ctx.save();ctx.globalAlpha=mergeAlpha*0.8;
+          _oval(mx-6,my-6,12,12,"#8a6a4a","#4a3524",1);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
     ctx.save();
     ctx.globalAlpha=0.55+prog*0.4;
     ctx.shadowColor=glow;ctx.shadowBlur=14+prog*20;
-    for(let i=0;i<10;i++){
-      const spinSpeed=6+prog*10;
-      const ang=(af*spinSpeed+i*36)*Math.PI/180;
-      const rad=(1-prog)*90+8;
+    for(let i=0;i<12;i++){
+      const spinSpeed=4+prog*6;
+      const ang=(af*spinSpeed+i*30)*Math.PI/180;
+      const rad=(1-prog)*100+12;
       const px=rx+rad*Math.cos(ang);
-      const py=ry-15+rad*Math.sin(ang)*0.6-prog*30;
+      const py=ry-15+rad*Math.sin(ang)*0.6-prog*40;
       const s=3+prog*4;
       _oval(px-s,py-s,s*2,s*2,i%2===0?col:glow,null);
     }
@@ -893,6 +1037,55 @@ class Fighter {
       ctx.fillRect(ax-20,ay-60,40,40);
       ctx.restore();
     });
+  }
+  // Detailed rotating aura ring for the fire fighter's V4 transform. The
+  // fighter stays fixed at the exact center of the ring while it continuously
+  // and slowly spins, with an inner counter-rotating ring and 16 tick/rune
+  // marks for a layered, "ngầu" magic-circle look.
+  _drawHellRing(cx,cy,hell){
+    const outerCol=hell?"#00AEFF":"#FF5500";
+    const glowCol =hell?"#66E0FF":"#FFCC33";
+    this._drawEnergyRing(cx,cy,outerCol,glowCol);
+  }
+  _drawEnergyRing(cx,cy,outerCol,glowCol){
+    const af=this.animFrame;
+    if(this._ringAngle===undefined)this._ringAngle=0;
+    this._ringAngle=(this._ringAngle+0.45)%360; // slow continuous rotation
+    const rot1=this._ringAngle*Math.PI/180;
+    const rot2=-this._ringAngle*1.7*Math.PI/180;
+    ctx.save();
+    ctx.translate(cx,cy);
+    // outer solid ring
+    ctx.rotate(rot1);
+    ctx.strokeStyle=outerCol;ctx.lineWidth=3;
+    ctx.shadowColor=glowCol;ctx.shadowBlur=18;
+    ctx.beginPath();ctx.ellipse(0,0,98,68,0,0,Math.PI*2);ctx.stroke();
+    // 16 rotating tick/rune marks around the outer ring
+    for(let i=0;i<16;i++){
+      const a=(i/16)*Math.PI*2;
+      const rxo=98,ryo=68;
+      const x1=Math.cos(a)*rxo,y1=Math.sin(a)*ryo;
+      const x2=Math.cos(a)*(rxo+ (i%4===0?14:8)),y2=Math.sin(a)*(ryo+(i%4===0?10:6));
+      ctx.strokeStyle=i%4===0?glowCol:outerCol;
+      ctx.lineWidth=i%4===0?3:1.5;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    }
+    ctx.rotate(-rot1);
+    // inner dashed ring, counter-rotating for a layered "double ring" effect
+    ctx.rotate(rot2);
+    ctx.strokeStyle=glowCol;ctx.lineWidth=2;ctx.setLineDash([9,7]);
+    ctx.beginPath();ctx.ellipse(0,0,78,54,0,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.rotate(-rot2);
+    ctx.restore();
+    // faint pulsing energy particles orbiting along the ring
+    for(let i=0;i<6;i++){
+      const a=((af*3+i*60)%360)*Math.PI/180;
+      const px=cx+Math.cos(a)*98,py=cy+Math.sin(a)*68;
+      ctx.save();ctx.globalAlpha=0.8;
+      _oval(px-3,py-3,6,6,glowCol,null);
+      ctx.restore();
+    }
   }
   _drawLivingAura(rx,ry){
     const col=(this.charType==="red"&&this.transformActive)?"#00AEFF":(ELEMENT_COLORS[this.charType]||"white");
@@ -965,14 +1158,20 @@ class Fighter {
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.8;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,"white",null);ctx.restore();});
     }
     else if(this.charType==="earth"){
-      if(!amb.rocks)amb.rocks=[0,1,2].map(i=>({ang:i*120,r:rndInt(34,42)}));
+      // Rocks orbiting faster and more dynamically
+      if(!amb.rocks)amb.rocks=[0,1,2,3].map(i=>({ang:i*90,r:rndInt(34,46),s:rndInt(4,8)}));
       amb.rocks.forEach(rk=>{
-        rk.ang+=0.7;
+        rk.ang+=1.2;
         const rrx=rx+Math.cos(rk.ang*Math.PI/180)*rk.r,rry=ry-20+Math.sin(rk.ang*Math.PI/180)*rk.r*0.5;
-        ctx.save();ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#4a3524";ctx.lineWidth=1;
-        ctx.beginPath();ctx.moveTo(rrx-6,rry+4);ctx.lineTo(rrx,rry-5);ctx.lineTo(rrx+6,rry+4);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=4;
+        ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#4a3524";ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(rrx-rk.s,rry+rk.s*0.5);ctx.lineTo(rrx-rk.s*0.4,rry-rk.s*0.6);ctx.lineTo(rrx+rk.s*0.3,rry-rk.s*0.7);ctx.lineTo(rrx+rk.s,rry);ctx.lineTo(rrx+rk.s*0.5,rry+rk.s*0.6);ctx.closePath();ctx.fill();ctx.stroke();
         ctx.restore();
       });
+      // Extra dust particles floating around
+      if(rng()<0.4&&amb.parts.length<12)amb.parts.push({x:rx+rndInt(-30,30),y:ry+rndInt(-10,20),vy:-rng()*0.3-0.1,vx:(rng()-0.5)*0.4,life:25,maxLife:25,r:rndInt(2,4)});
+      amb.parts=amb.parts.filter(p=>p.life>0);
+      amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.6;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#c68a4a","#a67c52","#8a6a4a","#6a4a2a"]),null);ctx.restore();});
     }
     else if(this.charType==="water"){
       if(rng()<0.3&&amb.parts.length<8)amb.parts.push({x:rx+rndInt(-24,24),y:ry-10,vy:-rng()*0.5-0.2,life:26,maxLife:26,r:rndInt(2,4)});
@@ -1127,16 +1326,51 @@ class Fighter {
     else if(sk==="frost_s3"){_text(rx,ry-110,"❄️ FROZEN DOMAIN ❄️","deepskyblue","10px Arial bold");}
     else if(sk==="frost_s4"){_text(rx,ry-110,"🧊 ICE PRISON 🧊","deepskyblue","10px Arial bold");}
     else if(sk==="earth_s1"){
-      _text(rx,ry-110,"🧱 GAI ĐẤT TRỖI DẬY 🧱","burlywood","10px Arial bold");
-      for(let i=0;i<8;i++){
-        const ang=(i/8)*Math.PI*2,sr=rndInt(40,85),sx2=rx+Math.cos(ang)*sr,sy2=ry+Math.sin(ang)*sr*0.35;
-        const spH=rndInt(24,42);
-        ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#4a3524";ctx.lineWidth=2;
-        ctx.beginPath();ctx.moveTo(sx2-8,sy2);ctx.lineTo(sx2,sy2-spH);ctx.lineTo(sx2+8,sy2);ctx.closePath();ctx.fill();ctx.stroke();
+      _text(rx,ry-115,"🗿 EARTH BOULDER 🗿","burlywood","10px Arial bold");
+      // Show the boulder being thrown from the character
+      const throwX=rx+60*this.direction,throwY=ry-55;
+      ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=12;
+      // Boulder
+      _oval(throwX-22,throwY-22,44,44,"#6a4a2a","#4a3524",2);
+      _oval(throwX-16,throwY-16,32,32,"#8a6a4a",null);
+      _oval(throwX-10,throwY-10,20,20,"#a67c52",null);
+      // Cracks
+      ctx.strokeStyle="#3a2518";ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(throwX-10,throwY-12);ctx.lineTo(throwX+8,throwY-5);ctx.lineTo(throwX+3,throwY+8);ctx.stroke();
+      ctx.restore();
+      // Debris particles
+      for(let i=0;i<6;i++){const dx=rndInt(-30,30),dy=rndInt(-30,10),s=rndInt(3,7);_oval(throwX+dx-s,throwY+dy-s,s*2,s*2,rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"]),null);}
+      // Motion lines showing throw direction
+      ctx.strokeStyle="rgba(198,138,74,0.5)";ctx.lineWidth=3;
+      for(let i=0;i<4;i++){const lx=rx+(30+i*12)*this.direction,ly=ry-50+rndInt(-8,8);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx+15*this.direction,ly);ctx.stroke();}
+    }
+    else if(sk==="earth_s2"){
+      _text(rx,ry-115,"🛡️ THẠCH GIÁP BẤT DIỆT 🛡️","peru","10px Arial bold");
+      ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=12;
+      // Armor plates appearing around character
+      for(let i=0;i<6;i++){
+        const ang=(i/6)*Math.PI*2;
+        const ax=rx+Math.cos(ang)*55,ay=ry-20+Math.sin(ang)*45;
+        _oval(ax-10,ay-8,20,16,"#8a6a4a","#4a3524",2);
+      }
+      ctx.restore();
+      // Shield glow
+      ctx.save();ctx.globalAlpha=0.3;ctx.fillStyle="#c68a4a";
+      ctx.beginPath();ctx.ellipse(rx,ry-20,50,70,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+    else if(sk==="earth_s3"){
+      _text(rx,ry-115,"🌵 CỘT ĐÁ PHẢN ĐÒN 🌵","gold","10px Arial bold");
+      // Spikes around the character
+      for(let i=0;i<10;i++){
+        const ang=(i/10)*Math.PI*2,sr=50+Math.sin(af*0.1+i)*10;
+        const sx=rx+Math.cos(ang)*sr,sy=ry-10+Math.sin(ang)*sr*0.4;
+        ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=6;
+        ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#4a3524";ctx.lineWidth=1.5;
+        ctx.beginPath();ctx.moveTo(sx-5,sy+15);ctx.lineTo(sx,sy-15);ctx.lineTo(sx+5,sy+15);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.restore();
       }
     }
-    else if(sk==="earth_s2"){_text(rx,ry-110,"🛡️ CƯỜNG HÓA THẠCH GIÁP 🛡️","peru","10px Arial bold");_rectOutline(rx-45,ry-65,90,130,"saddlebrown",3);}
-    else if(sk==="earth_s3"){_text(rx,ry-110,"🌵 STONE SPIKES 🌵","gold","10px Arial bold");}
     else if(sk==="water_s1"){_text(rx,ry-110,"💧 WATER BULLET 💧","aqua","11px Arial bold");}
     else if(sk==="water_s2"){_text(rx,ry-110,"🛡️ AQUA SHIELD 🛡️","cyan","11px Arial bold");}
     else if(sk==="water_s3"){
@@ -1183,14 +1417,21 @@ class Fighter {
     }
   }
   _drawEarthBuff(rx,ry){
-    const af=this.animFrame,pulse=Math.sin(af*0.2)*4;
-    ctx.save();ctx.strokeStyle="#c68a4a";ctx.lineWidth=3;ctx.shadowColor="#8a5a2a";ctx.shadowBlur=10;
-    ctx.beginPath();ctx.ellipse(rx,ry-20,58+pulse,82+pulse,0,0,Math.PI*2);ctx.stroke();
-    for(let i=0;i<6;i++){const ang=(af*3+i*60)*Math.PI/180,rr=60,px2=rx+Math.cos(ang)*rr,py2=ry-20+Math.sin(ang)*rr*0.9,ss=5;
-      ctx.fillStyle="#a97a45";ctx.beginPath();ctx.moveTo(px2,py2-ss);ctx.lineTo(px2+ss,py2+ss);ctx.lineTo(px2-ss,py2+ss);ctx.closePath();ctx.fill();
+    const af=this.animFrame,pulse=Math.sin(af*0.15)*6;
+    ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=14;
+    // Outer rock shell
+    ctx.strokeStyle="#8a6a4a";ctx.lineWidth=4;
+    ctx.beginPath();ctx.ellipse(rx,ry-20,62+pulse,86+pulse,0,0,Math.PI*2);ctx.stroke();
+    // Inner glow
+    ctx.strokeStyle="#c68a4a";ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(rx,ry-20,55+pulse,78+pulse,0,0,Math.PI*2);ctx.stroke();
+    // Rock fragments orbiting
+    for(let i=0;i<8;i++){const ang=(af*4+i*45)*Math.PI/180,rr=65+pulse,px2=rx+Math.cos(ang)*rr,py2=ry-20+Math.sin(ang)*rr*0.9;
+      const rs=rndInt(4,8);ctx.fillStyle="#a97a45";ctx.strokeStyle="#4a3524";ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(px2,py2-rs);ctx.lineTo(px2+rs,py2+rs*0.5);ctx.lineTo(px2-rs,py2+rs*0.5);ctx.closePath();ctx.fill();ctx.stroke();
     }
     ctx.restore();
-    _text(rx,ry-108,`🛡️ -70% ST (${Math.ceil(this.dmgReduceTimer/60)}s)`,"#e0b070","8px Arial bold");
+    _text(rx,ry-108,`🛡️ GIÁP ĐÁ -70% (${Math.ceil(this.dmgReduceTimer/60)}s)`,"#e0b070","8px Arial bold");
   }
   _drawWaterCloud(rx,ry){
     const cloudY=ry-138;
@@ -1248,8 +1489,22 @@ class Fighter {
       ctx.restore();
     }
     else if(this.activeSkill==="thunder_s4"){
-      if(af%10===0){this.lightningBolts=[];for(let b=0;b<3;b++){let sx=rx+rndInt(-400,400),pts=[sx,0],cx=sx,cy=0;while(cy<ry+100){cy+=rndInt(50,100);cx+=rndInt(-40,40);pts.push(cx,cy);}this.lightningBolts.push(pts);}}
-      this.lightningBolts.forEach(bolt=>{ctx.strokeStyle="lightyellow";ctx.lineWidth=4;ctx.beginPath();for(let i=0;i<bolt.length;i+=2){i===0?ctx.moveTo(bolt[i],bolt[i+1]):ctx.lineTo(bolt[i],bolt[i+1]);}ctx.stroke();});
+      // THUNDER GOD JUDGMENT: sky darkens, ~30-50 white-gold bolts crash down
+      // across the whole arena for the duration of the ulti.
+      ctx.save();
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.globalAlpha=0.30;ctx.fillStyle="#050508";ctx.fillRect(0,0,W,H);
+      ctx.restore();
+      _text(rx,ry-150,"⚡ THUNDER GOD JUDGMENT ⚡","white","12px Arial bold");
+      if(af%4===0){this.lightningBolts=[];for(let b=0;b<5;b++){let sx=rx+rndInt(-520,520),pts=[sx,0],cx=sx,cy=0;while(cy<ry+100){cy+=rndInt(50,100);cx+=rndInt(-40,40);pts.push(cx,cy);}this.lightningBolts.push(pts);}}
+      this.lightningBolts.forEach(bolt=>{
+        ctx.save();ctx.shadowColor="#FFD700";ctx.shadowBlur=22;
+        ctx.strokeStyle="#FFFFFF";ctx.lineWidth=5;ctx.beginPath();for(let i=0;i<bolt.length;i+=2){i===0?ctx.moveTo(bolt[i],bolt[i+1]):ctx.lineTo(bolt[i],bolt[i+1]);}ctx.stroke();
+        ctx.strokeStyle="#FFD700";ctx.lineWidth=2;ctx.stroke();
+        ctx.restore();
+        const bx=bolt[bolt.length-2],by=bolt[bolt.length-1];
+        _oval(bx-30,by-14,60,28,"rgba(255,215,0,0.35)",null);
+      });
     }
     else if(this.activeSkill==="frost_s4"){
       ctx.strokeStyle="deepskyblue";ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(rx,ry,450,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
@@ -1257,12 +1512,14 @@ class Fighter {
       this.rainDrops.forEach(sf=>{_oval(sf.x-sf.r,sf.y-sf.r,sf.r*2,sf.r*2,"white",null);sf.y+=rndInt(3,7);if(sf.y>this.y+80)sf.y=this.y-rndInt(100,400);});
     }
     else if(this.activeSkill==="earth_s4"){
-      _text(rx,ry-130,"🌋 EARTHQUAKE 🌋","chocolate","14px Arial bold");
-      const floorYY=H-230;
+      _text(rx,ry-130,"🌋 ĐỊA CHẤN CỰC ĐẠI 🌋","chocolate","14px Arial bold");
+      const floorYY=ry+52;
       if(!this.earthPillars||this.earthPillars.length===0){
         this.earthPillars=[['d',rx-175,30,140,0],['d',rx-140,25,100,0],['d',rx-105,25,70,0],['d',rx-70,22,45,0],['d',rx+70,22,45,0],['d',rx+105,25,70,0],['d',rx+140,25,100,0],['d',rx+175,30,140,0],['t',rx-160,27,110,0],['t',rx-120,22,85,0],['t',rx-80,20,55,0],['t',rx+80,20,55,0],['t',rx+120,22,85,0],['t',rx+160,27,110,0]];
       }
-      this.earthPillars.forEach(pp=>{const[type,px2,pw,pmaxH,_]=pp;if(pp[4]<pp[3])pp[4]+=pp[3]/15;const curH=pp[4];if(type==='d'){ctx.fillStyle="gray22";ctx.strokeStyle="burlywood";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2,floorYY);ctx.lineTo(px2-pw/2,floorYY-curH+10);ctx.lineTo(px2,floorYY-curH);ctx.lineTo(px2+pw/2,floorYY-curH+10);ctx.lineTo(px2+pw/2,floorYY);ctx.closePath();ctx.fill();ctx.stroke();}else{ctx.fillStyle="gray18";ctx.strokeStyle="peru";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2,0);ctx.lineTo(px2-pw/2,curH-10);ctx.lineTo(px2,curH);ctx.lineTo(px2+pw/2,curH-10);ctx.lineTo(px2+pw/2,0);ctx.closePath();ctx.fill();ctx.stroke();}});
+      this.earthPillars.forEach(pp=>{const[type,px2,pw,pmaxH,_]=pp;if(pp[4]<pp[3])pp[4]+=pp[3]/15;const curH=pp[4];const shake=pp[4]<pp[3]?Math.sin(af*0.5)*3:0;if(type==='d'){ctx.fillStyle="#5a4030";ctx.strokeStyle="#3a2518";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2+shake,floorYY);ctx.lineTo(px2-pw/2+shake,floorYY-curH+10);ctx.lineTo(px2+shake,floorYY-curH);ctx.lineTo(px2+pw/2+shake,floorYY-curH+10);ctx.lineTo(px2+pw/2+shake,floorYY);ctx.closePath();ctx.fill();ctx.stroke();}else{ctx.fillStyle="#4a3524";ctx.strokeStyle="#2a1a0a";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2+shake,0);ctx.lineTo(px2-pw/2+shake,curH-10);ctx.lineTo(px2+shake,curH);ctx.lineTo(px2+pw/2+shake,curH-10);ctx.lineTo(px2+pw/2+shake,0);ctx.closePath();ctx.fill();ctx.stroke();}});
+      // Dust from earthquake
+      if(af%3===0)for(let i=0;i<2;i++)hitEffects.push({x:rx+rndInt(-200,200),y:floorYY+rndInt(-5,5),vy:-rng()*1.5-0.3,vx:(rng()-0.5)*1,life:25,maxLife:25,smoke:true,r0:rndInt(5,10),color:rndChoice(["#c68a4a","#a67c52","#8a6a4a"])});
     }
     else if(this.activeSkill==="water_s4"){
       _text(rx,ry-155,"🌊 ĐẠI HỒNG THỦY - TSUNAMI 🌊","aqua","13px Arial bold");
@@ -1373,20 +1630,38 @@ class Fighter {
       _text(rx,ry-148,"😈 QUỶ V4 😈","#FF0066","9px Arial bold");
     }
     else if(t==="thunder"){
-      ctx.save();
-      ctx.fillStyle="#2a0a40";ctx.strokeStyle="#CC66FF";ctx.lineWidth=2;
-      ctx.beginPath();
-      ctx.moveTo(rx-20,ry-58);ctx.lineTo(rx+20,ry-58);ctx.lineTo(rx+17,ry-46);ctx.lineTo(rx+16,ry-40);
-      ctx.lineTo(rx+6,ry-36);ctx.lineTo(rx,ry-40);ctx.lineTo(rx-6,ry-36);ctx.lineTo(rx-16,ry-40);
-      ctx.lineTo(rx-17,ry-46);ctx.closePath();ctx.fill();ctx.stroke();
-      ctx.shadowColor="#EE88FF";ctx.shadowBlur=10;
-      ctx.fillStyle="#EE88FF";ctx.fillRect(rx-15,ry-52,30,5);
+      // ⚡ THUNDER GOD V4 — pure white + electric gold, no purple anywhere.
+      this._drawEnergyRing(rx,ry-15,THUNDER_WHITE,THUNDER_GOLD);
+      // Lightning-bolt wings made of jagged white/gold shards on the back
+      for(const side of[-1,1]){
+        ctx.save();ctx.shadowColor=THUNDER_GOLD;ctx.shadowBlur=14;
+        ctx.fillStyle="rgba(255,215,0,0.28)";ctx.strokeStyle=THUNDER_WHITE;ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.moveTo(rx+side*6,ry-40);
+        ctx.lineTo(rx+side*46,ry-88);ctx.lineTo(rx+side*30,ry-80);
+        ctx.lineTo(rx+side*70,ry-118);ctx.lineTo(rx+side*50,ry-108);
+        ctx.lineTo(rx+side*88,ry-70);ctx.lineTo(rx+side*58,ry-58);
+        ctx.lineTo(rx+side*72,ry-10);ctx.lineTo(rx+side*30,ry+10);
+        ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.restore();
+      }
+      // A crackling halo behind the head + glowing white eyes
+      ctx.save();ctx.shadowColor=THUNDER_WHITE;ctx.shadowBlur=14;
+      ctx.strokeStyle=THUNDER_GOLD;ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(rx,ry-68,20,0,Math.PI*2);ctx.stroke();
       ctx.restore();
-      _line(rx-20,ry-55,rx-29,ry-65,"#9933FF",2);_line(rx+20,ry-55,rx+29,ry-65,"#9933FF",2);
-      _oval(rx-31,ry-68,4,4,"#EE88FF",null);_oval(rx+27,ry-68,4,4,"#EE88FF",null);
-      for(let i=0;i<6;i++){const ang=(af*15+i*60)*Math.PI/180,db=100+rndInt(20,170),ex=rx+db*Math.cos(ang),ey=ry-10+(db*0.55)*Math.sin(ang),mx=(rx+ex)/2+rndInt(-28,28),my=(ry-10+ey)/2+rndInt(-20,20);ctx.strokeStyle=rndChoice(["#CC66FF","#EE88FF","#9933FF","white"]);ctx.lineWidth=rndChoice([1,1,2,2,3]);ctx.beginPath();ctx.moveTo(rx,ry-10);ctx.lineTo(mx,my);ctx.stroke();ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(ex,ey);ctx.stroke();_oval(ex-5,ey-5,10,10,"#EE88FF",null);}
-      for(let i=0;i<4;i++){const r2=90+i*55+Math.sin(af*0.1+i)*12;ctx.strokeStyle=["#CC66FF","#9933FF","#7700CC","#440088"][i];ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.beginPath();ctx.ellipse(rx,ry+5,r2,r2*0.5+10,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
-      _text(rx,ry-118,"⚡ NGƯỜI MÁY V4 ⚡","#CC66FF","9px Arial bold");
+      _oval(rx-9,ry-46,7,7,THUNDER_WHITE,null);_oval(rx+2,ry-46,7,7,THUNDER_WHITE,null);
+      // Continuous electric arcs running off the whole body — never purple
+      for(let i=0;i<6;i++){
+        const ang=(af*15+i*60)*Math.PI/180,db=100+rndInt(20,170),ex=rx+db*Math.cos(ang),ey=ry-10+(db*0.55)*Math.sin(ang),mx=(rx+ex)/2+rndInt(-28,28),my=(ry-10+ey)/2+rndInt(-20,20);
+        ctx.strokeStyle=rndChoice([THUNDER_GOLD,THUNDER_YELLOW,THUNDER_WHITE,THUNDER_ARC]);ctx.lineWidth=rndChoice([1,1,2,2,3]);
+        ctx.beginPath();ctx.moveTo(rx,ry-10);ctx.lineTo(mx,my);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(ex,ey);ctx.stroke();
+        _oval(ex-5,ey-5,10,10,THUNDER_GOLD,null);
+      }
+      // Ground-hugging static field rings
+      for(let i=0;i<4;i++){const r2=90+i*55+Math.sin(af*0.1+i)*12;ctx.strokeStyle=[THUNDER_WHITE,THUNDER_GOLD,THUNDER_YELLOW,THUNDER_ARC][i];ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.beginPath();ctx.ellipse(rx,ry+5,r2,r2*0.5+10,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+      _text(rx,ry-118,"⚡ THẦN SẤM V4 ⚡","white","9px Arial bold");
     }
     else if(t==="frost"){
       const flapAngle=Math.sin(af*0.18)*28;
@@ -1419,10 +1694,86 @@ class Fighter {
       _text(rx,ry-160,"🐉 RỒNG V4 🐉","deepskyblue","9px Arial bold");
     }
     else if(t==="earth"){
-      ctx.fillStyle="#0066CC";ctx.strokeStyle="#00AAFF";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(rx-12,ry-80);ctx.lineTo(rx,ry-125);ctx.lineTo(rx+12,ry-80);ctx.closePath();ctx.fill();ctx.stroke();
-      for(let i=0;i<8;i++){const ang=(af*6+i*45+rndInt(-10,10))*Math.PI/180,sr=50+rndInt(10,30),sx=rx+sr*Math.cos(ang)*0.8,sy2=ry-20+sr*Math.sin(ang)*0.5,ss=rndInt(8,20);_oval(sx-ss,sy2-ss,ss*2,ss*2,rndChoice(["#003399","#0044BB","#0055DD","#3399FF"]),null);}
-      if(this.ghostHp>0){const gbarW=Math.min(this.ghostHp/140,1)*80;_rect(rx-40,ry-145,80,10,"#333",null,0);_rect(rx-40,ry-145,gbarW,10,"#00AAFF",null,0);_text(rx,ry-155,`💙 ${Math.floor(this.ghostHp)}`,"#00AAFF","8px Arial bold");}
-      _text(rx,ry-168,"🐟 CÁ V4 🐟","#00AAFF","9px Arial bold");
+      // === EARTH V4: ROCK ARMOR Golem with floating rocks ===
+      // Initialize floating rock system if not exists
+      if(!this._earthRocks)this._earthRocks=[0,1,2,3,4,5,6,7].map(i=>({ang:i*45+af*0.3,r:60+rng()*30,offY:(rng()-0.5)*40,s:rndInt(8,16),speed:0.6+rng()*0.4}));
+      
+      // Main body: armored rock core
+      const armorPulse=Math.sin(af*0.08)*3;
+      // Back armor plates
+      ctx.save();ctx.shadowColor="#8a6a4a";ctx.shadowBlur=12;
+      _rect(rx-32,ry-68,64+armorPulse,58+armorPulse,"#6a4a2a","#4a3524",2);
+      _rect(rx-28,ry-52,56+armorPulse,42+armorPulse,"#7a5a3a","#4a3524",2);
+      // Left shoulder rock
+      ctx.fillStyle="#5a4030";ctx.strokeStyle="#3a2518";ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(rx-28,ry-55);ctx.lineTo(rx-52,ry-68);ctx.lineTo(rx-48,ry-40);ctx.lineTo(rx-30,ry-38);ctx.closePath();ctx.fill();ctx.stroke();
+      // Right shoulder rock
+      ctx.beginPath();ctx.moveTo(rx+28,ry-55);ctx.lineTo(rx+52,ry-68);ctx.lineTo(rx+48,ry-40);ctx.lineTo(rx+30,ry-38);ctx.closePath();ctx.fill();ctx.stroke();
+      // Arm armor
+      _rect(rx-42,ry-38,16,30,"#5a4030","#3a2518",1);
+      _rect(rx+26,ry-38,16,30,"#5a4030","#3a2518",1);
+      // Leg armor
+      _rect(rx-24,ry-18,18,22,"#5a4030","#3a2518",1);
+      _rect(rx+6,ry-18,18,22,"#5a4030","#3a2518",1);
+      // Face rock plate
+      _rect(rx-14,ry-62,28,22,"#7a5a3a","#4a3524",2);
+      ctx.restore();
+      
+      // Eyes glowing through the rock mask
+      _oval(rx-9,ry-56,6,5,"#FFAA33",null);
+      _oval(rx+3,ry-56,6,5,"#FFAA33",null);
+      
+      // Floating rocks orbiting around (must continuously move!)
+      this._earthRocks.forEach((rk,i)=>{
+        rk.ang+=rk.speed;
+        const rAngle=rk.ang*Math.PI/180;
+        const rBob=Math.sin(af*0.06+i*0.8)*8;
+        const sx=rx+Math.cos(rAngle)*rk.r;
+        const sy=ry-30+Math.sin(rAngle)*rk.r*0.45+rk.offY+rBob;
+        ctx.save();
+        ctx.shadowColor="#c68a4a";ctx.shadowBlur=8;
+        // Draw jagged rock shape
+        ctx.fillStyle=rndChoice(["#8a6a4a","#6a4a2a","#7a5a3a"]);
+        ctx.strokeStyle="#4a3524";ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.moveTo(sx-rk.s*0.8,sy+rk.s*0.5);
+        ctx.lineTo(sx-rk.s*0.4,sy-rk.s*0.7);
+        ctx.lineTo(sx+rk.s*0.3,sy-rk.s*0.9);
+        ctx.lineTo(sx+rk.s*0.9,sy-rk.s*0.1);
+        ctx.lineTo(sx+rk.s*0.5,sy+rk.s*0.7);
+        ctx.lineTo(sx-rk.s*0.2,sy+rk.s*0.6);
+        ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.restore();
+      });
+      
+      // Rock fragments trailing behind back (like Susanoo ribs)
+      ctx.save();ctx.shadowColor="#a67c52";ctx.shadowBlur=6;
+      for(let i=0;i<5;i++){
+        const backX=rx+i*6;
+        const backY=ry-70-i*14+Math.sin(af*0.07+i*1.2)*4;
+        const bw=14-i*2;
+        ctx.fillStyle="#5a4030";ctx.strokeStyle="#3a2518";ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(backX-bw/2,backY);ctx.lineTo(backX,backY-10);ctx.lineTo(backX+bw/2,backY);ctx.closePath();ctx.fill();ctx.stroke();
+      }
+      ctx.restore();
+      
+      // Dust particles around armor
+      if(af%4===0){
+        const dx=rndInt(-50,50),dy=rndInt(-70,20);
+        hitEffects.push({x:rx+dx,y:ry+dy,vx:(rng()-0.5)*0.6,vy:-rng()*0.4-0.1,life:20,maxLife:20,smoke:true,r0:rndInt(3,6),color:rndChoice(["#c68a4a","#a67c52","#8a6a4a"])});
+      }
+      
+      // Ground dust when walking
+      if(this.onGround&&Math.abs(this.x-this._lastX)>0.5){
+        if(af%6===0){
+          for(let i=0;i<3;i++){hitEffects.push({x:rx+rndInt(-20,20),y:ry+4,vy:-rng()*0.5-0.2,vx:(rng()-0.5)*0.8,life:18,maxLife:18,smoke:true,r0:rndInt(4,8),color:rndChoice(["#a67c52","#8a6a4a","#6a4a2a"])});}
+        }
+      }
+      
+      // Ghost HP bar
+      if(this.ghostHp>0){const gbarW=Math.min(this.ghostHp/140,1)*80;_rect(rx-40,ry-145,80,10,"#333",null,0);_rect(rx-40,ry-145,gbarW,10,"#c68a4a",null,0);_text(rx,ry-155,`🪨 ${Math.floor(this.ghostHp)}`,"#c68a4a","8px Arial bold");}
+      
+      _text(rx,ry-170,"🗿 THẦN THỔ V4 🗿","#c68a4a","10px Arial bold");
     }
     else if(t==="water"){
       for(const side of[-1,1]){ctx.fillStyle="#FFFFF0";ctx.strokeStyle="#FFD700";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx+side*5,ry-35);ctx.lineTo(rx+side*30,ry-48);ctx.lineTo(rx+side*43,ry-35);ctx.lineTo(rx+side*38,ry-10);ctx.lineTo(rx+side*20,ry+8);ctx.lineTo(rx+side*10,ry+5);ctx.closePath();ctx.fill();ctx.stroke();}
@@ -2284,6 +2635,9 @@ function getFrontWall(){const ahead=roadWalls.filter(w=>w.hp>0&&w.x>=p1.x-80);if
 function isPushable(t){return !(t instanceof RoadWall) && !(t instanceof RoadBoss);}
 function getRoadTarget(attacker){const cands=getAllEnemies(attacker);if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 function applyDamage(target,damage,attacker){
+  // THUNDER DASH IMMUNITY: while dashing as a bolt of lightning, the thunder
+  // fighter is immune to collisions/CC/pushback/damage for the ~0.3s dash.
+  if(target instanceof Fighter&&target.charType==="thunder"&&target.thunderDashTimer>0)return;
   if(attacker&&attacker.charType==="red")damage*=1.2;
   if(attacker&&attacker.charType==="frost"&&attacker.frostComboBonusPct>0){damage*=1+attacker.frostComboBonusPct;attacker.frostComboBonusPct=0;}
   if(attacker&&attacker.transformActive){const buffs=attacker.getTransformBuffs();damage*=buffs.dmg_mult||1;const ls=buffs.lifesteal||0;if(ls>0&&attacker.hp!==undefined)attacker.hp=Math.min(MAX_HP,attacker.hp+damage*ls);}
@@ -2291,6 +2645,19 @@ function applyDamage(target,damage,attacker){
     if(target.hp<=0)return;
     if(target.charType==="red"&&target.transformInvisActive)return;
     if(target.charType==="earth"&&target.ghostHp>0){target.ghostHp-=damage;if(target.ghostHp<0){const ov=-target.ghostHp;target.ghostHp=0;target.hp-=target.isShielding?ov*0.2:ov;target.hp=Math.max(0,target.hp);}return;}
+    // V4 EARTH INNATE: rock armor auto-block (20-30% chance when transformed)
+    if(target.charType==="earth"&&target.transformActive&&rng()<0.25){
+      // Rock plate shatters to absorb the hit
+      const reduced=damage*0.7;
+      target.hp-=target.isShielding?reduced*0.2:reduced;
+      target.hp=Math.max(0,target.hp);
+      // Rock shatter visual
+      spawnHitEffect(target.x,target.y-70,"#c68a4a");
+      for(let i=0;i<6;i++){const ang=rng()*Math.PI*2,spd=rng()*5+2;hitEffects.push({x:target.x,y:target.y-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:22,maxLife:22,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});}
+      hitEffects.push({x:target.x,y:target.y-50,life:15,maxLife:15,color:"#c68a4a",ring:true});
+      screenShake=Math.max(screenShake,5);
+      return;
+    }
     if(target.charType==="water"&&target.waterShieldHp>0){target.waterShieldHp-=damage;if(target.waterShieldHp<0){const ov=-target.waterShieldHp;target.waterShieldHp=0;target.hp-=target.isShielding?ov*0.2:ov;target.hp=Math.max(0,target.hp);}return;}
     if(target.charType==="earth"&&target.activeSkill==="earth_s3"&&attacker){const ref=damage*0.8;if(attacker.hp!==undefined)attacker.hp=Math.max(0,attacker.hp-(attacker.isShielding?ref*0.2:ref));return;}
     let finalDmg=damage;
@@ -2316,9 +2683,97 @@ function applyDamage(target,damage,attacker){
     }
   }
 }
+// ---- THUNDER: Chain Lightning ----
+// Fires a bolt from (x,y) to the nearest un-chained enemy, then keeps jumping
+// to the next nearest enemy (within CHAIN_RANGE) up to maxTargets total,
+// losing ~15% damage per jump. Draws a jagged bolt effect for each jump and
+// stops the moment no valid target remains in range.
+const CHAIN_RANGE=380;
+function chainLightning(attacker,fromX,fromY,damage,maxTargets=5,excludeFirst=null,customRange=null){
+  const hitSet=new Set();
+  let cx=fromX,cy=fromY,curDmg=damage,jumps=0;
+  if(excludeFirst)hitSet.add(excludeFirst);
+  const range = customRange || CHAIN_RANGE * SR;
+  while(jumps<maxTargets){
+    const cands=getAllEnemies(attacker).filter(t=>t&&t.hp>0&&!hitSet.has(t)&&dist(cx,cy,t.x,t.y)<range);
+    if(!cands.length)break;
+    const nextT=cands.reduce((a,b)=>dist(cx,cy,a.x,a.y)<dist(cx,cy,b.x,b.y)?a:b);
+    spawnLightningArc(cx,cy,nextT.x,nextT.y-40);
+    applyDamage(nextT,curDmg,attacker);
+    addShock(nextT,attacker);
+    hitSet.add(nextT);
+    cx=nextT.x;cy=nextT.y-40;
+    curDmg*=0.85; // 15% falloff per jump
+    jumps++;
+  }
+  return jumps;
+}
+let lightningArcs=[];
+function spawnLightningArc(x1,y1,x2,y2){
+  const pts=[x1,y1];let cx=x1,cy=y1;
+  const steps=6;
+  for(let i=1;i<=steps;i++){
+    const t=i/steps;
+    cx=x1+(x2-x1)*t+rndInt(-14,14);
+    cy=y1+(y2-y1)*t+rndInt(-14,14);
+    pts.push(cx,cy);
+  }
+  pts.push(x2,y2);
+  lightningArcs.push({pts,life:12,maxLife:12});
+}
+function updateAndDrawLightningArcs(){
+  lightningArcs=lightningArcs.filter(a=>a.life>0);
+  lightningArcs.forEach(a=>{
+    a.life--;
+    const alpha=Math.max(0,a.life/a.maxLife);
+    ctx.save();ctx.globalAlpha=alpha;ctx.shadowColor="#FFD700";ctx.shadowBlur=18;
+    ctx.strokeStyle="#FFFFFF";ctx.lineWidth=3;ctx.lineCap="round";
+    ctx.beginPath();for(let i=0;i<a.pts.length;i+=2){i===0?ctx.moveTo(a.pts[i],a.pts[i+1]):ctx.lineTo(a.pts[i],a.pts[i+1]);}ctx.stroke();
+    ctx.strokeStyle="#FFD700";ctx.lineWidth=1.5;ctx.stroke();
+    ctx.restore();
+  });
+}
+// ---- THUNDER: Shock Stack ----
+// Every hit from a thunder-type attacker builds a stack on the target; at 5
+// stacks it detonates (stun + launch + burst damage) and resets to 0.
+function addShock(target,attacker){
+  if(!attacker||attacker.charType!=="thunder")return;
+  if(!(target instanceof Fighter))return;
+  if(target.hp<=0)return;
+  target.shockStack=(target.shockStack||0)+1;
+  if(target.shockStack>=5){
+    target.shockStack=0;
+    applyDamage(target,18,attacker);
+    target.stunTimer=Math.max(target.stunTimer||0,50);
+    target.vy=-10;
+    screenShake=Math.max(screenShake,18);
+    spawnHitEffect(target.x,target.y-70,"#FFFFFF");
+    for(let i=0;i<16;i++){const ang=rng()*Math.PI*2,spd=rng()*5+2;hitEffects.push({x:target.x,y:target.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:26,maxLife:26,particle:true,color:rndChoice(["#FFD700","#FFF176","white"])});}
+  }
+}
 function aoeHit(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(Math.abs(tgt.x-attacker.x)<radius&&Math.abs(tgt.y-attacker.y)<radius*0.8)applyDamage(tgt,damage,attacker);});}
 function aoeHitAt(attacker,damage,cx,cy,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(Math.abs(tgt.x-cx)<radius&&Math.abs(tgt.y-cy)<radius*0.9)applyDamage(tgt,damage,attacker);});}
-function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
+// THUNDER GOD JUDGMENT (ultimate): instead of one flat continuous tick, the
+// map goes dark and ~30-50 individual lightning strikes crash down at random
+// spots for the duration; any enemy caught under a strike takes a real burst
+// of damage, gets knocked up, and leaves a brief lingering shock zone.
+function thunderJudgmentTick(attacker){
+  if(!(attacker.ultiTimer>0))return;
+  if(attacker.animFrame%4===0){
+    const rangeX=520*SR;
+    const sx=attacker.x+rndInt(-rangeX,rangeX);
+    getAllEnemies(attacker).forEach(t=>{
+      if(t&&t.hp>0&&Math.abs(t.x-sx)<65*SR){
+        applyDamage(t,8,attacker);
+        if(t instanceof Fighter)t.vy=-9;
+        addShock(t,attacker);
+        spawnHitEffect(t.x,t.y-60,"#FFFFFF");
+      }
+    });
+    screenShake=Math.max(screenShake,10);
+  }
+}
+function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(tgt instanceof Fighter&&tgt.charType==="thunder"&&tgt.thunderDashTimer>0)return;const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
 function getChallengeTarget(attacker){const cands=[...challengeEnemies.filter(e=>e.hp>0),...challengeBosses.filter(b=>!b.dead&&b.hp>0)];if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 
 
@@ -2336,8 +2791,8 @@ function castSkill(attacker,target,skillNum){
     // spark explosion fire off and the V4 skin actually appear (see
     // Fighter#_finalizeTransform, triggered from applyGravity).
     if(attacker.transformWindupTimer>0)return;
-    attacker.transformWindupTimer=48;
-    attacker.stunTimer=Math.max(attacker.stunTimer,48);
+    attacker.transformWindupTimer=360;
+    attacker.stunTimer=Math.max(attacker.stunTimer,360);
     attacker.isAttacking=false;attacker.activeSkill=null;
     attacker.cds.s5=1200;
     screenShake=Math.max(screenShake,10);
@@ -2423,16 +2878,40 @@ function castSkill(attacker,target,skillNum){
     for(let i=0;i<14;i++)attacker._dashSmoke.push({x:attacker.x+rndInt(-25,25),y:attacker.y-30+rndInt(-25,15),vx:(rng()-0.5)*1.6,vy:-rng()*1.4-0.3,life:34,r:rndInt(12,26)});
     aoeHit(attacker,10,160);screenShake=10;return;}
   if(attacker.charType==="thunder"&&skillNum===3){
-    attacker.attackCooldown=24;attacker.activeSkill=skillId;attacker.cds.s3=240;
+    // THUNDER PRISON: 5 columns of lightning strike down, then cage the
+    // target(s) - rooted (snapped back if they try to drift away), zapped
+    // periodically, unable to dash/teleport/speed out while caged.
+    attacker.attackCooldown=26;attacker.activeSkill=skillId;attacker.cds.s3=280;
     let targets=getAllEnemies(attacker);
     if(!targets.length)targets=combatTarget?[combatTarget]:[{x:attacker.x+200*attacker.direction,y:attacker.y}];
-    targets=targets.slice(0,4);
+    targets=targets.slice(0,3);
     attacker.thunderBoltXs=targets.map(t=>({x:t.x,y:t.y}));
-    attacker.thunderBoltX=attacker.thunderBoltXs[0].x;
-    targets.forEach(t=>aoeHitAt(attacker,15,t.x,t.y,140));
+    attacker.thunderBoltX=attacker.thunderBoltXs.length?attacker.thunderBoltXs[0].x:attacker.x;
+    targets.forEach(t=>{
+      aoeHitAt(attacker,14,t.x,t.y,140);
+      addShock(t,attacker);
+      if(t instanceof Fighter&&t.hp>0){
+        t.thunderPrisonTimer=150;t.thunderPrisonCenterX=t.x;t.thunderPrisonCenterY=t.y;t._thunderPrisonCaster=attacker;
+        t.stunTimer=Math.max(t.stunTimer||0,20);
+      }
+    });
     screenShake=25;return;
   }
-  if(attacker.charType==="thunder"&&skillNum===2){const d=combatTarget?Math.abs(attacker.x-combatTarget.x):400;const _oldX=attacker.x,_oldY=attacker.y;if(d<W/2)attacker.x-=220*attacker.direction;else attacker.x+=220*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());_dashCapture(attacker,_oldX,_oldY);attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;return;}
+  if(attacker.charType==="thunder"&&skillNum===2){
+    // THUNDER DASH: becomes a bolt of lightning - immune to collisions/CC/
+    // pushback/blocking during the dash, then leaves an electric trail
+    // that detonates ~0.3s later, shocking/slowing/knocking anyone on it.
+    const d=combatTarget?Math.abs(attacker.x-combatTarget.x):400;
+    const _oldX=attacker.x,_oldY=attacker.y;
+    if(d<W/2)attacker.x-=220*attacker.direction;else attacker.x+=220*attacker.direction;
+    attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());
+    _dashCapture(attacker,_oldX,_oldY);
+    attacker.thunderDashTimer=18; // ~0.3s of dash-immunity (no CC/knockback/blocking)
+    const dsteps=8;
+    for(let i=0;i<=dsteps;i++){const t=i/dsteps;attacker.thunderDashTrail.push({x:_oldX+(attacker.x-_oldX)*t,y:attacker.y,life:18,armed:18});}
+    attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;
+    return;
+  }
   if(attacker.charType==="red"&&skillNum===3){attacker.attackCooldown=120;attacker.activeSkill=skillId;attacker.cds.s3=360;return;}
   if(attacker.charType==="water"){
     if(skillNum===1){attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=120;projectiles.push({x:attacker.x+40*attacker.direction,y:attacker.y-42,vx:15*attacker.direction,vy:0,owner:attacker,target:combatTarget,damage:6,slow:0,slow_pct:0,color:"dodgerblue",type:"water_orb",radius:15});}
@@ -2442,12 +2921,36 @@ function castSkill(attacker,target,skillNum){
     return;
   }
   if(attacker.charType==="shadow"&&skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=300;aoePush(attacker,10,560);screenShake=15;return;}
+  if(attacker.charType==="thunder"&&skillNum===1){
+    // NORMAL ATTACK: the strike itself always sparks, and if there's a
+    // nearby target the electricity auto-chains to 3-5 enemies (15% falloff
+    // per jump) instead of ever hitting just one.
+    attacker.attackCooldown=8;attacker.activeSkill=skillId;attacker.cds.s1=90;
+    const firstT=combatTarget&&dist(attacker.x,attacker.y,combatTarget.x,combatTarget.y)<(180 * 1.75)*SR?combatTarget:null;
+    if(firstT){
+      spawnLightningArc(attacker.x,attacker.y-40,firstT.x,firstT.y-40);
+      applyDamage(firstT,7,attacker);
+      addShock(firstT,attacker);
+      chainLightning(attacker,firstT.x,firstT.y-40,7,rndInt(3,5),firstT,320*SR);
+    }else{
+      aoeHit(attacker,7,160);
+    }
+    return;
+  }
   if(attacker.charType!=="earth"){
     if(skillNum===1){attacker.attackCooldown=8;attacker.activeSkill=skillId;attacker.cds.s1=90;aoeHit(attacker,7,160);}
     else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=180;const _oldX2=attacker.x,_oldY2=attacker.y;attacker.x+=160*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());_dashCapture(attacker,_oldX2,_oldY2);aoeHit(attacker,12,100);}
     else if(skillNum===4){attacker.attackCooldown=180;attacker.activeSkill=skillId;attacker.ultiTimer=180;attacker.cds.s4=1080;}
   }else{
-    if(skillNum===1){attacker.attackCooldown=16;attacker.activeSkill=skillId;attacker.cds.s1=100;aoeHit(attacker,12,160);}
+    if(skillNum===1){
+      // EARTH BOULDER: throw a massive rock projectile
+      attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s1=120;
+      projectiles.push({x:attacker.x+40*attacker.direction,y:attacker.y-60,vx:12*attacker.direction,vy:-4,owner:attacker,target:combatTarget,
+        damage:14,slow:0,slow_pct:0,color:"#8a6a4a",type:"earth_boulder",radius:28,stunDur:25});
+      screenShake=Math.max(screenShake,8);
+      // Spawn boulder visual particles
+      for(let i=0;i<6;i++)hitEffects.push({x:attacker.x+30*attacker.direction,y:attacker.y-50,vy:-rng()*2,vx:attacker.direction*2+rng(),life:15,maxLife:15,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});
+    }
     else if(skillNum===2){attacker.attackCooldown=14;attacker.activeSkill=skillId;attacker.cds.s2=480;attacker.dmgReduceTimer=180;}
     else if(skillNum===3){attacker.attackCooldown=150;attacker.activeSkill=skillId;attacker.cds.s3=300;}
     else if(skillNum===4){attacker.attackCooldown=120;attacker.activeSkill=skillId;attacker.ultiTimer=120;attacker.boulderY=-320;attacker.boulderLanded=false;if(combatTarget)attacker.targetSpikeX=combatTarget.x;else attacker.targetSpikeX=attacker.x+220*attacker.direction;attacker.cds.s4=1080;attacker.hp=Math.min(MAX_HP,attacker.hp+10);screenShake=10;}
@@ -2514,6 +3017,22 @@ function updateProjectiles(floorY,player2){
       ctx.restore();
       for(let i=0;i<3;i++)_oval(px-3+rndInt(-6,6),py-3+rndInt(-10,10),6,6,"white",null);
     }
+    else if(pType==="earth_boulder"){
+      ctx.save();ctx.shadowColor="#8a6a4a";ctx.shadowBlur=10;
+      const br=proj.radius||28;
+      _oval(px-br,py-br,br*2,br*2,"#6a4a2a","#4a3524",2);
+      _oval(px-br*0.6,py-br*0.7,br*0.6,br*0.4,"#8a6a4a",null);
+      _oval(px-br*0.3,py-br*0.3,br*0.4,br*0.3,"#a67c52",null);
+      ctx.strokeStyle="#3a2518";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(px-8,py-10);ctx.lineTo(px+5,py-5);ctx.lineTo(px+2,py+8);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(px-3,py+3);ctx.lineTo(px+10,py-2);ctx.stroke();
+      ctx.restore();
+      if(!proj.boulderTrail)proj.boulderTrail=[];
+      proj.boulderTrail.push({x:px,y:py,life:15});
+      proj.boulderTrail=proj.boulderTrail.filter(bt=>{bt.life--;return bt.life>0;});
+      proj.boulderTrail.forEach(bt=>{const ba=Math.max(0,bt.life/15)*0.5;ctx.save();ctx.globalAlpha=ba;_oval(bt.x-6,bt.y-4,12,8,"#a67c52",null);ctx.restore();});
+      proj.vy=(proj.vy||0)+0.25;
+    }
     else{ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px-25*pDir,py-6);ctx.lineTo(px-20*pDir,py);ctx.lineTo(px-25*pDir,py+6);ctx.closePath();ctx.fill();}
     ctx.restore();
     let hit=false;
@@ -2534,6 +3053,37 @@ function updateProjectiles(floorY,player2){
     }
     const inBounds = gameState==="ROAD" ? (px>roadCameraX-80&&px<roadCameraX+W+80)
       : ((gameState==="GAMEPLAY"||gameState==="CHALLENGE") ? (px>campX-80&&px<campX+W+80) : (px>0&&px<W));
+    // Earth boulder special hit detection
+    if(pType==="earth_boulder"&&!hit){
+      const boulderDmg=proj.damage||14;
+      const boulderStun=proj.stunDur||25;
+      if(gameState==="ROAD"&&owner instanceof Fighter){
+        roadEnemies.forEach(e=>{if(e.hp>0&&Math.abs(px-e.x)<55*SR&&Math.abs(py-e.y)<70*SR){
+          applyDamage(e,boulderDmg,owner);e.stunTimer=Math.max(e.stunTimer||0,boulderStun);
+          if(isPushable(e)){const pd=e.x>=px?1:-1;e.x=clamp(e.x+pd*80,moveBoundLo(),moveBoundHi());}
+          hit=true;
+          spawnHitEffect(e.x,e.y-40,"#c68a4a");
+          for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*6+2;hitEffects.push({x:px,y:py,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:25,maxLife:25,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});}
+        }});
+        const fw=getFrontWall();if(fw&&Math.abs(px-fw.x)<55*SR&&py>H*0.25){applyDamage(fw,boulderDmg,owner);hit=true;}
+        if(roadBoss&&!roadBoss.dead&&Math.abs(px-roadBoss.x)<70*SR&&Math.abs(py-roadBoss.y)<140*SR){applyDamage(roadBoss,boulderDmg,owner);roadBoss.stunTimer=Math.max(roadBoss.stunTimer||0,15);hit=true;}
+      }else{
+        const fighters=[p1,p2].filter(f=>f!==owner&&f.hp>0);
+        fighters.forEach(f=>{if(Math.abs(px-f.x)<50*SR&&Math.abs(py-f.y)<70*SR){
+          applyDamage(f,boulderDmg,owner);f.stunTimer=Math.max(f.stunTimer||0,boulderStun);
+          if(isPushable(f)){const pd=f.x>=px?1:-1;f.x=clamp(f.x+pd*80,moveBoundLo(),moveBoundHi());}
+          hit=true;
+          spawnHitEffect(f.x,f.y-40,"#c68a4a");
+          for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*6+2;hitEffects.push({x:px,y:py,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:25,maxLife:25,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});}
+        }});
+      }
+      // Boulder hits ground
+      if(!hit&&py>=floorY-5){
+        for(let i=0;i<10;i++){const ang=Math.PI+(rng()-0.5)*Math.PI*0.8,spd=rng()*5+2;hitEffects.push({x:px,y:floorY,vx:Math.cos(ang)*spd,vy:-Math.abs(Math.sin(ang))*spd-1,life:22,maxLife:22,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});}
+        hitEffects.push({x:px,y:floorY,life:18,maxLife:18,color:"#c68a4a",ring:true});
+        hit=true;
+      }
+    }
     if(!hit&&inBounds)active.push(proj);
   }
   projectiles.length=0;projectiles.push(...active);
@@ -2654,6 +3204,42 @@ function tickFrost(p){
 // ================================================================
 //  FROST WORLD-SPACE FX — drawn in absolute coordinates (not the per-fighter scaled transform)
 // ================================================================
+// THUNDER DASH TRAIL: the electric line left behind by Thunder Dash. Each
+// segment arms for ~0.3s (18 frames) then detonates once, shocking/slowing/
+// knocking back anyone standing on it, before fading out visually.
+function tickThunderDash(p){
+  if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
+  p.thunderDashTrail.forEach(seg=>{
+    if(seg.armed>0){
+      seg.armed--;
+      if(seg.armed===0&&!seg.exploded){
+        seg.exploded=true;
+        getAllEnemies(p).forEach(opp=>{
+          if(dist(seg.x,seg.y,opp.x,opp.y)<70*SR){
+            applyDamage(opp,10,p);
+            addShock(opp,p);
+            opp.slowTimer=Math.max(opp.slowTimer||0,60);opp._slowPct=0.5;
+            if(opp instanceof Fighter){opp.vy=-6;const pd=opp.x>=seg.x?1:-1;opp.x=clamp(opp.x+pd*40,moveBoundLo(),moveBoundHi());}
+          }
+        });
+        spawnHitEffect(seg.x,seg.y-20,"#FFD700");
+        screenShake=Math.max(screenShake,8);
+      }
+    }
+    seg.life--;
+  });
+  p.thunderDashTrail=p.thunderDashTrail.filter(s=>s.life>0);
+}
+function drawThunderDashTrail(p){
+  if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
+  p.thunderDashTrail.forEach(seg=>{
+    const a=Math.max(0,seg.life/18);
+    ctx.save();ctx.globalAlpha=a*(seg.exploded?0.3:0.75);
+    ctx.strokeStyle=seg.exploded?"#FFF176":"#FFFFFF";ctx.shadowColor="#FFD700";ctx.shadowBlur=10;ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(seg.x-12,seg.y+4);ctx.lineTo(seg.x+12,seg.y-2);ctx.stroke();
+    ctx.restore();
+  });
+}
 function drawFrostSlideTrail(p){
   if(p.charType!=="frost"||!p.frostSlideTrail.length)return;
   p.frostSlideTrail.forEach(t=>{
@@ -2702,10 +3288,46 @@ function tickV4(p){
   }
   if(p.charType==="red"&&p.v4InvisScheduled&&p.transformTimer<=300){p.v4InvisScheduled=false;p.transformInvisActive=true;p.transformInvisTimer=120;}
   if(p.charType==="red"&&p.transformInvisActive){if(p.transformInvisTimer>0)p.transformInvisTimer--;else p.transformInvisActive=false;}
-  if(p.charType==="thunder"){p.thunderAuraTick++;if(p.thunderAuraTick>=15){p.thunderAuraTick=0;getAllEnemies(p).forEach(opp=>{if(dist(p.x,p.y,opp.x,opp.y)<540)applyDamage(opp,2.5,p);});}}
+  if(p.charType==="thunder"){
+    // V4 AURA (Storm Field): ~6m radius crackling field around the fighter.
+    // Anyone standing in it gets a light shock, builds Shock Stack, and
+    // takes damage over time. Occasional random bolts crash nearby too,
+    // giving the "storm following the god" feel.
+    p.thunderAuraTick++;
+    if(p.thunderAuraTick>=15){
+      p.thunderAuraTick=0;
+      getAllEnemies(p).forEach(opp=>{
+        if(dist(p.x,p.y,opp.x,opp.y)<540){
+          applyDamage(opp,2.5,p);
+          addShock(opp,p);
+        }
+      });
+    }
+    if(rng()<0.10){
+      const sx=p.x+rndInt(-240,240),sy=p.y-rndInt(200,340);
+      spawnLightningArc(sx,sy,sx+rndInt(-20,20),p.y-30);
+    }
+  }
   if(p.charType==="frost"&&!p.isFlying)p.isFlying=true;
   if(p.charType==="water"){p.waterRegenTick++;if(p.waterRegenTick>=15){p.waterRegenTick=0;p.hp=Math.min(MAX_HP,p.hp+3);}p.waterSlowAuraTick++;if(p.waterSlowAuraTick>=30){p.waterSlowAuraTick=0;getAllEnemies(p).forEach(opp=>{if(dist(p.x,p.y,opp.x,opp.y)<320){opp.slowTimer=Math.max(opp.slowTimer||0,45);opp._slowPct=0.8;}});}}
   if(p.charType==="wind"){p.windMiniTornadoTick++;if(p.windMiniTornadoTick===1){getAllEnemies(p).forEach(opp=>{if(dist(p.x,p.y,opp.x,opp.y)<160){if(opp instanceof Fighter)opp.vy=-16;applyDamage(opp,5,p);}});}else if(p.windMiniTornadoTick>=120)p.windMiniTornadoTick=0;}
+  // EARTH V4: slow aura + ground rumble
+  if(p.charType==="earth"&&p.transformActive){
+    p.waterSlowAuraTick++; // reusing this timer
+    if(p.waterSlowAuraTick>=40){
+      p.waterSlowAuraTick=0;
+      getAllEnemies(p).forEach(opp=>{
+        if(dist(p.x,p.y,opp.x,opp.y)<280){
+          opp.slowTimer=Math.max(opp.slowTimer||0,30);
+          opp._slowPct=Math.max(opp._slowPct||0,0.4);
+        }
+      });
+    }
+    // Ground rumble particles
+    if(p.onGround&&p.waterSlowAuraTick%20===0){
+      for(let i=0;i<2;i++)hitEffects.push({x:p.x+rndInt(-30,30),y:p.y+2,vy:-rng()*0.3-0.1,vx:(rng()-0.5)*0.5,life:15,maxLife:15,smoke:true,r0:rndInt(3,6),color:rndChoice(["#c68a4a","#a67c52","#8a6a4a"])});
+    }
+  }
 }
 
 // ================================================================
@@ -3011,9 +3633,9 @@ function drawMenu(){
 const CHARS=[
   {id:"red",   name:"RED (Lửa)",    desc:"Hồi máu & Phun lửa tầm xa",color:"red"},
   {id:"shadow",name:"SHADOW (Tối)", desc:"Áp sát & Hố đen xúc tua",color:"#551a8b"},
-  {id:"thunder",name:"THUNDER (Lôi)",desc:"Dash kép & Thiên lôi",color:"gold"},
+  {id:"thunder",name:"THUNDER (Lôi)",desc:"Chain Lightning, Thunder Prison & Thunder God Judgment",color:"gold"},
   {id:"frost", name:"FROST (Băng)", desc:"Tiễn băng & Hồi máu khiên",color:"deepskyblue"},
-  {id:"earth", name:"TERRA (Thổ)",  desc:"Gai phản đòn & Địa chấn",color:"sienna"},
+  {id:"earth", name:"TERRA (Thổ)",  desc:"Giáp đá sống & Tảng đá thần tốc",color:"sienna"},
   {id:"water", name:"WATER (Thủy)", desc:"Khiên xanh & Sóng thần",color:"dodgerblue"},
   {id:"wind",  name:"GIÓ (Phong)",  desc:"Hơi thổi & Lốc xoáy cực đại",color:"#90EE90"},
 ];
@@ -3122,6 +3744,7 @@ function updateGameplay(floorY){
     if(p.thunderFTimer>0){p.thunderFTimer--;if(p.thunderFTimer===0)p.thunderFCount=0;}
     for(const s in p.cds)if(p.cds[s]>0)p.cds[s]--;
     tickV4(p);
+    tickThunderDash(p);
     tickWaterCloud(p);
     tickFrost(p);
   }
@@ -3130,7 +3753,7 @@ function updateGameplay(floorY){
       attacker.ultiTimer--;
       const d=dist(attacker.x,attacker.y,pvpTarget.x,pvpTarget.y);
       if(attacker.activeSkill==="red_s4"&&d<350*SR)applyDamage(pvpTarget,0.25,attacker);
-      else if(attacker.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(pvpTarget,0.30,attacker);
+      else if(attacker.activeSkill==="thunder_s4")thunderJudgmentTick(attacker);
       else if(attacker.activeSkill==="frost_s4"&&d<450*SR){applyDamage(pvpTarget,0.18,attacker);pvpTarget.slowTimer=Math.max(pvpTarget.slowTimer,10);}
       else if(attacker.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(pvpTarget.x-attacker.targetSpikeX)<60*SR))applyDamage(pvpTarget,0.26,attacker);
       else if(attacker.activeSkill==="shadow_s4"&&Math.abs(attacker.x-pvpTarget.x)<500*SR)applyDamage(pvpTarget,0.40,attacker);
@@ -3141,7 +3764,7 @@ function updateGameplay(floorY){
   for(const p of[p1,p2]){if(p.charType==="wind"&&p.windBoostTimer>0)p.windBoostTimer--;}
   const msb=4.3125;
   if(p1.hp>0&&p2.hp>0){
-    const p1CanMove=(p1.ultiTimer===0||p1.activeSkill==="water_s4")&&p1.stunTimer===0;
+    const p1CanMove=(p1.ultiTimer===0||p1.activeSkill==="water_s4")&&p1.stunTimer===0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0;
     if(p1CanMove){
       let spd=msb*(p1.isShielding?0.35:1);
       if(p1.charType==="wind"&&p1.windBoostTimer>0)spd*=1.25;
@@ -3184,10 +3807,11 @@ function updateGameplay(floorY){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
-  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
+  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p2);
   p1.draw();p2.draw();
   updateAndDrawHitEffects();
+  updateAndDrawLightningArcs();
   ctx.restore();
 
   drawHpBar(p1,50,40,"P1");
@@ -3213,11 +3837,12 @@ function updateChallenge(w,h){
   if(p1.thunderFTimer>0){p1.thunderFTimer--;if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds)if(p1.cds[s]>0)p1.cds[s]--;
   tickV4(p1);
+  tickThunderDash(p1);
   tickWaterCloud(p1);
   tickFrost(p1);
   if(frameCount%60===0&&p1.charType==="red"&&p1.hp>0)p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0&&p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
-  if(p1.stunTimer<=0&&p1.hp>0){
+  if(p1.stunTimer<=0&&p1.hp>0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0){
     let spd=4.3125;
     if(p1.charType==="wind"&&p1.windBoostTimer>0){spd*=1.25;p1.windBoostTimer--;}
     if(p1.slowTimer>0)spd*=(1-p1._slowPct);
@@ -3242,7 +3867,7 @@ function updateChallenge(w,h){
     all.forEach(tgt=>{
       const d=dist(p1.x,p1.y,tgt.x,tgt.y);
       if(p1.activeSkill==="red_s4"&&d<350*SR)applyDamage(tgt,0.25,p1);
-      else if(p1.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(tgt,0.30,p1);
+      else if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
       else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
@@ -3280,11 +3905,12 @@ function updateChallenge(w,h){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
   p1.draw();
   challengeEnemies.forEach(e=>e.draw());
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
   updateAndDrawHitEffects();
+  updateAndDrawLightningArcs();
   ctx.restore();
 
   _text(w/2,20,`⚔️ THỬ THÁCH - MÀN ${challengeStage} ⚔️`,"gold","16px Arial bold");
@@ -3494,12 +4120,12 @@ function updateRoad(){
   if(p1.poisonTimer>0){p1.poisonTimer--;if(p1.poisonTimer%60===0&&p1.hp>0)applyDamage(p1,2,null);}
   if(p1.thunderFTimer>0){p1.thunderFTimer--; if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds) if(p1.cds[s]>0)p1.cds[s]--;
-  tickV4(p1); tickWaterCloud(p1); tickFrost(p1);
+  tickV4(p1); tickWaterCloud(p1); tickFrost(p1); tickThunderDash(p1);
   if(frameCount%60===0 && p1.charType==="red" && p1.hp>0) p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0 && p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
 
   const running = roadState==="RUN" || roadState==="BOSS";
-  if(running && p1.hp>0 && p1.stunTimer<=0){
+if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.transformLandingTimer===0){
     let spd=4.3125;
     if(p1.charType==="wind"&&p1.windBoostTimer>0){spd*=1.25;p1.windBoostTimer--;}
     if(p1.slowTimer>0)spd*=(1-p1._slowPct);
@@ -3542,7 +4168,7 @@ function updateRoad(){
     getAllEnemies(p1).forEach(tgt=>{
       const d=dist(p1.x,p1.y,tgt.x,tgt.y);
       if(p1.activeSkill==="red_s4"&&d<350*SR)applyDamage(tgt,0.25,p1);
-      else if(p1.activeSkill==="thunder_s4"&&d<420*SR)applyDamage(tgt,0.30,p1);
+      else if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
       else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
@@ -3622,7 +4248,7 @@ function updateRoad(){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
   p1.draw();
   if(p1.poisonTimer>0){
     for(let i=0;i<3;i++){
@@ -3631,6 +4257,7 @@ function updateRoad(){
     }
   }
   updateAndDrawHitEffects();
+  updateAndDrawLightningArcs();
   ctx.restore();
 
   _text(W/2,20,"🛣️ ĐƯỜNG ĐI — 3 MA THÚ 🛣️","gold","16px Arial bold");
