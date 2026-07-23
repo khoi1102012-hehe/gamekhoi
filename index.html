@@ -91,6 +91,528 @@ let challengeWaveIdx  = 0;
 let challengeWaveSched = [];
 let challengeBossSpawned = false;
 let challengeResult   = "";
+let challengeBossIntroState = "IDLE"; // INTRO_RUNNING, INTRO_DONE, BATTLE
+
+// ================================================================
+//  BOSS INTRO MANAGER — FROST KING CINEMATIC (Boss 1 only)
+//  ----------------------------------------------------------------
+//  This does NOT draw any placeholder. The doomed character in the
+//  cinematic is a real `new Fighter(x,y,"frost",dir)` — the exact
+//  same class, same reset(), same draw()/_drawInner() code path the
+//  playable Frost fighter uses. Its rendering is 100% identical to
+//  the player's Frost character because it IS a Frost character,
+//  just with player input disabled and its position driven by this
+//  manager instead of the keyboard/touch controls.
+//
+//  The revealed boss is the real `Boss` class (bossId 1), which
+//  already has a full hand-drawn "Frost King" body (crown, horns,
+//  crystal shoulders, glowing core, aura, footstep-frost trail) —
+//  also not a placeholder.
+// ================================================================
+
+// ---- small fixed-capacity object pool for ice shards / snow / mist FX ----
+// Reused every intro instead of allocating/discarding particle objects,
+// so long cinematics never cause GC/frame hitching.
+class IceFxPool {
+  constructor(size) {
+    this.items = new Array(size).fill(null).map(() => ({ active: false }));
+  }
+  spawn(props) {
+    for (const it of this.items) {
+      if (!it.active) {
+        for (const k in it) delete it[k];
+        Object.assign(it, props);
+        it.maxLife = props.life;
+        it.active = true;
+        return it;
+      }
+    }
+    return null; // pool full — drop silently, never grow unbounded
+  }
+  update() {
+    for (const it of this.items) {
+      if (!it.active) continue;
+      it.x += it.vx || 0;
+      it.y += it.vy || 0;
+      if (it.grav) it.vy = (it.vy || 0) + it.grav;
+      if (it.rotSpeed) it.rot = (it.rot || 0) + it.rotSpeed;
+      if (it.drag) { it.vx *= it.drag; it.vy *= it.drag; }
+      it.life--;
+      if (it.life <= 0) it.active = false;
+    }
+  }
+  forEachActive(fn) { for (const it of this.items) if (it.active) fn(it); }
+  clear() { for (const it of this.items) it.active = false; }
+}
+
+class BossIntroManager {
+  constructor(spawnX, spawnY) {
+    this.spawnX = spawnX;
+    this.spawnY = spawnY;
+    this.state = "IDLE";
+    this.stateTimer = 0;
+    this.internalFrame = 0;
+
+    this.iceCharacter = null;      // the real playable Fighter("frost") stand-in
+    this.magicCircleAlpha = 0;
+    this.prison = { visible: false, formProgress: 0, crackList: [], crackProgress: 0, glow: 0 };
+    this.shockwave = null;
+    this.boss = null;              // the real Boss(1,...) — Frost King
+    this.mistAlpha = 0;
+    this.bossRevealAlpha = 0;
+    this.auraBurst = 0;
+    this.flash = null;
+    this.showTitle = false;
+    this.titleAlpha = 0;
+    this.titleDelay = 0;
+
+    this.zoom = 1.0;
+    this.focusX = spawnX;
+
+    this.pool = new IceFxPool(140);
+    this._audioThrottle = 0;
+
+    // Finite State Machine — durations in frames (~60fps, this codebase's
+    // existing frame-counter convention doubles as its delta-time system;
+    // no setTimeout anywhere here, everything advances via update()).
+    this.FSM = {
+      Walking:      { duration: 120, next: "Pause" },        // ~2.0s
+      Pause:        { duration: 30,  next: "Freezing" },     // ~0.5s
+      Freezing:     { duration: 180, next: "IcePrison" },    // ~3.0s
+      IcePrison:    { duration: 90,  next: "Cracking" },     // form + 1s tension
+      Cracking:     { duration: 144, next: "Explosion" },    // ~2.4s shaking/cracking
+      Explosion:    { duration: 36,  next: "Mist" },         // violent shatter beat
+      Mist:         { duration: 80,  next: "BossEntrance" }, // ~1.3s cold fog
+      BossEntrance: { duration: 90,  next: "Roar" },         // 3 steps
+      Roar:         { duration: 170, next: "BattleStart" },  // roar + title card
+      BattleStart:  { duration: 20,  next: "COMPLETE" }
+    };
+  }
+
+  start() {
+    this.state = "Walking";
+    this.stateTimer = 0;
+    const walkSpeed = 4.3125 * 0.4; // exactly 40% of the playable movement speed
+    const dist = walkSpeed * this.FSM.Walking.duration;
+    // Reuse the EXACT playable Fighter class/draw code for charType "frost".
+    this.iceCharacter = new Fighter(this.spawnX - dist, this.spawnY, "frost", 1);
+    this.iceCharacter.targetX = this.spawnX;
+    this.iceCharacter.walkSpeed = walkSpeed;
+    this.iceCharacter.walking = true;
+    this.iceCharacter.frozenProgress = 0;
+    this.focusX = this.iceCharacter.x;
+  }
+
+  update() {
+    this.internalFrame++;
+    this.stateTimer++;
+    if (this.state !== "IDLE" && this.state !== "COMPLETE") {
+      const cfg = this.FSM[this.state];
+      if (cfg && this.stateTimer >= cfg.duration) {
+        this.state = cfg.next;
+        this.stateTimer = 0;
+        this._onEnterState(this.state);
+        if (this.state === "COMPLETE") return { finished: true };
+      }
+    }
+    switch (this.state) {
+      case "Walking":      this._updateWalking(); break;
+      case "Pause":        this._updatePause(); break;
+      case "Freezing":     this._updateFreezing(); break;
+      case "IcePrison":    this._updateIcePrison(); break;
+      case "Cracking":     this._updateCracking(); break;
+      case "Explosion":    this._updateExplosion(); break;
+      case "Mist":         this._updateMist(); break;
+      case "BossEntrance": this._updateBossEntrance(); break;
+      case "Roar":         this._updateRoar(); break;
+      case "BattleStart":  this._updateBattleStart(); break;
+    }
+    this.pool.update();
+    if (this._audioThrottle > 0) this._audioThrottle--;
+    return { finished: this.state === "COMPLETE" };
+  }
+
+  _onEnterState(state) {
+    if (state === "Pause") {
+      if (this.iceCharacter) this.iceCharacter.walking = false;
+    } else if (state === "IcePrison") {
+      this.prison.visible = true;
+      sfxIceCrystallize?.();
+    } else if (state === "Explosion") {
+      this._triggerExplosion();
+    } else if (state === "Mist") {
+      this._spawnBoss();
+    } else if (state === "BossEntrance") {
+      // boss already placed by mist, just start walking him in
+      if (this.boss) this.boss.entranceStartX = this.boss.x;
+    } else if (state === "Roar") {
+      this._triggerRoarBurst();
+    } else if (state === "BattleStart") {
+      sfxBossBattleStart?.();
+      this.zoom = 1.0;
+      screenShake = 0;
+    }
+  }
+
+  // ---------------- per-state update logic ----------------
+  _updateWalking() {
+    const ic = this.iceCharacter;
+    if (!ic) return;
+    if (ic.walking) {
+      const dx = ic.targetX - ic.x;
+      if (Math.abs(dx) > 2) ic.x += Math.sign(dx) * ic.walkSpeed;
+      else { ic.x = ic.targetX; ic.walking = false; }
+    }
+    this.focusX = ic.x;
+    if (this.internalFrame % 14 === 0 && this._audioThrottle === 0) {
+      sfxStep?.(); this._audioThrottle = 8;
+    }
+  }
+
+  _updatePause() {
+    // Stage 3 — the character stops and looks slightly downward. Silence.
+  }
+
+  _updateFreezing() {
+    const ic = this.iceCharacter;
+    if (!ic) return;
+    const p = this.stateTimer / this.FSM.Freezing.duration;
+    ic.frozenProgress = Math.min(1, p);
+    this.magicCircleAlpha = Math.min(1, this.stateTimer / 20);
+    if (this.stateTimer === 1) sfxIceFreeze?.();
+    if (this.internalFrame % 9 === 0) {
+      this.pool.spawn({ type: "snow", x: ic.x + rndInt(-50, 50), y: ic.y - 160, vx: (rng() - 0.5) * 0.6, vy: rng() * 1 + 0.6, life: 90, size: rndInt(2, 4), color: "white" });
+    }
+    screenShake = Math.max(screenShake, 1.2);
+  }
+
+  _updateIcePrison() {
+    const dur = this.FSM.IcePrison.duration;
+    const p = this.stateTimer / dur;
+    this.prison.formProgress = Math.min(1, p * 2.2); // fast formation, then holds
+    this.prison.glow = 0.45 + Math.sin(this.internalFrame * 0.05) * 0.15;
+    if (this.stateTimer > dur * 0.4) screenShake = Math.max(screenShake, 0.4); // Stage 6 tension
+  }
+
+  _updateCracking() {
+    const dur = this.FSM.Cracking.duration;
+    const progress = this.stateTimer / dur;
+    this.prison.crackProgress = progress;
+    this.prison.glow = 0.5 + progress * 0.5 + Math.sin(this.internalFrame * 0.2) * 0.1 * progress;
+    if (this.stateTimer % 24 === 0) screenShake = Math.max(screenShake, 3 + progress * 5); // every 0.4s
+    if (this.stateTimer % 12 === 0) { // every 0.2s — a new crack appears
+      const targetCracks = Math.floor(progress * 16) + 2;
+      while (this.prison.crackList.length < targetCracks) {
+        this.prison.crackList.push({ angle: rng() * Math.PI * 2, len: 40 + rng() * 95, seed: rng() * 1.4 - 0.7 });
+      }
+      sfxIceCrack?.();
+    }
+    if (rng() < 0.3 + progress * 0.4) {
+      this.pool.spawn({ type: "frag", x: this.spawnX + rndInt(-45, 45), y: this.spawnY - rndInt(60, 480), vx: (rng() - 0.5) * 0.5, vy: rng() * 1.2 + 0.4, life: 40, size: rndInt(2, 5), rot: rng() * Math.PI, rotSpeed: (rng() - 0.5) * 0.2, color: "#bfe9ff" });
+    }
+  }
+
+  _triggerExplosion() {
+    this.prison.visible = false;
+    this.iceCharacter = null; // Stage 9 — completely destroyed, never becomes the boss
+    screenShake = Math.max(screenShake, 26);
+    this.flash = { alpha: 0.9, duration: 14 };
+    sfxIceExplode?.();
+    sfxIceShatter?.();
+    for (let i = 0; i < 16; i++) { // large shards
+      const ang = rng() * Math.PI * 2, spd = rng() * 7 + 4;
+      this.pool.spawn({ type: "shard_big", x: this.spawnX, y: this.spawnY - 120, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 3, grav: 0.25, life: 70, size: 18 + rng() * 20, rot: rng() * Math.PI * 2, rotSpeed: (rng() - 0.5) * 0.3, color: rndChoice(["#bfe9ff", "#eaffff", "#8fd3ff"]) });
+    }
+    for (let i = 0; i < 50; i++) { // small shards
+      const ang = rng() * Math.PI * 2, spd = rng() * 10 + 3;
+      this.pool.spawn({ type: "shard_small", x: this.spawnX, y: this.spawnY - 120, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 2, grav: 0.2, life: 55, size: 4 + rng() * 6, rot: rng() * Math.PI * 2, rotSpeed: (rng() - 0.5) * 0.5, color: "white" });
+    }
+    for (let i = 0; i < 14; i++) { // cold fog
+      this.pool.spawn({ type: "fog", x: this.spawnX + rndInt(-60, 60), y: this.spawnY - rndInt(20, 100), vx: (rng() - 0.5) * 1.2, vy: -rng() * 0.6, life: 110, size: 40 + rng() * 40, color: "#c8ebff" });
+    }
+    for (let i = 0; i < 30; i++) { // snow burst
+      const ang = rng() * Math.PI * 2, spd = rng() * 3 + 1;
+      this.pool.spawn({ type: "snow", x: this.spawnX, y: this.spawnY - 100, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 80, size: rndInt(2, 4), color: "white" });
+    }
+    this.shockwave = { r: 10, alpha: 1 };
+  }
+
+  _updateExplosion() {
+    if (this.shockwave) {
+      this.shockwave.r += 15;
+      this.shockwave.alpha -= 0.045;
+      if (this.shockwave.alpha <= 0) this.shockwave = null;
+    }
+  }
+
+  _spawnBoss() {
+    // Stage 10 — the real Frost King boss, hidden inside the mist. The
+    // player never sees this happen; he simply fades into visibility.
+    this.boss = new Boss(1, this.spawnX + 130, this.spawnY);
+    this.boss.direction = -1;
+    this.mistAlpha = 1.0;
+    this.bossRevealAlpha = 0;
+  }
+
+  _updateMist() {
+    const p = this.stateTimer / this.FSM.Mist.duration;
+    this.mistAlpha = Math.max(0, 1 - p * 1.15);
+    this.bossRevealAlpha = Math.min(1, p * 1.3);
+    if (this.boss) { this.boss.anim++; this.boss._updateFrostKingFX(this.spawnY, 999999); }
+    if (rng() < 0.5) this.pool.spawn({ type: "fog", x: this.spawnX + rndInt(-70, 70), y: this.spawnY - rndInt(0, 130), vx: (rng() - 0.5) * 0.8, vy: -rng() * 0.4, life: 60, size: 50 + rng() * 30, color: "#d2ebff" });
+  }
+
+  _updateBossEntrance() {
+    const dur = this.FSM.BossEntrance.duration, stepDur = dur / 3;
+    if (this.boss) {
+      const stepIdx = Math.min(2, Math.floor(this.stateTimer / stepDur));
+      const stepLocalT = Math.min(1, (this.stateTimer % stepDur) / stepDur);
+      const totalGap = 130;
+      const walked = (stepIdx + stepLocalT) * (totalGap / 3);
+      this.boss.x = (this.boss.entranceStartX ?? this.spawnX + totalGap) - walked;
+      this.boss.anim++;
+      this.boss._updateFrostKingFX(this.spawnY, 999999);
+      if (this.stateTimer % Math.round(stepDur) === 1) { sfxIceCrack?.(); screenShake = Math.max(screenShake, 4); }
+    }
+    this.bossRevealAlpha = 1;
+    this.mistAlpha = Math.max(0, this.mistAlpha - 0.012);
+  }
+
+  _triggerRoarBurst() {
+    screenShake = Math.max(screenShake, 14);
+    this.zoom = 1.18;
+    sfxBossRoar?.();
+    this.auraBurst = 1.0;
+    for (let i = 0; i < 20; i++) {
+      const ang = (i / 20) * Math.PI * 2, spd = rng() * 5 + 4;
+      this.pool.spawn({ type: "aura", x: this.spawnX, y: this.spawnY - 110, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 40, size: 4 + rng() * 4, color: "#aeeaff" });
+    }
+    this.titleDelay = 15;
+  }
+
+  _updateRoar() {
+    if (this.auraBurst > 0) this.auraBurst = Math.max(0, this.auraBurst - 0.02);
+    if (this.boss) { this.boss.anim++; this.boss._updateFrostKingFX(this.spawnY, 999999); }
+    if (this.titleDelay > 0) { this.titleDelay--; return; }
+    const t = this.stateTimer - 15;
+    const showDur = this.FSM.Roar.duration - 15;
+    if (t >= 0) {
+      this.showTitle = true;
+      if (t < 20) this.titleAlpha = t / 20;
+      else if (t > showDur - 25) this.titleAlpha = Math.max(0, (showDur - t) / 25);
+      else this.titleAlpha = 1;
+      if (t > showDur - 25 && rng() < 0.6) { // title dissolves into snow
+        this.pool.spawn({ type: "snow", x: this.spawnX + rndInt(-90, 90), y: this.spawnY - 260 + rndInt(-20, 20), vx: (rng() - 0.5) * 1.5, vy: rng() * 1 + 0.5, life: 60, size: rndInt(2, 4), color: "white" });
+      }
+    }
+    if (this.stateTimer > showDur * 0.6) this.zoom += (1.0 - this.zoom) * 0.02;
+  }
+
+  _updateBattleStart() {
+    this.zoom += (1.0 - this.zoom) * 0.15;
+    screenShake *= 0.5;
+  }
+
+  // ---------------- drawing ----------------
+  // World-space visuals (must be called INSIDE the camera translate/zoom).
+  drawWorld(ctx, W, H) {
+    if (this.state === "IDLE" || !ctx) return;
+    if ((this.state === "Pause" || this.state === "Freezing") && this.magicCircleAlpha > 0) {
+      this._drawMagicCircle(ctx);
+    }
+    if (this.iceCharacter) {
+      // EXACT same draw() call the playable Frost Fighter uses — no
+      // separate/simplified drawing path exists for this character.
+      this.iceCharacter.draw(0, 0);
+      if (this.iceCharacter.frozenProgress > 0) this._drawFreezeOverlay(ctx, this.iceCharacter);
+    }
+    if (this.prison.visible) this._drawPrison(ctx);
+    this._drawPool(ctx);
+    if (this.shockwave) this._drawShockwave(ctx);
+    if (this.boss && (this.state === "Mist" || this.state === "BossEntrance" || this.state === "Roar")) {
+      this._drawBossReveal(ctx);
+    }
+  }
+
+  // Screen-space overlays (must be called OUTSIDE the camera translate — a
+  // fixed full-screen flash / title card should not drift with the camera).
+  drawScreen(ctx, W, H) {
+    if (this.state === "IDLE" || !ctx) return;
+    if (this.flash && this.flash.alpha > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(255,255,255,${this.flash.alpha})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+      this.flash.alpha -= 1 / this.flash.duration;
+    }
+    if (this.showTitle && this.titleAlpha > 0) this._drawTitle(ctx, W, H);
+  }
+
+  _drawMagicCircle(ctx) {
+    const x = this.spawnX, y = this.spawnY;
+    ctx.save();
+    ctx.globalAlpha = this.magicCircleAlpha * 0.85;
+    const R = 70;
+    ctx.strokeStyle = "#8fe0ff"; ctx.lineWidth = 2; ctx.shadowColor = "#aeeaff"; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.ellipse(x, y + 4, R, R * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x, y + 4, R * 0.7, R * 0.22, 0, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + this.internalFrame * 0.01;
+      const rx1 = Math.cos(a) * R, ry1 = Math.sin(a) * R * 0.32;
+      ctx.beginPath(); ctx.moveTo(x, y + 4); ctx.lineTo(x + rx1, y + 4 + ry1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Renders the freeze visibly climbing the body feet→head. This is an
+  // actual rendered overlay (clipped rect + gradient + crystal spikes at
+  // the boundary), not a hidden variable — the player can watch it rise.
+  _drawFreezeOverlay(ctx, ic) {
+    const p = ic.frozenProgress || 0;
+    if (p <= 0) return;
+    const feetY = ic.y, topY = ic.y - 140;
+    const freezeTop = feetY - (feetY - topY) * p;
+    ctx.save();
+    ctx.translate(ic.x, ic.y); ctx.scale(CHAR_VISUAL_SCALE, CHAR_VISUAL_SCALE); ctx.translate(-ic.x, -ic.y);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(ic.x - 42, freezeTop, 84, feetY - freezeTop); ctx.clip();
+    const grad = ctx.createLinearGradient(0, freezeTop, 0, feetY);
+    grad.addColorStop(0, "rgba(255,255,255,0.9)");
+    grad.addColorStop(0.18, "rgba(205,240,255,0.55)");
+    grad.addColorStop(1, "rgba(140,205,255,0.32)");
+    ctx.fillStyle = grad; ctx.fillRect(ic.x - 42, freezeTop, 84, feetY - freezeTop);
+    ctx.restore();
+    if (p < 1) {
+      ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.shadowColor = "#8fe0ff"; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.moveTo(ic.x - 42, freezeTop); ctx.lineTo(ic.x + 42, freezeTop); ctx.stroke();
+      for (let i = -3; i <= 3; i++) {
+        const sx = ic.x + i * 12, spike = 9 + Math.abs(i) * 1.6;
+        ctx.beginPath(); ctx.moveTo(sx - 4, freezeTop); ctx.lineTo(sx, freezeTop - spike); ctx.lineTo(sx + 4, freezeTop); ctx.closePath();
+        ctx.fillStyle = "rgba(215,246,255,0.92)"; ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // The enormous ice prison — roughly 4x the fighter's height, translucent
+  // so the frozen character stays visible inside, with an internal glow,
+  // growing cracks, and a stroked crystalline outline.
+  _drawPrison(ctx) {
+    const cx = this.spawnX, baseY = this.spawnY;
+    const h = 560 * this.prison.formProgress;
+    const w = 170;
+    const topY = baseY - h;
+    ctx.save();
+    const grad = ctx.createLinearGradient(0, topY, 0, baseY);
+    grad.addColorStop(0, `rgba(150,225,255,${0.25 + this.prison.glow * 0.25})`);
+    grad.addColorStop(0.5, `rgba(120,205,255,${0.35 + this.prison.glow * 0.3})`);
+    grad.addColorStop(1, `rgba(90,180,255,${0.45 + this.prison.glow * 0.25})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(cx, topY);
+    ctx.lineTo(cx + w * 0.55, topY + h * 0.18);
+    ctx.lineTo(cx + w * 0.5, baseY);
+    ctx.lineTo(cx - w * 0.5, baseY);
+    ctx.lineTo(cx - w * 0.55, topY + h * 0.18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = `rgba(230,250,255,${0.7 + this.prison.crackProgress * 0.3})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.save();
+    ctx.shadowColor = "#7eebff"; ctx.shadowBlur = 20 + this.prison.glow * 30;
+    ctx.fillStyle = `rgba(140,230,255,${this.prison.glow * 0.45})`;
+    ctx.beginPath(); ctx.ellipse(cx, baseY - h * 0.45, w * 0.28, h * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 + this.prison.crackProgress * 0.5})`;
+    ctx.lineWidth = 1.6;
+    this.prison.crackList.forEach(c => {
+      const ox = cx + Math.cos(c.angle) * 10, oy = baseY - h * 0.5 + Math.sin(c.angle) * 10;
+      const ex = ox + Math.cos(c.angle + c.seed) * c.len * this.prison.crackProgress;
+      const ey = oy + Math.sin(c.angle + c.seed) * c.len * 0.6 * this.prison.crackProgress;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  _drawShockwave(ctx) {
+    const sw = this.shockwave;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, sw.alpha);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 6; ctx.shadowColor = "#aeeaff"; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.ellipse(this.spawnX, this.spawnY - 40, sw.r, sw.r * 0.4, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawPool(ctx) {
+    this.pool.forEachActive(it => {
+      const a = Math.max(0, it.life / (it.maxLife || it.life || 1));
+      ctx.save();
+      if (it.type === "snow" || it.type === "aura") {
+        ctx.globalAlpha = Math.min(1, a + 0.15);
+        ctx.fillStyle = it.color || "white";
+        ctx.beginPath(); ctx.arc(it.x, it.y, it.size, 0, Math.PI * 2); ctx.fill();
+      } else if (it.type === "frag") {
+        ctx.globalAlpha = a;
+        ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.rot || 0);
+        ctx.fillStyle = it.color; ctx.fillRect(-it.size / 2, -it.size / 2, it.size, it.size);
+        ctx.restore();
+      } else if (it.type === "shard_big" || it.type === "shard_small") {
+        ctx.globalAlpha = a;
+        ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.rot || 0);
+        ctx.fillStyle = it.color; ctx.strokeStyle = "white"; ctx.lineWidth = 1;
+        const s = it.size;
+        ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.6, 0); ctx.lineTo(0, s); ctx.lineTo(-s * 0.6, 0); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      } else if (it.type === "fog") {
+        ctx.globalAlpha = a * 0.35;
+        ctx.fillStyle = it.color || "#c8ebff";
+        ctx.beginPath(); ctx.arc(it.x, it.y, it.size, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  _drawBossReveal(ctx) {
+    const b = this.boss;
+    const revealAlpha = this.state === "Mist" ? (this.bossRevealAlpha ?? 0) : 1;
+    ctx.save(); ctx.globalAlpha = revealAlpha;
+    b._drawFrostKingFrostTrail();
+    b._drawFrostKingAura(b.x, b.y);
+    ctx.restore();
+    b._drawFrostKingBody(b.x, b.y, 1, revealAlpha, b.anim); // real Frost King body — no HP bar drawn yet
+    if (this.auraBurst > 0) {
+      ctx.save();
+      ctx.globalAlpha = this.auraBurst * 0.6;
+      ctx.strokeStyle = "#aeeaff"; ctx.lineWidth = 4; ctx.shadowColor = "#eaffff"; ctx.shadowBlur = 25;
+      ctx.beginPath(); ctx.arc(b.x, b.y - 110, 90 + (1 - this.auraBurst) * 90, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    if (this.state === "Mist" && this.mistAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = this.mistAlpha * 0.6;
+      ctx.fillStyle = "#c8ebff";
+      ctx.beginPath(); ctx.ellipse(this.spawnX, this.spawnY - 90, 140, 170, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  _drawTitle(ctx, W, H) {
+    ctx.save();
+    ctx.globalAlpha = this.titleAlpha;
+    ctx.fillStyle = "#00eaff";
+    ctx.font = "bold 48px Arial";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(120,220,255,0.85)"; ctx.shadowBlur = 18;
+    ctx.fillText("❄ FROST KING ❄", W / 2, H / 2 - 30);
+    ctx.font = "bold 22px Arial";
+    ctx.fillText("THE FROZEN EMPEROR", W / 2, H / 2 + 20);
+    ctx.restore();
+  }
+}
+
+let bossIntroManager = null;
 
 const CHALLENGE_ENEMY_CFG = {
   1:{hp:30, spd:2.5, dmg:0.75},
@@ -655,6 +1177,82 @@ function sfxRecord(){ // little celebratory chime when a new personal-best dista
     o.connect(g);g.connect(ac.destination);o.start(ac.currentTime+t);o.stop(ac.currentTime+t+0.32);
   });
 }
+// ----- NEW: standalone SFX for the Frost King (Boss 1) spawn cinematic only -----
+function sfxIceCrack(){ // sharp icy crack — used for crack growth + heavy footsteps
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.12);
+  const filt=ac.createBiquadFilter();filt.type="highpass";filt.frequency.value=1800;
+  const g=ac.createGain();g.gain.setValueAtTime(0.22,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.12);
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);src.start();
+  const o=ac.createOscillator(),og=ac.createGain();o.type="sine";o.frequency.setValueAtTime(2200,ac.currentTime);o.frequency.exponentialRampToValueAtTime(900,ac.currentTime+0.1);
+  og.gain.setValueAtTime(0.12,ac.currentTime);og.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.1);
+  o.connect(og);og.connect(ac.destination);o.start();o.stop(ac.currentTime+0.12);
+}
+function sfxIceShatter(){ // the ice cocoon exploding to reveal the Frost King
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.6);
+  const filt=ac.createBiquadFilter();filt.type="bandpass";filt.frequency.setValueAtTime(2600,ac.currentTime);filt.frequency.exponentialRampToValueAtTime(400,ac.currentTime+0.6);
+  const g=ac.createGain();g.gain.setValueAtTime(0.32,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.6);
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);src.start();
+  [1800,2400,3100].forEach((f,i)=>{const o=ac.createOscillator(),og=ac.createGain();o.type="sine";o.frequency.setValueAtTime(f,ac.currentTime+i*0.02);
+    og.gain.setValueAtTime(0.001,ac.currentTime+i*0.02);og.gain.linearRampToValueAtTime(0.15,ac.currentTime+i*0.02+0.02);og.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+i*0.02+0.4);
+    o.connect(og);og.connect(ac.destination);o.start(ac.currentTime+i*0.02);o.stop(ac.currentTime+i*0.02+0.42);});
+  const bo=ac.createOscillator(),bg=ac.createGain();bo.type="sine";bo.frequency.setValueAtTime(80,ac.currentTime);bo.frequency.exponentialRampToValueAtTime(25,ac.currentTime+0.5);
+  bg.gain.setValueAtTime(0.3,ac.currentTime);bg.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.5);
+  bo.connect(bg);bg.connect(ac.destination);bo.start();bo.stop(ac.currentTime+0.5);
+}
+function sfxBossRoar(){ // Frost King's deep roar once fully emerged
+  const ac=_getActx(); if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type="sawtooth";o.frequency.setValueAtTime(90,ac.currentTime);o.frequency.exponentialRampToValueAtTime(45,ac.currentTime+0.7);o.frequency.exponentialRampToValueAtTime(70,ac.currentTime+1.0);
+  g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.linearRampToValueAtTime(0.28,ac.currentTime+0.15);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+1.0);
+  const filt=ac.createBiquadFilter();filt.type="lowpass";filt.frequency.value=700;
+  o.connect(filt);filt.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+1.0);
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.9);
+  const filt2=ac.createBiquadFilter();filt2.type="bandpass";filt2.frequency.value=350;filt2.Q.value=0.7;
+  const g2=ac.createGain();g2.gain.setValueAtTime(0.0001,ac.currentTime);g2.gain.linearRampToValueAtTime(0.18,ac.currentTime+0.2);g2.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.9);
+  src.connect(filt2);filt2.connect(g2);g2.connect(ac.destination);src.start();
+}
+function sfxStep(){ // soft footstep
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.08);
+  const g=ac.createGain();g.gain.setValueAtTime(0.15,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.1);
+  src.connect(g);g.connect(ac.destination);src.start();
+}
+function sfxIceFreeze(){ // character begins to freeze
+  const ac=_getActx(); if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type="sine";o.frequency.setValueAtTime(1200,ac.currentTime);o.frequency.exponentialRampToValueAtTime(800,ac.currentTime+0.3);
+  g.gain.setValueAtTime(0.0001,ac.currentTime);g.gain.linearRampToValueAtTime(0.18,ac.currentTime+0.05);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.3);
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.35);
+}
+function sfxIceCrystallize(){ // ice forming and crystallizing
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.15);
+  const filt=ac.createBiquadFilter();filt.type="highpass";filt.frequency.value=2200;
+  const g=ac.createGain();g.gain.setValueAtTime(0.12,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.25);
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);src.start();
+}
+function sfxIceExplode(){ // massive ice explosion
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,0.6);
+  const filt=ac.createBiquadFilter();filt.type="bandpass";filt.frequency.setValueAtTime(2600,ac.currentTime);filt.frequency.exponentialRampToValueAtTime(400,ac.currentTime+0.6);
+  const g=ac.createGain();g.gain.setValueAtTime(0.32,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.6);
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);src.start();
+  [1800,2400,3100].forEach((f,i)=>{const o=ac.createOscillator(),og=ac.createGain();o.type="sine";o.frequency.setValueAtTime(f,ac.currentTime+i*0.02);
+    og.gain.setValueAtTime(0.001,ac.currentTime+i*0.02);og.gain.linearRampToValueAtTime(0.15,ac.currentTime+i*0.02+0.02);og.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+i*0.02+0.4);
+    o.connect(og);og.connect(ac.destination);o.start(ac.currentTime+i*0.02);o.stop(ac.currentTime+i*0.02+0.42);});
+  const bo=ac.createOscillator(),bg=ac.createGain();bo.type="sine";bo.frequency.setValueAtTime(80,ac.currentTime);bo.frequency.exponentialRampToValueAtTime(25,ac.currentTime+0.5);
+  bg.gain.setValueAtTime(0.3,ac.currentTime);bg.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.5);
+  bo.connect(bg);bg.connect(ac.destination);bo.start();bo.stop(ac.currentTime+0.5);
+}
+function sfxBossBattleStart(){ // dramatic start to boss battle
+  const ac=_getActx(); if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type="sine";o.frequency.setValueAtTime(200,ac.currentTime);o.frequency.linearRampToValueAtTime(400,ac.currentTime+0.15);
+  g.gain.setValueAtTime(0.25,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.25);
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.3);
+}
 
 // ---------- Floating damage numbers ----------
 function spawnDamageNumber(x,y,amount,isCrit){
@@ -829,6 +1427,7 @@ class Fighter {
     this.frostComboLog=[];this.frostComboFX=0;this.frostComboBonusPct=0;
     this._icePrisonedTargets=[];
     this._frostAbsZeroTimer=0;this._frostAbsZeroCrystals=[];
+    this._icePrisoned=false;this._icePrisonTimer=0;
   }
   applyGravity(floorY){
     if(this.stunTimer>0)this.stunTimer--;
@@ -1997,7 +2596,34 @@ class Boss {
     this._init();
   }
   _init(){
-    if(this.bossId===1){this.hp=this.maxHp=240;this.targetX=this.x;this.targetY=this.y;this.hoverTimer=0;this.skillTimer={s1:0,s2:0};this.wingFlap=0;}
+    if(this.bossId===1){this.hp=this.maxHp=320;this.phase=1;this.phase2Entered=false;this.targetX=this.x;this.targetY=this.y;this.hoverTimer=0;
+      // ========== FROST KING v2 SKILL STATES ==========
+      this.skillTimer={s1:0,s2:0,s3:0,s4:0,s5:0,s6:0};this.skillCd={s1:420,s2:720,s3:1080,s4:600,s5:2100,s6:0};
+      this.lastSkillUsed="";this.breatheTimer=0;this.actionState="idle"; // idle, breathing, preparing
+      
+      // === Skill 1: Frozen Spears ===
+      this.frozenSpears=[];this.spearChargeTimer=0;this.spearChargePhase=0;
+      
+      // === Skill 2: Ice Prison ===
+      this.icePrisonTarget=null;this.icePrisonWarningTimer=0;this.icePrisonWarningX=0;this.icePrisonWarningY=0;
+      
+      // === Skill 3: Blizzard ===
+      this.blizzardActive=false;this.blizzardTimer=0;this.meteorSpawns=[];this.meteorWarnings=[];
+      
+      // === Skill 4: Frost Dash ===
+      this.dashActive=false;this.dashPhase=0;this.dashTargetX=0;this.dashCount=0;this.dashIceTrails=[];
+      
+      // === Skill 5: Absolute Zero ===
+      this.absoluteZeroCharging=false;this.absoluteZeroTimer=0;this.heatCrystals=[];this.battlefieldFrozen=false;
+      
+      // === Phase 2: Frost King's Wrath ===
+      this.phase2SpeedMult=1.0;this.phase2AttackMult=1.0;
+      
+      // --- Visuals (additive-only, never affects logic) ---
+      this.auraParticles=[];this._floorY=this.y;this.lastFootX=this.x;this.frostTrail=[];
+      this.wingFlap=0;this.iceshardFX=[];this.breathingEffect=0;
+      for(let i=0;i<32;i++)this.auraParticles.push({ang:rng()*Math.PI*2,rad:60+rng()*95,spd:0.008+rng()*0.02,size:2+rng()*4,type:rndChoice(["snow","crystal","mist"]),bob:rng()*Math.PI*2});
+    }
     else if(this.bossId===2){this.hp=this.maxHp=360;this.skillTimer={s1:0,summon_anim:0};this.smokeParticles=[];this.chargeMode=false;this.chargeVx=0;this.chargeHitDone=false;this.chargeTargetX=0;this.summonAnimParticles=[];this.dodgeTimer=0;}
     else if(this.bossId===3){this.hp=this.maxHp=200;this.phase=1;this.phase2Hp=100;this.skillTimer={s1:0,s2:0,s3:0};this.rainbowHue=0;this.currentElement="fire";this.elementTimer=180;this.chainActive=false;this.chainX=this.x;this.chainY=this.y;this.chainDir=1;this.chainVx=0;this.clones=[];this.cloneSpawnDone=false;this.screenTint=null;}
     else if(this.bossId===4){this.hp=this.maxHp=480;this.phase=1;this.skillTimer={s1:0,s2:0,s3:0,s4:0,warn:0};this.fireBalls=[];this.wingAngle=0;this.wingVel=4;this.roarTimer=0;this.roarWarning=0;this.diveActive=false;this.diveTargetX=0;this.diveTargetY=0;this.diveHitDone=false;this.diveWarning=0;this.tailWhipActive=false;this.tailWhipTimer=0;this.tailWhipHitDone=false;this.fireBurnZones=[];this.deadAnim=0;this.hoverYOffset=0;this.strafeDir=1;this.strafeTimer=0;this.comboStage=0;}
@@ -2013,11 +2639,364 @@ class Boss {
     else if(this.bossId===4)this._updateBoss4(player,floorY,w);
   }
   _updateBoss1(player,floorY,w){
-    this.hoverTimer++;this.wingFlap=(this.wingFlap+3)%360;
-    if(this.hoverTimer>=120){this.hoverTimer=0;this.targetX=clamp(player.x+rndInt(-150,150),80,w-80);this.targetY=clamp(player.y-rndInt(80,180),80,floorY-120);}
-    this.x+=(this.targetX-this.x)*0.04;this.y+=(this.targetY-this.y)*0.04;this.direction=this.x>player.x?-1:1;
-    if(this.skillTimer.s1<=0){this.skillTimer.s1=150;const dx=player.x-this.x,dy=player.y-this.y,d=Math.max(1,Math.sqrt(dx*dx+dy*dy));projectiles.push({x:this.x,y:this.y,vx:dx/d*8,vy:dy/d*8,owner:this,target:player,damage:5,slow:120,slow_pct:0.45,color:"cyan",type:"ice_arrow"});}
-    if(this.skillTimer.s2<=0){this.skillTimer.s2=600;for(let i=0;i<2;i++){const ex=rndChoice([100,w-100]);this.summonEnemies.push(new ChallengeEnemy(ex,floorY,challengeStage));}}
+    // ======= PHASE 2 CHECK =======
+    if(this.phase===1 && this.hp<=this.maxHp*0.3 && !this.phase2Entered){
+      this.phase=2;
+      this.phase2Entered=true;
+      this.phase2SpeedMult=1.15;
+      this.phase2AttackMult=1.15;
+      screenShake=Math.max(screenShake,35);
+      // Reset some cooldowns to prepare phase 2
+      this.skillTimer.s1=Math.min(this.skillTimer.s1,200);
+    }
+
+    // ======= COOLDOWN MANAGEMENT =======
+    for(const k in this.skillTimer) if(this.skillTimer[k]>0) this.skillTimer[k]--;
+
+    // ======= BREATHING / IDLE BEHAVIOR =======
+    this.breatheTimer--;
+    if(this.breatheTimer<=0){
+      if(this.actionState==="idle" && rng()<0.35){
+        this.actionState="breathing";
+        this.breatheTimer=rndInt(120,200);
+      }else{
+        this.actionState="idle";
+        this.breatheTimer=rndInt(60,140);
+      }
+    }
+    this.breathingEffect+=0.03;
+
+    // ======= HOVERING & POSITIONING =======
+    this.hoverTimer++;
+    this.wingFlap=(this.wingFlap+2+this.phase2SpeedMult*0.5)%360;
+    if(this.hoverTimer>=150){
+      this.hoverTimer=0;
+      this.targetX=clamp(player.x+rndInt(-180,180),80,w-80);
+      this.targetY=clamp(player.y-rndInt(120,200),100,floorY-150);
+    }
+    const moveSpeed=(this.actionState!=="preparing")?0.035:0.02;
+    this.x+=(this.targetX-this.x)*moveSpeed;
+    this.y+=(this.targetY-this.y)*moveSpeed;
+    this.direction=this.x>player.x?-1:1;
+
+    // ======= INTELLIGENT AI SKILL DECISION SYSTEM =======
+    const dx=player.x-this.x, dy=player.y-this.y, dist=Math.sqrt(dx*dx+dy*dy);
+    const playerMoving=Math.abs(player.vx)>1;
+    
+    // Skill availability check
+    const canUseS1=this.skillTimer.s1<=0 && this.lastSkillUsed!=="s1";
+    const canUseS2=this.skillTimer.s2<=0 && this.lastSkillUsed!=="s2";
+    const canUseS3=this.skillTimer.s3<=0 && this.lastSkillUsed!=="s3";
+    const canUseS4=this.skillTimer.s4<=0 && this.lastSkillUsed!=="s4";
+    const canUseS5=this.skillTimer.s5<=0 && this.lastSkillUsed!=="s5" && this.phase===2;
+    const canUseS6=this.skillTimer.s6<=0 && this.phase===2 && this.lastSkillUsed!=="s6";
+
+    // Weighted AI decision
+    let decision=rng()*100;
+    let selectedSkill=null;
+
+    // Skill weights based on distance & situation
+    let weights={s1:35,s2:20,s3:15,s4:15,s5:10,s6:5};
+    
+    // Adjust weights based on context
+    if(dist<150) weights.s4=30; // Frost Dash more likely when close
+    if(Math.abs(dx)<50) weights.s2=30; // Ice Prison when directly above/below
+    if(playerMoving) weights.s3=25; // Blizzard when player is mobile
+    if(this.phase===2) weights.s5=15; // More likely to use ultimate in phase 2
+
+    // Normalize weights
+    let totalWeight=0;
+    if(canUseS1) totalWeight+=weights.s1;
+    if(canUseS2) totalWeight+=weights.s2;
+    if(canUseS3) totalWeight+=weights.s3;
+    if(canUseS4) totalWeight+=weights.s4;
+    if(canUseS5) totalWeight+=weights.s5;
+    if(canUseS6) totalWeight+=weights.s6;
+
+    if(totalWeight>0){
+      decision=rng()*totalWeight;
+      let acc=0;
+      if(canUseS1){acc+=weights.s1;if(decision<acc){selectedSkill="s1";}}
+      else if(canUseS2){acc+=weights.s2;if(decision<acc){selectedSkill="s2";}}
+      else if(canUseS3){acc+=weights.s3;if(decision<acc){selectedSkill="s3";}}
+      else if(canUseS4){acc+=weights.s4;if(decision<acc){selectedSkill="s4";}}
+      else if(canUseS5){acc+=weights.s5;if(decision<acc){selectedSkill="s5";}}
+      else if(canUseS6){acc+=weights.s6;if(decision<acc){selectedSkill="s6";}}
+    }
+
+    // ======= SKILL EXECUTION =======
+    if(selectedSkill==="s1" && canUseS1) this._boss1SkillFrozenSpears(player,w);
+    else if(selectedSkill==="s2" && canUseS2) this._boss1SkillIcePrison(player);
+    else if(selectedSkill==="s3" && canUseS3) this._boss1SkillBlizzard(player,w,floorY);
+    else if(selectedSkill==="s4" && canUseS4) this._boss1SkillFrostDash(player,w);
+    else if(selectedSkill==="s5" && canUseS5) this._boss1SkillAbsoluteZero(player,w,floorY);
+    else if(selectedSkill==="s6" && canUseS6) this._boss1SkillWrathPhase2();
+
+    // ======= ACTIVE SKILL UPDATES =======
+    this._updateBoss1FrozenSpears(player,w);
+    this._updateBoss1IcePrison();
+    this._updateBoss1Blizzard(player,w,floorY);
+    this._updateBoss1FrostDash(player,w);
+    this._updateBoss1AbsoluteZero(player,w);
+
+    this._floorY=floorY;
+    this._updateFrostKingFX(floorY,w);
+  }
+
+  // ===== SKILL 1: FROZEN SPEARS =====
+  _boss1SkillFrozenSpears(player,w){
+    this.skillTimer.s1=this.skillCd.s1;
+    this.lastSkillUsed="s1";
+    this.actionState="preparing";
+    this.spearChargeTimer=72; // 1.2 seconds at 60fps
+    this.spearChargePhase=0;
+  }
+
+  _updateBoss1FrozenSpears(player,w){
+    if(this.spearChargeTimer>0){
+      this.spearChargeTimer--;
+      this.spearChargePhase=1-(this.spearChargeTimer/72); // 0 to 1
+      
+      if(this.spearChargeTimer===0){
+        // Launch spears in a fan
+        const spearCount=Math.floor(6+rng()*5); // 6-10 spears
+        const spreadAngle=Math.PI*0.8; // 144 degrees wide
+        const baseAngle=-spreadAngle/2;
+        
+        for(let i=0;i<spearCount;i++){
+          const angle=baseAngle+(spreadAngle/(spearCount-1))*i + rndInt(-15,15)*Math.PI/180;
+          const spd=9+rng()*2;
+          projectiles.push({
+            x:this.x,y:this.y,
+            vx:Math.cos(angle)*spd,vy:Math.sin(angle)*spd,
+            owner:this,target:player,damage:12,
+            color:"cyan",type:"ice_spear",size:2,
+            lifetime:180,life:180
+          });
+        }
+        screenShake=Math.max(screenShake,8);
+        this.actionState="idle";
+      }
+    }
+  }
+
+  // ===== SKILL 2: ICE PRISON =====
+  _boss1SkillIcePrison(player){
+    this.skillTimer.s2=this.skillCd.s2;
+    this.lastSkillUsed="s2";
+    this.icePrisonTarget=player;
+    this.icePrisonWarningTimer=90; // 1.5 seconds warning
+    this.icePrisonWarningX=player.x;
+    this.icePrisonWarningY=player.y;
+    this.actionState="preparing";
+  }
+
+  _updateBoss1IcePrison(){
+    if(this.icePrisonWarningTimer>0){
+      this.icePrisonWarningTimer--;
+      
+      if(this.icePrisonWarningTimer===0 && this.icePrisonTarget){
+        // Check if player is still in zone (update to current position)
+        if(!this.icePrisonTarget._icePrisoned){
+          const dist=Math.sqrt(Math.pow(this.icePrisonTarget.x-this.icePrisonWarningX,2)+Math.pow(this.icePrisonTarget.y-this.icePrisonWarningY,2));
+          if(dist<60){ // Hit radius
+            this.icePrisonTarget._icePrisoned=true;
+            this.icePrisonTarget._icePrisonTimer=120; // 2 seconds frozen
+            screenShake=Math.max(screenShake,10);
+          }
+        }
+        this.actionState="idle";
+      }
+    }
+
+    // Update ice prison effect on player
+    if(this.icePrisonTarget && this.icePrisonTarget._icePrisoned){
+      this.icePrisonTarget._icePrisonTimer--;
+      if(this.icePrisonTarget._icePrisonTimer<=0){
+        this.icePrisonTarget._icePrisoned=false;
+      }
+    }
+  }
+
+  // ===== SKILL 3: BLIZZARD =====
+  _boss1SkillBlizzard(player,w,floorY){
+    this.skillTimer.s3=this.skillCd.s3;
+    this.lastSkillUsed="s3";
+    this.blizzardActive=true;
+    this.blizzardTimer=480; // 8 seconds
+    this.meteorSpawns=[];
+    this.meteorWarnings=[];
+    screenShake=Math.max(screenShake,12);
+    this.actionState="idle";
+  }
+
+  _updateBoss1Blizzard(player,w,floorY){
+    if(this.blizzardActive && this.blizzardTimer>0){
+      this.blizzardTimer--;
+      
+      // Spawn meteors every 30 frames (0.5 seconds)
+      if(this.blizzardTimer%30===0){
+        const meteorX=50+rng()*(w-100);
+        const fallY=floorY-300;
+        // First warn, then spawn
+        this.meteorWarnings.push({x:meteorX,y:fallY,warningTimer:45,life:45});
+      }
+
+      // Update warnings and convert to actual meteors
+      for(let i=this.meteorWarnings.length-1;i>=0;i--){
+        this.meteorWarnings[i].warningTimer--;
+        if(this.meteorWarnings[i].warningTimer<=0){
+          const mw=this.meteorWarnings[i];
+          this.meteorSpawns.push({x:mw.x,y:mw.y-100,vy:0,radius:35,damage:18,life:180});
+          this.meteorWarnings.splice(i,1);
+        }
+      }
+
+      // Update falling meteors & check collisions
+      for(let i=this.meteorSpawns.length-1;i>=0;i--){
+        const meteor=this.meteorSpawns[i];
+        meteor.vy+=0.4; // gravity
+        meteor.y+=meteor.vy;
+        meteor.life--;
+        
+        if(meteor.y>=floorY-20){
+          this.meteorSpawns.splice(i,1);
+        }else if(player.hp>0){
+          const d=Math.sqrt(Math.pow(meteor.x-player.x,2)+Math.pow(meteor.y-player.y,2));
+          if(d<meteor.radius+20){
+            applyDamage(player,meteor.damage*0.4,this);
+            this.meteorSpawns.splice(i,1);
+          }
+        }
+      }
+    }else if(this.blizzardTimer<=0 && this.blizzardActive){
+      this.blizzardActive=false;
+      this.meteorSpawns=[];
+      this.meteorWarnings=[];
+    }
+  }
+
+  // ===== SKILL 4: FROST DASH =====
+  _boss1SkillFrostDash(player,w){
+    this.skillTimer.s4=this.skillCd.s4;
+    this.lastSkillUsed="s4";
+    this.dashActive=true;
+    this.dashPhase=0;
+    this.dashCount=0;
+    this.dashTargetX=player.x;
+    this.dashIceTrails=[];
+    this.actionState="preparing";
+  }
+
+  _updateBoss1FrostDash(player,w){
+    if(this.dashActive){
+      if(this.dashPhase===0){ // Phase 0: Charge up
+        if(this.dashCount<2){
+          this.dashPhase=1; // Start dash
+          this.dashCount++;
+        }else{
+          this.dashActive=false; // Done with dashes
+          this.actionState="idle";
+        }
+      }else if(this.dashPhase===1){ // Phase 1: Dashing
+        const dashSpd=(20+this.phase2SpeedMult*2)*this.phase2SpeedMult;
+        const dirToDash=this.dashTargetX>this.x?1:-1;
+        this.x+=dashSpd*dirToDash;
+        this.x=clamp(this.x,60,w-60);
+        
+        // Leave ice trail
+        this.dashIceTrails.push({x:this.x,y:this.y,life:90});
+        
+        // Check hit on player
+        if(Math.abs(this.x-player.x)<70 && Math.abs(this.y-player.y)<80 && player.hp>0){
+          applyDamage(player,14,this);
+          screenShake=Math.max(screenShake,8);
+          player.slowTimer=Math.max(player.slowTimer||0,30);
+          player._slowPct=0.4;
+        }
+
+        // Dash complete
+        if(Math.abs(this.x-this.dashTargetX)<50 || this.x<=60 || this.x>=w-60){
+          this.dashPhase=0; // Return to charge phase
+          this.dashTargetX=player.x; // Re-target
+        }
+      }
+    }
+
+    // Update ice trails
+    this.dashIceTrails=this.dashIceTrails.filter(t=>{t.life--;return t.life>0;});
+  }
+
+  // ===== SKILL 5: ABSOLUTE ZERO (ULTIMATE) =====
+  _boss1SkillAbsoluteZero(player,w,floorY){
+    this.skillTimer.s5=this.skillCd.s5;
+    this.lastSkillUsed="s5";
+    this.absoluteZeroCharging=true;
+    this.absoluteZeroTimer=150; // 2.5 seconds charge
+    this.heatCrystals=[];
+    this.battlefieldFrozen=false;
+    screenShake=Math.max(screenShake,15);
+    this.actionState="preparing";
+  }
+
+  _updateBoss1AbsoluteZero(player,w){
+    if(this.absoluteZeroCharging && this.absoluteZeroTimer>0){
+      this.absoluteZeroTimer--;
+      
+      // Spawn heat crystals at 2 second mark (before release)
+      if(this.absoluteZeroTimer===60){
+        // Create 3 safe zones
+        const safeZones=[w*0.25, w*0.5, w*0.75];
+        this.heatCrystals=safeZones.map(zx=>({
+          x:zx, y:this.y+150, life:300, maxLife:300, radius:50
+        }));
+        screenShake=Math.max(screenShake,20);
+      }
+
+      if(this.absoluteZeroTimer===0){
+        // Release freeze wave
+        this.battlefieldFrozen=true;
+        const freezeLifetime=180;
+        
+        // Damage player based on distance to nearest crystal
+        if(player.hp>0){
+          let minDistToCrystal=999;
+          for(const crystal of this.heatCrystals){
+            const d=Math.sqrt(Math.pow(player.x-crystal.x,2)+Math.pow(player.y-crystal.y,2));
+            minDistToCrystal=Math.min(minDistToCrystal,d);
+          }
+
+          if(minDistToCrystal<50){
+            // In safe zone
+            applyDamage(player,25,this); // Reduced damage
+            // No freeze
+          }else{
+            // Outside safe zone
+            applyDamage(player,60,this); // Heavy damage
+            player._icePrisoned=true;
+            player._icePrisonTimer=120; // Freeze status
+          }
+        }
+
+        screenShake=Math.max(screenShake,25);
+        this.absoluteZeroCharging=false;
+
+        // Clear after effect
+        setTimeout(()=>{this.battlefieldFrozen=false;},freezeLifetime);
+      }
+    }
+
+    // Update heat crystals
+    this.heatCrystals=this.heatCrystals.filter(c=>{c.life--;return c.life>0;});
+  }
+
+  // ===== SKILL 6: WRATH PHASE 2 =====
+  _boss1SkillWrathPhase2(){
+    if(this.phase===2){
+      // Already in phase 2, boost for this frame
+      this.phase2SpeedMult=Math.min(1.35,this.phase2SpeedMult+0.05);
+      screenShake=Math.max(screenShake,5);
+    }
   }
   _updateBoss2(player,floorY,w){
     if(this.hp<=this.maxHp*0.5&&this.phase===1){this.phase=2;screenShake=Math.max(screenShake,20);}
@@ -2075,16 +3054,292 @@ class Boss {
   }
   draw(){if(this.bossId===1)this._drawBoss1();else if(this.bossId===2)this._drawBoss2();else if(this.bossId===3)this._drawBoss3();else if(this.bossId===4)this._drawBoss4();}
   _drawBoss1(){
-    const rx=this.x,ry=this.y,wf=Math.sin(this.wingFlap*Math.PI/180)*25;
-    ctx.fillStyle="mediumpurple";ctx.strokeStyle="deepskyblue";ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(rx,ry-30);ctx.lineTo(rx-80,ry-60+wf);ctx.lineTo(rx-60,ry-20);ctx.lineTo(rx-30,ry-15);ctx.closePath();ctx.fill();ctx.stroke();
-    ctx.beginPath();ctx.moveTo(rx,ry-30);ctx.lineTo(rx+80,ry-60+wf);ctx.lineTo(rx+60,ry-20);ctx.lineTo(rx+30,ry-15);ctx.closePath();ctx.fill();ctx.stroke();
-    _rect(rx-25,ry,50,50,"mediumpurple","deepskyblue",2);_rect(rx-18,ry-45,36,45,"mediumpurple","deepskyblue",2);
-    _oval(rx-20,ry-80,40,35,"orchid","white");
-    ctx.fillStyle="deepskyblue";ctx.strokeStyle="white";ctx.beginPath();ctx.moveTo(rx,ry-110);ctx.lineTo(rx-22,ry-80);ctx.lineTo(rx+22,ry-80);ctx.closePath();ctx.fill();ctx.stroke();
-    for(let i=0;i<5;i++){const sx=rx-20+i*10;ctx.fillStyle="cyan";ctx.beginPath();ctx.moveTo(sx,ry-80);ctx.lineTo(sx+3,ry-92);ctx.lineTo(sx+6,ry-80);ctx.closePath();ctx.fill();}
-    _oval(rx-8,ry-70,6,6,"white",null);_oval(rx+2,ry-70,6,6,"white",null);_oval(rx-6,ry-68,2,2,"deepskyblue",null);_oval(rx+4,ry-68,2,2,"deepskyblue",null);
-    this._drawHpBar(rx,ry,"❄️ ICE WITCH BOSS 1","deepskyblue");
+    // ❄️ FROST KING — THE FROZEN EMPEROR — v2 with 6 Skills + Phase 2
+    const rx=this.x,ry=this.y;
+    
+    // ===== Draw skill effects =====
+    this._drawBoss1SkillEffects();
+    
+    // ===== Draw trails and aura =====
+    this._drawFrostKingFrostTrail();
+    this._drawFrostKingAura(rx,ry);
+    
+    // ===== Draw body with phase indicator =====
+    const phaseAlpha=(this.phase===2)?1.0:1.0;
+    this._drawFrostKingBody(rx,ry,1,phaseAlpha,this.anim);
+    
+    // ===== Phase 2 glow =====
+    if(this.phase===2){
+      ctx.save();
+      ctx.shadowColor="rgba(255,150,150,0.8)";
+      ctx.shadowBlur=30;
+      ctx.strokeStyle="rgba(255,150,150,0.6)";
+      ctx.lineWidth=3;
+      ctx.beginPath();
+      ctx.arc(rx,ry,80,0,Math.PI*2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    
+    // ===== HP Bar with phase indicator =====
+    const hpLabel=this.phase===2?"❄️ FROST KING - PHASE 2 WRATH":"❄️ FROST KING";
+    const hpColor=this.phase===2?"#FF6699":"cyan";
+    this._drawHpBar(rx,ry-40,hpLabel,hpColor);
+    
+    // ===== Action state indicator =====
+    if(this.actionState==="preparing"){
+      _text(rx,ry-70,"⚠️ CASTING...","orange","11px Arial bold");
+    }
+  }
+
+  _drawBoss1SkillEffects(){
+    const rx=this.x,ry=this.y;
+
+    // ===== Skill 1: Frozen Spears Charging =====
+    if(this.spearChargeTimer>0){
+      ctx.save();
+      const chargeProgress=this.spearChargePhase;
+      ctx.globalAlpha=0.6+chargeProgress*0.4;
+      ctx.fillStyle="cyan";
+      ctx.beginPath();
+      ctx.arc(rx,ry-50,20+chargeProgress*15,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+      
+      // Spear shapes forming
+      for(let i=0;i<8;i++){
+        const ang=(i/8)*Math.PI*2+this.anim*0.05;
+        const dist=50+chargeProgress*20;
+        const sx=rx+Math.cos(ang)*dist;
+        const sy=ry+Math.sin(ang)*dist;
+        ctx.save();
+        ctx.translate(sx,sy);
+        ctx.rotate(ang);
+        ctx.strokeStyle="rgba(180,240,255,0.8)";
+        ctx.lineWidth=3;
+        ctx.beginPath();
+        ctx.moveTo(-10,-20);ctx.lineTo(0,20);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // ===== Skill 2: Ice Prison Warning Circle =====
+    if(this.icePrisonWarningTimer>0){
+      const warningAlpha=(this.icePrisonWarningTimer/90)*0.8;
+      const pulseSize=30+Math.sin(this.anim*0.08)*15;
+      ctx.save();
+      ctx.strokeStyle=`rgba(100,200,255,${warningAlpha})`;
+      ctx.lineWidth=2;
+      ctx.setLineDash([5,5]);
+      ctx.beginPath();
+      ctx.arc(this.icePrisonWarningX,this.icePrisonWarningY,pulseSize,0,Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      
+      _text(this.icePrisonWarningX,this.icePrisonWarningY-50,"⚠️ ICE PRISON","cyan","10px Arial bold");
+    }
+
+    // ===== Skill 3: Blizzard Meteor Warnings & Falling Meteors =====
+    if(this.blizzardActive){
+      // Blizzard overlay (semi-transparent snowstorm)
+      ctx.save();
+      ctx.globalAlpha=0.15;
+      ctx.fillStyle="white";
+      for(let i=0;i<20;i++){
+        const px=campX+50+rng()*W;
+        const py=rng()*H;
+        ctx.fillRect(px,py,2,2);
+      }
+      ctx.restore();
+
+      // Meteor warnings
+      this.meteorWarnings.forEach(w=>{
+        const wAlpha=(w.warningTimer/45)*0.6;
+        ctx.save();
+        ctx.globalAlpha=wAlpha;
+        ctx.fillStyle="rgba(255,150,0,0.8)";
+        ctx.beginPath();
+        ctx.arc(w.x,w.y,25,0,Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle="orange";
+        ctx.lineWidth=2;
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // Falling meteors
+      this.meteorSpawns.forEach(m=>{
+        const mAlpha=Math.max(0,m.life/180);
+        ctx.save();
+        ctx.globalAlpha=mAlpha;
+        ctx.fillStyle="rgba(200,100,50,0.9)";
+        ctx.beginPath();
+        ctx.arc(m.x,m.y,m.radius,0,Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle="orange";
+        ctx.lineWidth=2;
+        ctx.stroke();
+        // Inner glow
+        ctx.fillStyle="rgba(255,180,100,0.5)";
+        ctx.beginPath();
+        ctx.arc(m.x,m.y,m.radius*0.6,0,Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // ===== Skill 4: Frost Dash Ice Trails =====
+    this.dashIceTrails.forEach(trail=>{
+      const trailAlpha=(trail.life/90)*0.6;
+      ctx.save();
+      ctx.globalAlpha=trailAlpha;
+      ctx.fillStyle="rgba(180,240,255,0.8)";
+      ctx.beginPath();
+      ctx.ellipse(trail.x,trail.y,30,15,0,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // ===== Skill 5: Absolute Zero Charging & Heat Crystals =====
+    if(this.absoluteZeroCharging){
+      // Freezing aura expanding
+      const chargeProgress=1-(this.absoluteZeroTimer/150);
+      ctx.save();
+      ctx.globalAlpha=0.3+chargeProgress*0.3;
+      ctx.fillStyle="rgba(150,200,255,0.4)";
+      ctx.beginPath();
+      ctx.arc(rx,ry,50+chargeProgress*100,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+      
+      _text(rx,ry-120,"❄️ ABSOLUTE ZERO ❄️","cyan","12px Arial bold");
+    }
+
+    // ===== Heat Crystals (Absolute Zero safe zones) =====
+    this.heatCrystals.forEach(crystal=>{
+      const crystalAlpha=(crystal.life/crystal.maxLife);
+      ctx.save();
+      ctx.globalAlpha=crystalAlpha;
+      ctx.fillStyle="rgba(255,200,0,0.7)";
+      ctx.strokeStyle="orange";
+      ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.arc(crystal.x,crystal.y,crystal.radius,0,Math.PI*2);
+      ctx.fill();
+      ctx.stroke();
+      // Inner glow
+      ctx.fillStyle="rgba(255,255,100,0.5)";
+      ctx.beginPath();
+      ctx.arc(crystal.x,crystal.y,crystal.radius*0.5,0,Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // ===== Absolute Zero Frozen Battlefield =====
+    if(this.battlefieldFrozen){
+      ctx.save();
+      ctx.globalAlpha=0.25;
+      ctx.fillStyle="cyan";
+      ctx.fillRect(0,0,W,H);
+      ctx.restore();
+      
+      _text(W/2,H/2,"❄️ BATTLEFIELD FROZEN ❄️","cyan","24px Arial bold");
+    }
+  }
+  // ---- Ambient orbiting aura: snow + ice crystals + cold mist, always swirling, never idle ----
+  _drawFrostKingAura(rx,ry){
+    ctx.save();
+    this.auraParticles.forEach(p=>{
+      const px=rx+Math.cos(p.ang)*p.rad, py=ry-60+Math.sin(p.ang)*p.rad*0.5+Math.sin(p.bob)*4;
+      if(p.type==="snow"){ctx.fillStyle="rgba(255,255,255,0.85)";ctx.beginPath();ctx.arc(px,py,p.size*0.5,0,Math.PI*2);ctx.fill();}
+      else if(p.type==="crystal"){ctx.save();ctx.translate(px,py);ctx.rotate(p.ang);ctx.fillStyle="rgba(180,240,255,0.8)";ctx.beginPath();ctx.moveTo(0,-p.size);ctx.lineTo(p.size*0.6,0);ctx.lineTo(0,p.size);ctx.lineTo(-p.size*0.6,0);ctx.closePath();ctx.fill();ctx.restore();}
+      else{ctx.fillStyle="rgba(210,245,255,0.22)";ctx.beginPath();ctx.arc(px,py,p.size*2.2,0,Math.PI*2);ctx.fill();}
+    });
+    ctx.restore();
+  }
+  // ---- Heavy-footstep trail: ground freezes wherever the boss has moved ----
+  _drawFrostKingFrostTrail(){
+    this.frostTrail.forEach(t=>{
+      const a=Math.max(0,t.life/150);
+      if(t.puff){ctx.fillStyle=`rgba(220,245,255,${0.4*Math.max(0,t.life/40)})`;ctx.beginPath();ctx.arc(t.x,t.y,t.r+2,0,Math.PI*2);ctx.fill();}
+      else{ctx.strokeStyle=`rgba(190,240,255,${0.55*a})`;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(t.x,t.y,t.r,t.r*0.32,0,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle=`rgba(220,250,255,${0.18*a})`;ctx.beginPath();ctx.ellipse(t.x,t.y,t.r,t.r*0.32,0,0,Math.PI*2);ctx.fill();}
+    });
+  }
+  // ---- Additive FX updater: aura swirl + footstep freeze cracks (no gameplay effect) ----
+  _updateFrostKingFX(floorY,w){
+    this.auraParticles.forEach(p=>{p.ang+=p.spd;p.bob+=0.05;});
+    if(Math.abs(this.x-this.lastFootX)>=42){
+      this.lastFootX=this.x;
+      this.frostTrail.push({x:this.x,y:floorY,life:150,r:6});
+      for(let i=0;i<6;i++)this.frostTrail.push({x:this.x+rndInt(-18,18),y:floorY-rndInt(0,6),life:40,r:2,puff:true,vx:(rng()-0.5)*1.2,vy:-rng()*1.4});
+    }
+    this.frostTrail=this.frostTrail.filter(t=>t.life>0);
+    this.frostTrail.forEach(t=>{t.life--;if(t.puff){t.x+=t.vx;t.y+=t.vy;}else if(t.r<34)t.r+=0.35;});
+  }
+  // ---- The Frost King's body itself: crown, horns, glowing-fog head, spiked crystal shoulders,
+  //      long clawed arms, pulsing ice core, heavy legs, drifting mist cloak ----
+  _drawFrostKingBody(rx,ry,scale=1,alpha=1,anim=0){
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.translate(rx,ry);ctx.scale(scale,scale);
+    const cloakDrift=Math.sin(anim*0.03)*6;
+    const pulseT=(anim%120)/120,corePulse=Math.pow(Math.sin(pulseT*Math.PI),3); // sharp glow spike once every ~2s
+    // misty cloak — no complex animation, just a gentle sway
+    ctx.fillStyle="rgba(210,240,255,0.35)";
+    ctx.beginPath();ctx.moveTo(-6,-150);ctx.quadraticCurveTo(-70+cloakDrift,-40,-95+cloakDrift*1.4,70);ctx.quadraticCurveTo(-40,50,0,60);ctx.quadraticCurveTo(40,50,95-cloakDrift*1.4,70);ctx.quadraticCurveTo(70-cloakDrift,-40,6,-150);ctx.closePath();ctx.fill();
+    // heavy legs
+    _rect(-40,20,32,70,"#BFE9FF","#eaffff",3);_rect(8,20,32,70,"#BFE9FF","#eaffff",3);
+    // shoulders — giant spiked ice blocks with crystal facets
+    for(const side of[-1,1]){
+      ctx.save();ctx.translate(side*70,-70);
+      ctx.fillStyle="#AEE6FF";ctx.strokeStyle="white";ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(-38,10);ctx.lineTo(-30,-40);ctx.lineTo(0,-55);ctx.lineTo(30,-30);ctx.lineTo(35,15);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.fillStyle="#E8FBFF";
+      for(let i=0;i<3;i++){const sx=-24+i*22;ctx.beginPath();ctx.moveTo(sx,-38);ctx.lineTo(sx+6,-62);ctx.lineTo(sx+12,-38);ctx.closePath();ctx.fill();}
+      ctx.fillStyle="rgba(150,230,255,0.7)";ctx.beginPath();ctx.moveTo(-8,-20);ctx.lineTo(0,-40);ctx.lineTo(8,-20);ctx.lineTo(0,-5);ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+    // long arms — ice claws with crystal elbow joints
+    for(const side of[-1,1]){
+      ctx.save();ctx.translate(side*68,-55);ctx.rotate(side*0.18);
+      ctx.strokeStyle="#CFF3FF";ctx.lineWidth=16;ctx.lineCap="round";
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(side*18,95);ctx.stroke();
+      ctx.fillStyle="#E9FBFF";ctx.beginPath();ctx.arc(side*9,48,7,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="#DFF7FF";ctx.strokeStyle="white";ctx.lineWidth=2;
+      const hx=side*18,hy=95;
+      for(let c=-1;c<=1;c++){ctx.beginPath();ctx.moveTo(hx,hy);ctx.lineTo(hx+c*10,hy+26);ctx.lineTo(hx+c*4,hy+10);ctx.closePath();ctx.fill();ctx.stroke();}
+      ctx.restore();
+    }
+    // torso
+    _rect(-34,-90,68,90,"#CDEFFF","white",3);
+    // glowing ice core — pulses hard roughly every 2 seconds
+    const coreR=10+corePulse*6;
+    ctx.save();ctx.shadowColor="#7EEBFF";ctx.shadowBlur=10+corePulse*22;
+    const coreGrad=ctx.createRadialGradient(0,-45,0,0,-45,coreR+8);
+    coreGrad.addColorStop(0,"rgba(255,255,255,0.9)");coreGrad.addColorStop(0.5,`rgba(130,235,255,${0.7+0.3*corePulse})`);coreGrad.addColorStop(1,"rgba(80,190,255,0)");
+    ctx.fillStyle=coreGrad;ctx.beginPath();ctx.arc(0,-45,coreR+8,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    // head — crown, horns, glowing eyes, swirling inner fog (never pure white: cyan/blue/white blend)
+    ctx.save();ctx.translate(0,-118);
+    _oval(-24,-18,48,38,"#DCF6FF","white",2);
+    ctx.save();ctx.beginPath();ctx.ellipse(0,0,24,19,0,0,Math.PI*2);ctx.clip();
+    for(let i=0;i<4;i++){const mAng=anim*0.02+i*1.6;ctx.fillStyle="rgba(255,255,255,0.25)";ctx.beginPath();ctx.ellipse(Math.cos(mAng)*10,Math.sin(mAng)*6,10,6,0,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+    ctx.fillStyle="#EAFBFF";ctx.strokeStyle="#9FE0FF";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(-18,-8);ctx.quadraticCurveTo(-40,-30,-30,-55);ctx.quadraticCurveTo(-26,-30,-10,-14);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(18,-8);ctx.quadraticCurveTo(40,-30,30,-55);ctx.quadraticCurveTo(26,-30,10,-14);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle="#BEEBFF";ctx.strokeStyle="white";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(-22,-16);
+    for(let i=0;i<5;i++){const px2=-22+i*11,py2=(i%2===0)?-34:-24;ctx.lineTo(px2,py2);}
+    ctx.lineTo(22,-16);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.save();ctx.shadowColor="#00F6FF";ctx.shadowBlur=12;ctx.fillStyle="#00E5FF";
+    ctx.beginPath();ctx.ellipse(-8,-2,5,3.4,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(8,-2,5,3.4,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    ctx.restore(); // head
+    ctx.restore(); // whole body
   }
   _drawBoss2(){
     const rx=this.x,ry=this.y,isP2=this.phase===2;
@@ -4022,7 +5277,7 @@ function updateChallenge(w,h){
   tickFrost(p1);
   if(frameCount%60===0&&p1.charType==="red"&&p1.hp>0)p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0&&p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
-  if(p1.stunTimer<=0&&p1.hp>0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0){
+  if(challengeBossIntroState!=="INTRO_RUNNING"&&p1.stunTimer<=0&&p1.hp>0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0){
     let spd=4.3125;
     if(p1.charType==="wind"&&p1.windBoostTimer>0){spd*=1.25;p1.windBoostTimer--;}
     if(p1.slowTimer>0)spd*=(1-p1._slowPct);
@@ -4066,20 +5321,63 @@ function updateChallenge(w,h){
   challengeEnemies=challengeEnemies.filter(e=>{if(e.hp>0&&p1.hp>0)e.update(p1,floorY,worldW);return e.hp>0;});
   if(challengeEnemies.length===0&&challengeState==="WAVE"){
     if(challengeWaveIdx<challengeWaveSched.length){_challengeWaveTimer++;if(_challengeWaveTimer>=120){_challengeWaveTimer=0;_spawnChallengeWave(floorY,worldW);}}
-    else if(!challengeBossSpawned){challengeBossSpawned=true;_challengeWaveTimer=0;challengeBosses.push(new Boss(challengeStage,clamp(p1.x+500,150,worldW-150),floorY));challengeState="BOSS";}
+    else if(!challengeBossSpawned){
+      challengeBossSpawned=true;_challengeWaveTimer=0;
+      const bossX=clamp(p1.x+500,150,worldW-150);
+      if(challengeStage===1){
+        // Boss 1 (Frost King) gets the full cinematic intro.
+        bossIntroManager=new BossIntroManager(bossX,floorY);
+        bossIntroManager.start();
+        challengeBossIntroState="INTRO_RUNNING";
+        challengeState="BOSS";
+      }else{
+        challengeBosses.push(new Boss(challengeStage,bossX,floorY));
+        challengeState="BOSS";
+      }
+    }
   }else _challengeWaveTimer=0;
+  // Boss intro cinematic
+  if(challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager){
+    const introResult=bossIntroManager.update();
+    if(introResult.finished){
+      challengeBossIntroState="INTRO_DONE";
+      if(bossIntroManager.boss){
+        // Reuse the exact Boss instance that emerged from the mist during
+        // the cinematic (preserves its frost trail/aura state) rather than
+        // constructing a fresh one.
+        challengeBosses.push(bossIntroManager.boss);
+      }
+      bossIntroManager=null;
+    }
+  }
+  
   challengeBosses.forEach(b=>{if(!b.dead&&b.hp>0&&p1.hp>0){b.update(p1,floorY,worldW);if(b.summonEnemies.length){challengeEnemies.push(...b.summonEnemies);b.summonEnemies=[];}}});
   if(p1.hp<=0&&challengeState!=="DONE"){challengeResult="LOSE";challengeState="DONE";}
   const allDead=challengeBosses.length>0&&challengeBosses.every(b=>b.dead);
   if(allDead&&challengeBossSpawned&&challengeEnemies.length===0&&challengeState!=="DONE"){challengeResult="WIN";challengeState="DONE";}
 
-  // Camera follows p1 across the expanded (2.5x) arena
-  const CAM_L=w*0.35, CAM_R=w*0.55;
-  if(p1.x-campX>CAM_R) campX=p1.x-CAM_R;
-  else if(p1.x-campX<CAM_L) campX=p1.x-CAM_L;
-  campX=clamp(campX,0,Math.max(0,worldW-w));
+  // Camera follows p1 across the expanded (2.5x) arena — except during the
+  // boss cinematic, where it slowly pans toward the unfolding scene instead.
+  if(challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager){
+    const targetCam=clamp(bossIntroManager.focusX-w*0.45,0,Math.max(0,worldW-w));
+    campX+=(targetCam-campX)*0.045;
+  }else{
+    const CAM_L=w*0.35, CAM_R=w*0.55;
+    if(p1.x-campX>CAM_R) campX=p1.x-CAM_R;
+    else if(p1.x-campX<CAM_L) campX=p1.x-CAM_L;
+    campX=clamp(campX,0,Math.max(0,worldW-w));
+  }
+
+  const introActive=challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager;
+  const camZoom=introActive?bossIntroManager.zoom:1.0;
 
   ctx.save();ctx.translate(-campX,0);
+  if(camZoom!==1.0){
+    // Real camera zoom: actually scales everything drawn in this block
+    // (floor, characters, effects) around the cinematic focus point.
+    const pivotX=introActive?bossIntroManager.focusX:campX+w/2, pivotY=floorY-80;
+    ctx.translate(pivotX,pivotY);ctx.scale(camZoom,camZoom);ctx.translate(-pivotX,-pivotY);
+  }
   drawFloor(floorY,false,campX);
   updateProjectiles(floorY,null);
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
@@ -4089,10 +5387,19 @@ function updateChallenge(w,h){
   p1.draw();
   challengeEnemies.forEach(e=>e.draw());
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
+  if(introActive){
+    bossIntroManager.drawWorld(ctx,w,h);
+  }
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
   updateAndDrawDmgNumbers();
   ctx.restore();
+
+  // Screen-space cinematic overlays (flash + title card) — drawn AFTER the
+  // camera transform is restored so they stay fixed to the screen.
+  if(introActive){
+    bossIntroManager.drawScreen(ctx,w,h);
+  }
 
   _text(w/2,20,`⚔️ THỬ THÁCH - MÀN ${challengeStage} ⚔️`,"gold","16px Arial bold");
   const bw2=(p1.hp/MAX_HP)*200;
@@ -4157,6 +5464,7 @@ function startChallengeMode(stage){
   projectiles=[];puppets=[];p1=new Fighter(W*0.2,H*FLOOR_Y_RATIO,selectedP1,1);
   p1.hp=MAX_HP;campX=0;gameState="CHALLENGE";_challengeWaveTimer=0;startChallenge(stage);
   dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;_challengeEndSfxDone=false;
+  bossIntroManager=null;challengeBossIntroState="IDLE";
 }
 function terrainHeightAt(worldX){
   if(!roadTerrain) return 0;
