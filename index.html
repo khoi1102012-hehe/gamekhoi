@@ -67,6 +67,21 @@ let projectiles  = [];
 let puppets      = [];
 let frameCount   = 0;
 
+// ---------- Combat feel: combo counter, crit hits, floating damage numbers ----------
+let dmgNumbers        = [];   // floating damage number popups
+let comboCount         = 0;   // consecutive hits landed by the human player (p1) without a timeout/being-hit reset
+let comboTimer         = 0;   // frames left before the combo decays back to 0
+let comboMaxThisRun    = 0;   // best combo reached in the current run (shown on victory/defeat screens)
+let _hitSfxCooldown    = 0;   // throttles the hit "thwack" sound so multi-tick ultimates don't machine-gun the audio
+const CRIT_CHANCE      = 0.15;
+const CRIT_MULT        = 1.6;
+
+// ---------- Road mode session stats (in-memory only, resets on page reload) ----------
+let roadBestDistance   = 0;   // longest distance reached this session across all runs
+let roadNewRecord      = false;
+let roadKillCount      = 0;   // trash enemies defeated in the current run
+let roadRunStartFrame  = 0;   // frameCount when the current run began, for an elapsed-time stat
+
 // Challenge
 let challengeState    = "IDLE";
 let challengeStage    = 1;
@@ -593,6 +608,115 @@ function sfxTransformEnd(){ // distinct sound when V4 wears off and fire returns
   o.frequency.exponentialRampToValueAtTime(120,ac.currentTime+0.45);
   g.gain.setValueAtTime(0.2,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.45);
   o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.5);
+}
+function sfxHit(isCrit){ // short percussive "thwack" on every landed hit, sharper+higher on crits
+  const ac=_getActx(); if(!ac)return;
+  const src=ac.createBufferSource();src.buffer=_noiseBuffer(ac,isCrit?0.14:0.09);
+  const filt=ac.createBiquadFilter();filt.type="bandpass";filt.frequency.value=isCrit?2600:1500;filt.Q.value=1.1;
+  const g=ac.createGain();g.gain.setValueAtTime(isCrit?0.3:0.16,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+(isCrit?0.16:0.1));
+  src.connect(filt);filt.connect(g);g.connect(ac.destination);src.start();
+  if(isCrit){
+    const o=ac.createOscillator(),og=ac.createGain();o.type="square";o.frequency.setValueAtTime(900,ac.currentTime);o.frequency.exponentialRampToValueAtTime(1500,ac.currentTime+0.09);
+    og.gain.setValueAtTime(0.12,ac.currentTime);og.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.12);
+    o.connect(og);og.connect(ac.destination);o.start();o.stop(ac.currentTime+0.13);
+  }
+}
+function sfxComboMilestone(n){ // rising ping every 5-hit combo milestone, pitch climbs with combo size
+  const ac=_getActx(); if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  const base=520+Math.min(n,40)*8;
+  o.type="sine";o.frequency.setValueAtTime(base,ac.currentTime);o.frequency.exponentialRampToValueAtTime(base*1.6,ac.currentTime+0.12);
+  g.gain.setValueAtTime(0.001,ac.currentTime);g.gain.linearRampToValueAtTime(0.22,ac.currentTime+0.02);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.22);
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.25);
+}
+function sfxVictory(){
+  const ac=_getActx(); if(!ac)return;
+  [0,0.12,0.24,0.4].forEach((t,i)=>{
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.type="triangle";o.frequency.setValueAtTime([523,659,784,1046][i],ac.currentTime+t);
+    g.gain.setValueAtTime(0.001,ac.currentTime+t);g.gain.linearRampToValueAtTime(0.22,ac.currentTime+t+0.03);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.35);
+    o.connect(g);g.connect(ac.destination);o.start(ac.currentTime+t);o.stop(ac.currentTime+t+0.4);
+  });
+}
+function sfxDefeat(){
+  const ac=_getActx(); if(!ac)return;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type="sawtooth";o.frequency.setValueAtTime(300,ac.currentTime);
+  o.frequency.exponentialRampToValueAtTime(60,ac.currentTime+0.9);
+  g.gain.setValueAtTime(0.22,ac.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.9);
+  o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+0.95);
+}
+function sfxRecord(){ // little celebratory chime when a new personal-best distance is set
+  const ac=_getActx(); if(!ac)return;
+  [0,0.1,0.2].forEach((t,i)=>{
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.type="sine";o.frequency.setValueAtTime([784,988,1318][i],ac.currentTime+t);
+    g.gain.setValueAtTime(0.001,ac.currentTime+t);g.gain.linearRampToValueAtTime(0.2,ac.currentTime+t+0.02);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.3);
+    o.connect(g);g.connect(ac.destination);o.start(ac.currentTime+t);o.stop(ac.currentTime+t+0.32);
+  });
+}
+
+// ---------- Floating damage numbers ----------
+function spawnDamageNumber(x,y,amount,isCrit){
+  const v=Math.round(amount);
+  if(v<=0)return;
+  dmgNumbers.push({
+    x:x+rndInt(-10,10), y, vy:-1.6, life:38, maxLife:38,
+    text:(isCrit?"CHÍ MẠNG! ":"")+v,
+    color:isCrit?"#ffcc00":"#ffffff",
+    size:isCrit?15:11,
+    crit:!!isCrit
+  });
+}
+function updateAndDrawDmgNumbers(){
+  dmgNumbers=dmgNumbers.filter(d=>d.life>0);
+  dmgNumbers.forEach(d=>{
+    d.life--; d.y+=d.vy; d.vy+=0.045; d.x+=d.crit?Math.sin(d.life*0.5):0;
+    const a=Math.max(0,d.life/d.maxLife);
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.font=`bold ${d.size+(d.crit?Math.sin(d.life*0.6)*1.5:0)}px Arial`;
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.lineWidth=3;ctx.strokeStyle="rgba(0,0,0,0.7)";
+    ctx.strokeText(d.text,d.x,d.y);
+    ctx.fillStyle=d.color;
+    ctx.fillText(d.text,d.x,d.y);
+    ctx.restore();
+  });
+}
+
+// ---------- Combo counter HUD (screen-space; call outside the camera transform) ----------
+function drawComboCounter(){
+  if(comboCount<2)return;
+  const tierColor = comboCount>=25?"#ff3355":comboCount>=15?"#ff9900":comboCount>=8?"#ffdd00":"#ffffff";
+  const pulse = 1+Math.sin(frameCount*0.35)*0.06;
+  const cx=W/2, cy=H*0.16;
+  ctx.save();
+  ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.translate(cx,cy);ctx.scale(pulse,pulse);
+  ctx.font="bold 30px Arial";
+  ctx.lineWidth=5;ctx.strokeStyle="rgba(0,0,0,0.75)";
+  ctx.strokeText(`${comboCount} COMBO`,0,0);
+  ctx.fillStyle=tierColor;
+  ctx.fillText(`${comboCount} COMBO`,0,0);
+  ctx.font="bold 11px Arial";
+  ctx.strokeText("liên hoàn đòn đánh","0",16);
+  ctx.strokeText("liên hoàn đòn đánh",0,16);
+  ctx.fillStyle="white";
+  ctx.fillText("liên hoàn đòn đánh",0,16);
+  ctx.restore();
+}
+
+// ---------- Low-HP warning vignette (screen-space; call outside the camera transform) ----------
+function drawLowHpVignette(){
+  if(!p1||p1.hp<=0)return;
+  const frac=p1.hp/MAX_HP;
+  if(frac>0.25)return;
+  const pulse=0.25+0.20*Math.abs(Math.sin(frameCount*0.09));
+  const grad=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.35,W/2,H/2,Math.max(W,H)*0.75);
+  grad.addColorStop(0,"rgba(180,0,0,0)");
+  grad.addColorStop(1,`rgba(180,0,0,${pulse})`);
+  ctx.save();ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);ctx.restore();
 }
 
 let hitEffects=[];
@@ -2634,10 +2758,27 @@ function getFrontWall(){const ahead=roadWalls.filter(w=>w.hp>0&&w.x>=p1.x-80);if
 // knockback/push effects should still damage them but must never reposition them.
 function isPushable(t){return !(t instanceof RoadWall) && !(t instanceof RoadBoss);}
 function getRoadTarget(attacker){const cands=getAllEnemies(attacker);if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
+// Called once per successful hit landed anywhere in applyDamage — feeds the
+// floating damage number, the human player's combo counter, and the (throttled)
+// hit sound. Kept separate from applyDamage's per-target branches so every
+// target type (Fighter, bosses, road enemies, walls...) gets the same feel.
+function _afterHit(target,dmgVal,attacker,isCrit){
+  spawnDamageNumber(target.x, target.y-70, dmgVal, isCrit);
+  if(attacker===p1){
+    comboCount++; comboTimer=90;
+    if(comboCount>comboMaxThisRun)comboMaxThisRun=comboCount;
+    if(comboCount>=5 && comboCount%5===0)sfxComboMilestone(comboCount);
+  }
+  if(_hitSfxCooldown<=0){ sfxHit(isCrit); _hitSfxCooldown=4; }
+}
 function applyDamage(target,damage,attacker){
   // THUNDER DASH IMMUNITY: while dashing as a bolt of lightning, the thunder
   // fighter is immune to collisions/CC/pushback/damage for the ~0.3s dash.
   if(target instanceof Fighter&&target.charType==="thunder"&&target.thunderDashTimer>0)return;
+  // CRITICAL HITS: any attacking Fighter has a flat chance to land a heavier,
+  // more satisfying hit (bonus damage + bigger gold number + sharper sfx).
+  let isCrit=false;
+  if(attacker instanceof Fighter && rng()<CRIT_CHANCE){ damage*=CRIT_MULT; isCrit=true; }
   if(attacker&&attacker.charType==="red")damage*=1.2;
   if(attacker&&attacker.charType==="frost"&&attacker.frostComboBonusPct>0){damage*=1+attacker.frostComboBonusPct;attacker.frostComboBonusPct=0;}
   if(attacker&&attacker.transformActive){const buffs=attacker.getTransformBuffs();damage*=buffs.dmg_mult||1;const ls=buffs.lifesteal||0;if(ls>0&&attacker.hp!==undefined)attacker.hp=Math.min(MAX_HP,attacker.hp+damage*ls);}
@@ -2665,17 +2806,21 @@ function applyDamage(target,damage,attacker){
     target.hp-=target.isShielding?finalDmg*0.2:finalDmg;
     target.hp=Math.max(0,target.hp);
     spawnHitEffect(target.x,target.y-70,ELEMENT_COLORS[attacker&&attacker.charType]||"white");
-  }else if(target instanceof IcePuppet){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-40,"white");}
-  else if(target instanceof ChallengeEnemy){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-50,"orange");}
-  else if(target instanceof Boss){if(target.dead||target.hp<=0)return;target.hp-=damage;spawnHitEffect(target.x,target.y-90,"gold");if(target.hp<=0){target.hp=0;target.dead=true;spawnBossDeathBurst(target.x,target.y);}}
-  else if(target instanceof RoadWall){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,H*FLOOR_Y_RATIO-90,"#e8a33d");}
-  else if(target instanceof RoadEnemy){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-50,"#ffaa33");}
+    _afterHit(target,finalDmg,attacker,isCrit);
+    // The human player's combo resets the instant they take a hit themselves.
+    if(target===p1 && attacker!==p1){ comboCount=0; comboTimer=0; }
+  }else if(target instanceof IcePuppet){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-40,"white");_afterHit(target,damage,attacker,isCrit);}
+  else if(target instanceof ChallengeEnemy){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-50,"orange");_afterHit(target,damage,attacker,isCrit);}
+  else if(target instanceof Boss){if(target.dead||target.hp<=0)return;target.hp-=damage;spawnHitEffect(target.x,target.y-90,"gold");_afterHit(target,damage,attacker,isCrit);if(target.hp<=0){target.hp=0;target.dead=true;spawnBossDeathBurst(target.x,target.y);}}
+  else if(target instanceof RoadWall){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,H*FLOOR_Y_RATIO-90,"#e8a33d");_afterHit(target,damage,attacker,isCrit);}
+  else if(target instanceof RoadEnemy){if(target.hp<=0)return;target.hp=Math.max(0,target.hp-damage);spawnHitEffect(target.x,target.y-50,"#ffaa33");_afterHit(target,damage,attacker,isCrit);if(target.hp<=0)roadKillCount++;}
   else if(target instanceof RoadBoss){
     if(target.dead||target.dying||target.hp<=0)return;
     if(target.type===2&&target.visible===false)return;
     if(target.type===2&&target.armorActive)damage*=0.8; // Nội tại: Giáp Cát giảm 20% sát thương
     target.hp-=damage;target.hitFlash=8;
     spawnHitEffect(target.x,target.y-100,"crimson");
+    _afterHit(target,damage,attacker,isCrit);
     if(target.hp<=0){
       target.hp=0;
       if(target.type===2){target.dying=true;target.deathTimer=70;}
@@ -3611,17 +3756,41 @@ function drawEscBtn() {
 //  MENU DRAW
 // ================================================================
 function drawMenu(){
+  // Night-sky gradient backdrop (replaces the flat black fill from the main loop)
+  const bgGrad=ctx.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0,"#05070f");bgGrad.addColorStop(0.55,"#0d1030");bgGrad.addColorStop(1,"#160a2a");
+  ctx.fillStyle=bgGrad;ctx.fillRect(0,0,W,H);
+
   const rngS=(n)=>{let x=Math.sin(n)*10000;return x-Math.floor(x);};
-  for(let i=0;i<60;i++){const sx=rngS(i*7)*W,sy=rngS(i*13)*H;_oval(sx-1,sy-1,2,2,"white",null);}
-  _text(W/2,H/5,"GAME KHÔI LÀM","cyan","32px Arial bold");
-  _text(W/2,H/5+50,"v2.0 — Thử Thách · Nhân Vật Gió · Boss 4 Rồng","#888","13px Arial");
+  for(let i=0;i<70;i++){
+    const sx=rngS(i*7)*W,sy=rngS(i*13)*H*0.85;
+    const tw=0.4+0.6*Math.abs(Math.sin(frameCount*0.02+i*1.7));
+    ctx.save();ctx.globalAlpha=tw;_oval(sx-1,sy-1,2,2,"white",null);ctx.restore();
+  }
+
+  // Title with a soft pulsing glow + gentle bob
+  const bob=Math.sin(frameCount*0.03)*4;
+  ctx.save();
+  ctx.shadowColor="cyan";ctx.shadowBlur=18+Math.sin(frameCount*0.05)*8;
+  _text(W/2,H/5+bob,"GAME KHÔI LÀM","cyan","34px Arial bold");
+  ctx.restore();
+  _text(W/2,H/5+50,"v2.1 — Chí Mạng · Combo Counter · Kỷ Lục Cá Nhân","#999","13px Arial");
+  if(roadBestDistance>0)_text(W/2,H/5+72,`🏅 Kỷ lục Đường Đi phiên này: ${roadBestDistance}m`,"gold","12px Arial bold");
   drawGearIcon(W-40,40,16);
   if(showSettings){
     drawSettingsPanel();
   }else{
     const modes=["Máy Cấp 1 (Dễ)","Máy Cấp 2 (Vừa)","Máy Cấp 3 (Khó)","⚔️ Thử Thách (4 Màn)","🛣️ Đường Đi (3 Ma Thú)"];
     const cols=["#34a853","#fbbc05","#ea4335","#9c27b0","#e67e22"];
-    modes.forEach((m,i)=>{const by1=H/2+i*60;_rect(W/2-150,by1,300,45,cols[i],"white",2);_text(W/2,by1+22,m,"white","12px Arial bold");});
+    modes.forEach((m,i)=>{
+      const by1=H/2+i*60;
+      const pulse=1+Math.sin(frameCount*0.06+i)*0.015;
+      ctx.save();
+      ctx.translate(W/2,by1+22);ctx.scale(pulse,pulse);ctx.translate(-W/2,-(by1+22));
+      _rect(W/2-150,by1,300,45,cols[i],"white",2);
+      _text(W/2,by1+22,m,"white","12px Arial bold");
+      ctx.restore();
+    });
   }
   // Show current mode indicator
   _text(W-40, H-20, platformMode==="MOBILE"?"📱":"💻", "gray", "12px Arial");
@@ -3709,6 +3878,8 @@ function update(){
   let dx=0,dy=0;
   if(screenShake>0){dx=rndInt(-screenShake,screenShake);dy=rndInt(-screenShake,screenShake);screenShake*=0.96;if(screenShake<0.8)screenShake=0;}
   frameCount++;
+  if(comboTimer>0){comboTimer--;if(comboTimer===0)comboCount=0;}
+  if(_hitSfxCooldown>0)_hitSfxCooldown--;
   const floorY=H*FLOOR_Y_RATIO;
   ctx.save();ctx.translate(dx,dy);
   if(gameState==="MENU")drawMenu();
@@ -3812,6 +3983,7 @@ function updateGameplay(floorY){
   p1.draw();p2.draw();
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
+  updateAndDrawDmgNumbers();
   ctx.restore();
 
   drawHpBar(p1,50,40,"P1");
@@ -3819,12 +3991,20 @@ function updateGameplay(floorY){
   drawRageBar(50,63,200,14,p1);
   drawRageBar(W-250,63,200,14,p2);
   if(platformMode==="PC")drawCooldownUI();
+  drawComboCounter();
+  drawLowHpVignette();
+  if((p1.hp<=0||p2.hp<=0)&&!_gameplayEndSfxDone){
+    _gameplayEndSfxDone=true;
+    if(p1.hp<=0)sfxDefeat();else sfxVictory();
+  }
   if(p1.hp<=0||p2.hp<=0){
     const winner=p1.hp<=0?p2.charType.toUpperCase():p1.charType.toUpperCase();
     _text(W/2,H/2,`${winner} WINS!`,"gold","46px Arial bold");
-    _text(W/2,H/2+60,platformMode==="MOBILE"?"Tap ESC về menu | R chơi lại":"ESC về menu | R chơi lại","white","14px Arial");
+    _text(W/2,H/2+50,`Combo cao nhất: ${comboMaxThisRun}`,"#ffdd55","13px Arial bold");
+    _text(W/2,H/2+80,platformMode==="MOBILE"?"Tap ESC về menu | R chơi lại":"ESC về menu | R chơi lại","white","14px Arial");
   }
 }
+let _gameplayEndSfxDone=false;
 
 // ================================================================
 //  CHALLENGE UPDATE
@@ -3911,6 +4091,7 @@ function updateChallenge(w,h){
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
+  updateAndDrawDmgNumbers();
   ctx.restore();
 
   _text(w/2,20,`⚔️ THỬ THÁCH - MÀN ${challengeStage} ⚔️`,"gold","16px Arial bold");
@@ -3920,17 +4101,23 @@ function updateChallenge(w,h){
   _text(w/2,50,`Quái còn lại: ${challengeEnemies.length} | Boss: ${challengeBossSpawned?"Đã xuất hiện":"Chưa ra"}`,"white","10px Arial");
   drawRageBar(50,63,200,14,p1);
   if(platformMode==="PC")drawCooldownChallenge();
+  drawComboCounter();
+  drawLowHpVignette();
   if(challengeState==="DONE"){
+    if(!_challengeEndSfxDone){_challengeEndSfxDone=true;if(challengeResult==="WIN")sfxVictory();else sfxDefeat();}
     if(challengeResult==="WIN"){
       _text(w/2,H/2,`✨ CHIẾN THẮNG MÀN ${challengeStage}! ✨`,"gold","36px Arial bold");
-      if(challengeStage<4)_text(w/2,H/2+60,"Nhấn SPACE để tiếp tục | ESC về menu","white","14px Arial");
-      else{_text(w/2,H/2+60,"🎉 HOÀN THÀNH TẤT CẢ 4 MÀN! 🎉","cyan","18px Arial bold");_text(w/2,H/2+100,"Nhấn ESC để về menu","white","12px Arial");}
+      _text(w/2,H/2+45,`Combo cao nhất: ${comboMaxThisRun}`,"#ffdd55","12px Arial bold");
+      if(challengeStage<4)_text(w/2,H/2+75,"Nhấn SPACE để tiếp tục | ESC về menu","white","14px Arial");
+      else{_text(w/2,H/2+75,"🎉 HOÀN THÀNH TẤT CẢ 4 MÀN! 🎉","cyan","18px Arial bold");_text(w/2,H/2+110,"Nhấn ESC để về menu","white","12px Arial");}
     }else{
       _text(w/2,H/2,"💀 THẤT BẠI 💀","red","40px Arial bold");
-      _text(w/2,H/2+60,"Nhấn R để thử lại | ESC về menu","white","14px Arial");
+      _text(w/2,H/2+45,`Combo cao nhất: ${comboMaxThisRun}`,"#ffdd55","12px Arial bold");
+      _text(w/2,H/2+75,"Nhấn R để thử lại | ESC về menu","white","14px Arial");
     }
   }
 }
+let _challengeEndSfxDone=false;
 
 // ================================================================
 //  INPUT HANDLERS
@@ -3969,6 +4156,7 @@ function onKeyPress(e){
 function startChallengeMode(stage){
   projectiles=[];puppets=[];p1=new Fighter(W*0.2,H*FLOOR_Y_RATIO,selectedP1,1);
   p1.hp=MAX_HP;campX=0;gameState="CHALLENGE";_challengeWaveTimer=0;startChallenge(stage);
+  dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;_challengeEndSfxDone=false;
 }
 function terrainHeightAt(worldX){
   if(!roadTerrain) return 0;
@@ -4100,6 +4288,7 @@ function startRoadMode(){
   const trapXs=_spreadPositions(trapCount,400,totalLenPx-300,bossAvoid,220);
   roadTrapPlan=trapXs.map((x,i)=>({x,type:i%2===0?"spike":"fire",spawned:false}));
 
+  dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;roadKillCount=0;roadNewRecord=false;roadRunStartFrame=frameCount;_roadEndSfxDone=false;
   gameState="ROAD";
 }
 function startMatch(){
@@ -4107,6 +4296,7 @@ function startMatch(){
   p1=new Fighter(W*0.2,floorY,selectedP1,1);
   p2=new Fighter(W*0.8,floorY,selectedP2,-1);
   campX=0;gameState="GAMEPLAY";
+  dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;_gameplayEndSfxDone=false;
 }
 
 // ================================================================
@@ -4223,6 +4413,10 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
         if(_roadBossClearDelay>50){
           roadBossZoneIndex++; roadBoss=null; _roadBossClearDelay=0;
           roadState = roadBossZoneIndex>=3 ? "WON" : "RUN";
+          if(roadState==="WON"){
+            roadNewRecord = roadDistanceM>roadBestDistance;
+            if(roadNewRecord)roadBestDistance=roadDistanceM;
+          }
         }
       }
     }
@@ -4232,7 +4426,11 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   roadTraps.forEach(t=>{ if(p1.hp>0)t.update(p1,floorY+terrainHeightAt(t.x)); });
   roadWalls=roadWalls.filter(w=>w.hp>0 || w.x>roadCameraX-100);
 
-  if(p1.hp<=0 && roadState!=="LOST") roadState="LOST";
+  if(p1.hp<=0 && roadState!=="LOST"){
+    roadState="LOST";
+    roadNewRecord = roadDistanceM>roadBestDistance;
+    if(roadNewRecord)roadBestDistance=roadDistanceM;
+  }
 
   ctx.save();
   ctx.translate(-roadCameraX,0);
@@ -4258,6 +4456,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   }
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
+  updateAndDrawDmgNumbers();
   ctx.restore();
 
   _text(W/2,20,"🛣️ ĐƯỜNG ĐI — 3 MA THÚ 🛣️","gold","16px Arial bold");
@@ -4266,8 +4465,11 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   _text(150,30,`P1 (${p1.charType.toUpperCase()}): ${getHPDisplay(p1.hp)}/${MAX_HP} HP`,"white","10px Arial bold");
   drawRageBar(50,63,200,14,p1);
   if(platformMode==="PC")drawCooldownChallenge();
+  drawComboCounter();
+  drawLowHpVignette();
   const bossNames=["🥚 Trứng Ma Thú","🦂 Vua Bọ Cạp Cát","🦇 Dơi Khổng Lồ"];
   _text(W-160,30,`Quãng đường: ${roadDistanceM}m`,"white","11px Arial bold");
+  if(roadBestDistance>0)_text(W-160,63,`🏅 Kỷ lục: ${roadBestDistance}m`,"gold","9px Arial bold");
   if(roadState==="RUN" && roadBossZoneIndex<3){
     const remainM=Math.max(0,Math.ceil((roadBossTriggersPx[roadBossZoneIndex]-p1.x)/ROAD_METER_PX));
     _text(W-160,48,`Boss tiếp theo (${bossNames[roadBossZoneIndex]}): ${remainM}m`,"#aaa","9px Arial");
@@ -4275,14 +4477,26 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     _text(W-160,48,`⚔️ Đang chiến đấu: ${bossNames[roadBossZoneIndex]}`,"orange","9px Arial bold");
   }
 
+  if(roadState==="WON"||roadState==="LOST"){
+    if(!_roadEndSfxDone){
+      _roadEndSfxDone=true;
+      if(roadState==="WON")sfxVictory();else sfxDefeat();
+      if(roadNewRecord)setTimeout(()=>{ if(gameState==="ROAD")sfxRecord(); },350);
+    }
+  }
   if(roadState==="WON"){
-    _text(W/2,H/2,"🏆 CHINH PHỤC ĐƯỜNG ĐI THÀNH CÔNG! 🏆","gold","32px Arial bold");
-    _text(W/2,H/2+50,platformMode==="MOBILE"?"Chạm màn hình để chơi lại | ESC về menu":"Nhấn R để chơi lại | ESC về menu","white","14px Arial");
+    _text(W/2,H/2-25,"🏆 CHINH PHỤC ĐƯỜNG ĐI THÀNH CÔNG! 🏆","gold","32px Arial bold");
+    _text(W/2,H/2+15,`Quãng đường: ${roadDistanceM}m  •  Quái đã hạ: ${roadKillCount}  •  Combo cao nhất: ${comboMaxThisRun}`,"#dddddd","12px Arial bold");
+    if(roadNewRecord)_text(W/2,H/2+42,"🌟 KỶ LỤC MỚI! 🌟","#ffcc00","15px Arial bold");
+    _text(W/2,H/2+72,platformMode==="MOBILE"?"Chạm màn hình để chơi lại | ESC về menu":"Nhấn R để chơi lại | ESC về menu","white","14px Arial");
   }else if(roadState==="LOST"){
-    _text(W/2,H/2,"💀 THẤT BẠI 💀","red","40px Arial bold");
-    _text(W/2,H/2+50,platformMode==="MOBILE"?"Chạm màn hình để thử lại | ESC về menu":"Nhấn R để thử lại | ESC về menu","white","14px Arial");
+    _text(W/2,H/2-25,"💀 THẤT BẠI 💀","red","40px Arial bold");
+    _text(W/2,H/2+20,`Quãng đường: ${roadDistanceM}m  •  Quái đã hạ: ${roadKillCount}  •  Combo cao nhất: ${comboMaxThisRun}`,"#dddddd","12px Arial bold");
+    if(roadNewRecord)_text(W/2,H/2+46,"🌟 KỶ LỤC MỚI! 🌟","#ffcc00","15px Arial bold");
+    _text(W/2,H/2+74,platformMode==="MOBILE"?"Chạm màn hình để thử lại | ESC về menu":"Nhấn R để thử lại | ESC về menu","white","14px Arial");
   }
 }
+let _roadEndSfxDone=false;
 
 // ================================================================
 //  KICK OFF
