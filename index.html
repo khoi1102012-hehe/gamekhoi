@@ -59,7 +59,7 @@ let campX        = 0;     // camera x offset shared by GAMEPLAY & CHALLENGE (onl
 let botLevel     = 0;
 let MAX_HP       = 200;
 let showSettings = false;
-let selectedP1   = "red";
+let selectedP1   = "shadow";
 let selectedP2   = "shadow";
 let selectingPlayer = 1;
 let screenShake  = 0;
@@ -1079,7 +1079,14 @@ function getHPDisplay(hp){const v=Math.floor(hp);return v>0||hp<=0?v:1;}
 // ================================================================
 //  VISUAL FX: elemental colors, hit effects, dash trails, bursts
 // ================================================================
-const ELEMENT_COLORS={red:"#ff5533",shadow:"#bb44ff",thunder:"#FFD700",frost:"#66ccff",earth:"#c68a4a",water:"#44bbff",wind:"#a6f0a6"};
+const ELEMENT_COLORS={red:"#ff5533",shadow:"#bb44ff",thunder:"#FFD700",frost:"#66ccff",earth:"#c68a4a",water:"#44bbff",wind:"#a6f0a6",fire:"#FF4500"};
+// FIRE — a brand-new selectable character (separate from the unused "red" fighter
+// above). Same Y-key Rage/Ultimate transform framework as every other character,
+// but its own V1 (orange/red flame) -> "Flame V2" (blue flame, white core, cyan
+// light) transformation, with its own 4 skills: Fire Bullet, Fire Pillar, Fire
+// Dash, and the Flame Destroyer ultimate. All fire_* state is namespaced so it
+// can never affect any other charType.
+const FIRE_V1_COL="#FF4500", FIRE_V2_COL="#00E5FF";
 // Thunder (Lôi) rework palette — pure white + electric gold only, no purple anywhere.
 const THUNDER_WHITE="#FFFFFF",THUNDER_GOLD="#FFD700",THUNDER_YELLOW="#FFF176",THUNDER_ARC="#EAF6FF";
 // The fire (red) fighter automatically switches every fire visual to a blue
@@ -1368,9 +1375,32 @@ function updateAndDrawHitEffects(){
     }
   });
 }
+// ================================================================
+//  FIRE — generic burn (damage-over-time) queue. Works against any target
+//  type (Fighter, ChallengeEnemy, Boss, RoadEnemy, RoadBoss...) because it
+//  just calls the existing applyDamage() dispatcher on a tick, instead of
+//  hooking into every game mode's own hit-detection code.
+// ================================================================
+let burnEffects=[];
+function igniteBurn(target,attacker,dmgPerTick,ticks){
+  if(!target||target.hp===undefined||target.hp<=0)return;
+  burnEffects.push({target,attacker,dmg:dmgPerTick,ticksLeft:ticks,tick:0});
+}
+function updateBurnEffects(){
+  if(!burnEffects.length)return;
+  burnEffects=burnEffects.filter(b=>b.target&&b.target.hp>0&&b.ticksLeft>0);
+  burnEffects.forEach(b=>{
+    b.tick++;
+    if(b.tick>=18){ // ~0.3s per tick @60fps
+      b.tick=0;b.ticksLeft--;
+      applyDamage(b.target,b.dmg,b.attacker);
+      if(b.target.hp>0)spawnHitEffect(b.target.x,(b.target.y||0)-50,"#FF6600");
+    }
+  });
+}
 function _dashCapture(f,oldX,oldY){
   if(!f.afterImages)f.afterImages=[];
-  const col=(f.charType==="red"&&f.transformActive)?"#00AEFF":(ELEMENT_COLORS[f.charType]||"white");
+  const col=(ELEMENT_COLORS[f.charType]||"white");
   const steps=5;
   for(let i=1;i<=steps;i++){
     const t=i/steps;
@@ -1419,6 +1449,12 @@ class Fighter {
     this.auraParticles=[];this.afterImages=[];this.transformBurstTimer=0;
     this.transformWindupTimer=0;this.transformLandingTimer=0;this._ringAngle=0;
     this._runTrailTick=0;this._lastX=x;
+    // --- RED (Hỏa Ma Thần) V4-only state — namespaced, only ever touched when charType==="red" ---
+    this.hoaChungStacks=0;this.hoaChungFlashTimer=0;
+    this._fireCircleAngle=0;this._fireCircleAngle2=0;this._fireCircleEmbers=[];
+    this._windupCrackled=false;
+    this._fireFootprints=[];this._fireAsh=[];this._fireFlyTrail=[];
+    this.fireFlyDamageTick=0;
     // --- Frost-only skill state (namespaced so other characters are unaffected) ---
     this.frostSlideTrail=[];this.frostSlideActive=0;
     this.frostDomainActive=false;this.frostDomainTimer=0;this.frostDomainTick=0;
@@ -1428,10 +1464,22 @@ class Fighter {
     this._icePrisonedTargets=[];
     this._frostAbsZeroTimer=0;this._frostAbsZeroCrystals=[];
     this._icePrisoned=false;this._icePrisonTimer=0;
+    // --- Earth-only skill state ---
+    this.earthMudActive=false;this.earthMudTimer=0;this.earthMudSpeed=1;this.earthMudRegen=0;
+    this.earthMinions=[];this.earthMinionLimit=5;this.earthMinionUpdateTick=0;
+    // --- Thunder-only skill state ---
+    this.thunderS3Targets=[];this.thunderS3DelayTick=0;this.thunderS3MaxTick=20;
+    // --- FIRE-only skill state (namespaced so no other character is affected) ---
+    this.fireDashTimer=0;this.fireDashTrail=[];
+    this.firePillarTargets=[];this.firePillarDelayTick=0;this.firePillarMaxTick=22;
+    this._fireUltiExploded=false;this._fireUltiTargetX=0;this._fireUltiTargetY=0;
+    this._fireUltiWindup=100;this._fireUltiExplodeFrame=0;
+    this._fireEmbers=[];this._fireV2Particles=[];this._fireHairFlicker=0;this._firePillarBursts=[];
   }
   applyGravity(floorY){
     if(this.stunTimer>0)this.stunTimer--;
     if(this.thunderDashTimer>0)this.thunderDashTimer--;
+    if(this.fireDashTimer>0)this.fireDashTimer--;
     // Thunder Prison: while caged, periodically zap + snap the victim back
     // toward the cage center the instant they try to drift away.
     if(this.thunderPrisonTimer>0){
@@ -1477,7 +1525,7 @@ class Fighter {
       if(this.y>=floorY){this.y=floorY;this.transformLandingTimer=0;this.onGround=true;}
       return;
     }
-    if(this.transformActive&&this.charType==="frost"&&this.isFlying){
+    if(this.transformActive&&(this.charType==="frost"||this.charType==="red")&&this.isFlying){
       this.vy*=0.8;this.y+=this.vy;
       if(this.y<60)this.y=60;
       if(this.y>=floorY){this.y=floorY;this.vy=0;}
@@ -1494,13 +1542,16 @@ class Fighter {
     this.transformLandingTimer=30;
     this.transformActive=true;this.transformTimer=600;this.attackCooldown=20;
     const buffs=this.getTransformBuffs();
-    if(this.charType==="frost")this.isFlying=buffs.can_fly||false;
+    if(this.charType==="frost"||this.charType==="red")this.isFlying=buffs.can_fly||false;
     if(this.charType==="shadow")this.v4LifestealPct=buffs.lifesteal||0;
-    if(this.charType==="red"){this.v4InvisScheduled=true;this.transformInvisActive=false;this.transformInvisTimer=0;}
+    // RED no longer gets a scripted "bất tử" invulnerability window — replaced by the
+    // Hỏa Chủng (Fire Seed) stack mechanic below (see _afterHit / triggerHoaChungExplosion).
+    if(this.charType==="red"){this.v4InvisScheduled=false;this.transformInvisActive=false;this.transformInvisTimer=0;this.hoaChungStacks=0;this.hoaChungFlashTimer=0;this._fireFlyTrail=[];this._fireFootprints=[];}
     if(this.charType==="earth"){this.ghostHp=130;this._earthRockArmor=true;this._earthRockTimer=0;this._earthRockAngle=0;}
+    if(this.charType==="fire"){this.fireDashTimer=0;this.fireDashTrail=[];this.firePillarTargets=[];this._fireEmbers=[];this._fireV2Particles=[];sfxFireCrackle();}
     this.transformBurstTimer=25;
     screenShake=Math.max(screenShake,12);
-    const _tCol=this.charType==="red"?"#00AEFF":(ELEMENT_COLORS[this.charType]||"white");
+    const _tCol=this.charType==="red"?"#00AEFF":(this.charType==="fire"?FIRE_V2_COL:(ELEMENT_COLORS[this.charType]||"white"));
     sfxExplosion();
     // 12 spark rays bursting outward (reduced from 30)
     for(let i=0;i<12;i++){
@@ -1513,6 +1564,9 @@ class Fighter {
     // Element-specific landing burst (reduced counts)
     if(this.charType==="red"){
       for(let i=0;i<10;i++){const fx=this.x+rndInt(-60,60),fy=this.y+rndInt(-10,20);hitEffects.push({x:fx,y:fy,vx:(rng()-0.5)*2,vy:-rng()*4-2,life:30,maxLife:30,particle:true,color:rndChoice(["#FF6600","#FF4400","orange","yellow"])});}
+    }else if(this.charType==="fire"){
+      for(let i=0;i<14;i++){const ang=rng()*Math.PI*2,spd=rng()*6+3;hitEffects.push({x:this.x,y:this.y-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:32,maxLife:32,particle:true,color:rndChoice(["#00AEFF","#00E5FF","white","#66F0FF"])});}
+      hitEffects.push({x:this.x,y:this.y-20,life:28,maxLife:28,color:"#00CFFF",ring:true,big:true});
     }else if(this.charType==="earth"){
       for(let i=0;i<12;i++){const ang=Math.PI+(rng()-0.5)*Math.PI,spd=rng()*6+3;hitEffects.push({x:this.x+rndInt(-40,40),y:this.y,vx:Math.cos(ang)*spd,vy:-Math.abs(Math.sin(ang))*spd-1,life:35,maxLife:35,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#4a3524","#c68a4a"])});}
       for(let i=0;i<5;i++){const cx=this.x+(i-2)*25;hitEffects.push({x:cx,y:this.y,life:35,maxLife:35,particle:true,color:"#4a3524",vx:(rng()-0.5)*0.8,vy:-0.2});}
@@ -1531,7 +1585,7 @@ class Fighter {
   }
   jump(){
     if(this.stunTimer>0||this.transformWindupTimer>0)return;
-    if(this.transformActive&&this.charType==="frost"&&this.isFlying){this.vy=-10;return;}
+    if(this.transformActive&&(this.charType==="frost"||this.charType==="red")&&this.isFlying){this.vy=-10;return;}
     if(this.onGround){this.vy=JUMP_POWER;this.onGround=false;this.jumpsUsed=1;}
     else if(this.jumpsUsed<3){
       this.jumpsUsed++;
@@ -1542,7 +1596,8 @@ class Fighter {
   getTransformBuffs(){
     if(!this.transformActive)return{};
     switch(this.charType){
-      case"red":    return{dmg_mult:1.15,speed:1.2};
+      case"red":    return{dmg_mult:1.15,speed:1.2,can_fly:true};
+      case"fire":   return{dmg_mult:1.25,speed:1.2,dash_mult:1.2,proj_speed_mult:1.25,burn_mult:1.6,knockback_mult:1.3};
       case"shadow": return{dmg_mult:1.2,lifesteal:0.15,speed:1.3};
       case"thunder":return{dmg_mult:1.1,speed:1.5};
       case"frost":  return{dmg_mult:1.1,can_fly:true};
@@ -1565,24 +1620,31 @@ class Fighter {
   }
   _drawInner(ox=0,oy=0){
     this.animFrame++;
-    const COLOR_MAP={red:"red",shadow:"#551a8b",thunder:"gold",frost:"deepskyblue",earth:"sienna",water:"dodgerblue",wind:"#90EE90"};
+    // EARTH S2 — MUD FORM: while transformed into mud, the character is fully
+    // replaced by a dedicated sink/submerge/emerge visual (no normal body,
+    // no rock-orbit ambient FX). Self-contained and driven purely by the
+    // earthMudTimer countdown so it can never desync or get stuck.
+    if(this.charType==="earth"&&this.earthMudActive){this._drawMudForm(ox,oy);return;}
+    const COLOR_MAP={red:"red",shadow:"#551a8b",thunder:"gold",frost:"deepskyblue",earth:"sienna",water:"dodgerblue",wind:"#90EE90",fire:FIRE_V1_COL};
     const isRedV4=this.charType==="red"&&this.transformActive;
     const isThunderV4=this.charType==="thunder"&&this.transformActive;
-    let cFill=isRedV4?"#FF6644":(isThunderV4?THUNDER_WHITE:(COLOR_MAP[this.charType]||"white")); // body glows brighter/hotter while V4 is active
+    const isFireV2=this.charType==="fire"&&this.transformActive;
+    let cFill=isRedV4?"#FF6644":(isThunderV4?THUNDER_WHITE:(isFireV2?"white":(COLOR_MAP[this.charType]||"white"))); // body glows brighter/hotter while transformed
     const rx=this.x+ox,ry=this.y+oy-52;
     let cOut;
     if(this.stunTimer>0)cOut="orange";
     else if(this.slowTimer>0)cOut="deepskyblue";
     else if(isRedV4)cOut="#00CFFF"; // glowing blue outline while transformed
     else if(isThunderV4)cOut=THUNDER_GOLD; // glowing gold outline while transformed
+    else if(isFireV2)cOut=FIRE_V2_COL; // Flame V2 — glowing cyan outline
     else cOut=this.isAttacking?"cyan":"white";
-    // Leave a blue/gold afterimage behind on every running step while V4 is active
-    if((isRedV4||isThunderV4)&&this.onGround){
+    // Leave a blue/gold afterimage behind on every running step while transformed
+    if((isRedV4||isThunderV4||isFireV2)&&this.onGround){
       if(this._lastX===undefined)this._lastX=this.x;
       const moved=this.x-this._lastX;
       this._runTrailTick=(this._runTrailTick||0)+1;
       if(Math.abs(moved)>1.2&&this._runTrailTick%5===0){
-        this.afterImages.push({x:this.x,y:this.y,dir:this.direction,life:14,maxLife:14,color:isThunderV4?THUNDER_GOLD:"#00AEFF"});
+        this.afterImages.push({x:this.x,y:this.y,dir:this.direction,life:14,maxLife:14,color:isThunderV4?THUNDER_GOLD:(isFireV2?FIRE_V2_COL:"#00AEFF")});
       }
     }
     this._lastX=this.x;
@@ -1591,10 +1653,11 @@ class Fighter {
     this._drawAmbientFX(rx,ry);
     if(isRedV4){ctx.save();ctx.shadowColor="#00AEFF";ctx.shadowBlur=16;}
     else if(isThunderV4){ctx.save();ctx.shadowColor=THUNDER_GOLD;ctx.shadowBlur=18;}
+    else if(isFireV2){ctx.save();ctx.shadowColor=FIRE_V2_COL;ctx.shadowBlur=18;}
     _rect(rx-28,ry,56,52,cFill,cOut,2);
     _rect(rx-12,ry-20,24,20,cFill,cOut,1);
     _rect(rx-20,ry-60,40,40,cFill,cOut,2);
-    if(isRedV4||isThunderV4)ctx.restore();
+    if(isRedV4||isThunderV4||isFireV2)ctx.restore();
     const eyeX=rx+(10*this.direction);
     _oval(eyeX-3,ry-44,6,6,this.charType==="shadow"?"red":"white",null);
     let hatFill="black";
@@ -1604,7 +1667,7 @@ class Fighter {
     _rect(rx-8,ry-88,16,6,"black",cOut,1);
     if(this.transformWindupTimer>0){
       const _windupProg=1-(this.transformWindupTimer/360);
-      const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
+      const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="fire"?"🔥 CHUYỂN HÓA FLAME V2 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
       _text(rx,ry-105,_windupText,"white","9px Arial bold");
       // Show phase indicator (timing: rise 0-0.33, hover 0.33-0.75, descend 0.75-1.0)
       const _phase=_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống";
@@ -1620,7 +1683,7 @@ class Fighter {
       }
     }
     if(this.isShielding){
-      const SC={red:"gold",shadow:"magenta",thunder:"yellow",frost:"cyan",earth:"burlywood",water:"aqua",wind:"lightgreen"};
+      const SC={red:"gold",shadow:"magenta",thunder:"yellow",frost:"cyan",earth:"burlywood",water:"aqua",wind:"lightgreen",fire:"orangered"};
       const sc=SC[this.charType]||"white";
       ctx.strokeStyle=sc;ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(rx,ry-20,58,Math.PI,0);ctx.stroke();
@@ -1646,16 +1709,104 @@ class Fighter {
     if(this.ultiTimer>0)this._drawUlti(rx,ry);
     if(this.transformBurstTimer>0)this._drawTransformBurst(rx,ry);
   }
+  // Minimal muddy-brown silhouette used only during the sink-in / rise-out
+  // transition edges of Mud Form, so the character reads as "turning into
+  // mud" / "climbing back out" rather than popping in and out of existence.
+  _drawBodyOnly(rx,ry){
+    const cFill="#7a5a3a",cOut="#3a2a18";
+    _rect(rx-28,ry,56,52,cFill,cOut,2);
+    _rect(rx-12,ry-20,24,20,cFill,cOut,1);
+    _rect(rx-20,ry-60,40,40,cFill,cOut,2);
+    const eyeX=rx+(10*this.direction);
+    _oval(eyeX-3,ry-44,6,6,"#ffe9c2",null);
+  }
+  // ================================================================
+  //  EARTH S2 — MUD FORM VISUAL (hóa bùn / lặn xuống đất / trồi lên)
+  //  Fully driven by earthMudTimer (300 -> 0, 5s @60fps):
+  //    [300..280]  SINK    — body melts down into a puddle, mud splashes out
+  //    [280..30]   UNDER   — fully submerged, only a rippling mud pool + bubbles
+  //    [30..0]     RISE    — climbs back up out of the ground
+  //  Because every phase is derived from the single countdown timer (never a
+  //  separate flag), the animation can't desync or leave the character stuck
+  //  mid-transition even if the skill ends early or is interrupted.
+  // ================================================================
+  _drawMudForm(ox=0,oy=0){
+    const rx=this.x+ox,ry=this.y+oy-52,groundY=this.y+oy;
+    const af=this.animFrame;
+    const TOTAL=300,SINK=20,RISE=30;
+    const elapsed=TOTAL-Math.max(0,this.earthMudTimer);
+    let phase,prog;
+    if(elapsed<SINK){phase="sink";prog=elapsed/SINK;}
+    else if(this.earthMudTimer<RISE){phase="rise";prog=1-(this.earthMudTimer/RISE);}
+    else{phase="under";prog=1;}
+    // Ever-present rippling mud pool on the ground beneath the character
+    ctx.save();ctx.globalAlpha=0.55;
+    const rippleR=16+Math.sin(af*0.12)*3;
+    ctx.strokeStyle="#5a4020";ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(rx,groundY,rippleR+14,rippleR*0.35,0,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+    if(phase==="sink"){
+      const sinkDepth=60*prog;
+      ctx.save();ctx.globalAlpha=Math.max(0,1-prog);
+      this._drawBodyOnly(rx,ry+sinkDepth);
+      ctx.restore();
+      for(let i=0;i<8;i++){
+        const ang=(i/8)*Math.PI*2,d2=32*prog;
+        const mx=rx+Math.cos(ang)*d2,my=groundY+Math.sin(ang)*d2*0.3;
+        _oval(mx-6,my-6,12,12,"#6a4a2a",null);
+      }
+      _text(rx,ry-115,"🟤 HÓA THÂN THÀNH BÙN 🟤","#a67c52","10px Arial bold");
+    }else if(phase==="under"){
+      _oval(rx-46,groundY-11,92,22,"#4a3524","#241608",2);
+      _oval(rx-38,groundY-8,76,15,"#6a4a2a",null);
+      _oval(rx-22,groundY-6,44,9,"#8a6a4a",null);
+      if(!this._mudBubbles)this._mudBubbles=[];
+      if(af%10===0&&this._mudBubbles.length<6)this._mudBubbles.push({x:rx+rndInt(-32,32),y:groundY-6,life:24,maxLife:24});
+      this._mudBubbles=this._mudBubbles.filter(b=>b.life>0);
+      this._mudBubbles.forEach(b=>{
+        b.life--;
+        const bp=1-b.life/b.maxLife;
+        ctx.save();ctx.globalAlpha=Math.max(0,b.life/b.maxLife);
+        _oval(b.x-3,b.y-bp*9-3,6,6,"#8a6a4a",null);
+        ctx.restore();
+      });
+      // Faint underground streak trailing behind the direction of travel
+      ctx.save();ctx.globalAlpha=0.3;ctx.fillStyle="#5a4020";
+      ctx.beginPath();ctx.ellipse(rx-26*this.direction,groundY-6,20,7,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+      _text(rx,groundY-38,"🫧 LẶN DƯỚI BÙN 🫧","#c68a4a","9px Arial bold");
+    }else if(phase==="rise"){
+      const sinkDepth=60*(1-prog);
+      ctx.save();ctx.globalAlpha=Math.min(1,prog+0.15);
+      this._drawBodyOnly(rx,ry+sinkDepth);
+      ctx.restore();
+      for(let i=0;i<6;i++){
+        const dx=rndInt(-26,26);
+        _oval(rx+dx-4,groundY-6-prog*12+rndInt(-4,4),8,8,"#6a4a2a",null);
+      }
+      if(prog>0.55&&!this._mudRiseShook){this._mudRiseShook=true;screenShake=Math.max(screenShake,6);}
+      _text(rx,ry-115,"⬆️ TRỒI LÊN MẶT ĐẤT ⬆️","#c68a4a","10px Arial bold");
+    }
+  }
   // Charge-up visual while the V4 transform winds up: energy spirals inward
   // and upward around the still-frozen, rising fighter, building in intensity
   // until the moment it detonates into the finishing spark explosion.
   _drawTransformWindup(rx,ry){
     const af=this.animFrame,total=360,t=Math.max(0,this.transformWindupTimer),age=total-t,prog=age/total;
-    const _h=this.charType==="red";
-    const col=_h?"#00AEFF":(ELEMENT_COLORS[this.charType]||"#FFAA33");
-    const glow=_h?"#AEEFFF":"#FFEE99";
-    if(_h&&!this._windupCrackled&&prog>0.4){this._windupCrackled=true;sfxFireCrackle();}
-    if(t===0)this._windupCrackled=false;
+    if(t===0){this._windupCrackled=false;this._fireFlipDone=false;}
+    if(this.charType==="red"){
+      // Hỏa Ma Thần awakening — fully custom 3-stage sequence (magic circle ->
+      // fire pillar -> demon form emerging), kept entirely separate from the
+      // shared generic swirl below so other elements are untouched.
+      this._drawFireTransformWindup(rx,ry,af,age,total);
+      return;
+    }
+    if(this.charType==="fire"){
+      this._drawFireV2TransformWindup(rx,ry,af,age,total);
+      return;
+    }
+    const col=ELEMENT_COLORS[this.charType]||"#FFAA33";
+    const glow="#FFEE99";
     if(this.charType==="thunder"){
       // THUNDER V4 WINDUP: screen dims, sky-bolts crash down around the
       // fighter as they rise, then one huge column of lightning strikes them.
@@ -1748,6 +1899,282 @@ class Fighter {
     ctx.beginPath();ctx.ellipse(rx,ry-15,40+prog*15,60+prog*20,0,0,Math.PI*2*prog+0.2);ctx.stroke();
     ctx.restore();
   }
+  // ================================================================
+  //  RED — HỎA MA THẦN (Fire Demon God) V4 rework-only helpers
+  // ================================================================
+  // Fire-themed magic circle, hand-rolled on <canvas> (no images): three
+  // concentric rings rotating in alternating directions, ancient-rune tick
+  // marks, a six-point star, flame glyphs, radiating energy lines, a
+  // flowing "lava" dashed stroke, and rising embers. Red/orange/gold only.
+  _drawFireMagicCircle(cx,cy,alpha,intensity){
+    if(alpha<=0)return;
+    const af=this.animFrame;
+    this._fireCircleAngle=((this._fireCircleAngle||0)+0.25)%360;   // outer ring: slow
+    this._fireCircleAngle2=((this._fireCircleAngle2||0)-0.55)%360; // inner ring: faster, opposite
+    const baseY=cy+56, flat=0.34;
+    const R1=150,R2=112,R3=78;
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.translate(cx,baseY);
+    // glow field
+    const grad=ctx.createRadialGradient(0,0,10,0,0,R1);
+    grad.addColorStop(0,`rgba(255,140,0,${0.35*intensity})`);
+    grad.addColorStop(0.6,`rgba(255,60,0,${0.18*intensity})`);
+    grad.addColorStop(1,"rgba(255,0,0,0)");
+    ctx.fillStyle=grad;
+    ctx.beginPath();ctx.ellipse(0,0,R1,R1*flat,0,0,Math.PI*2);ctx.fill();
+    // outer ring: rune ticks + flowing lava dash
+    ctx.save();ctx.rotate(this._fireCircleAngle*Math.PI/180);
+    ctx.strokeStyle="#FF6A00";ctx.lineWidth=3;ctx.shadowColor="#FF8800";ctx.shadowBlur=18;
+    ctx.beginPath();ctx.ellipse(0,0,R1,R1*flat,0,0,Math.PI*2);ctx.stroke();
+    ctx.setLineDash([16,10]);ctx.lineDashOffset=-af*1.4;ctx.strokeStyle="#FFCC33";ctx.lineWidth=2;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.ellipse(0,0,R1,R1*flat,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+    for(let i=0;i<24;i++){
+      const a=(i/24)*Math.PI*2;
+      const x1=Math.cos(a)*R1,y1=Math.sin(a)*R1*flat;
+      const ext=i%3===0?16:9;
+      const x2=Math.cos(a)*(R1+ext),y2=Math.sin(a)*(R1+ext)*flat;
+      ctx.strokeStyle=i%3===0?"#FFDD55":"#FF5500";ctx.lineWidth=i%3===0?2.6:1.4;ctx.shadowBlur=i%3===0?12:4;
+      ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+      if(i%3===0){ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2+Math.cos(a+0.5)*7,y2+Math.sin(a+0.5)*7*flat);ctx.stroke();}
+    }
+    ctx.restore();
+    // middle ring: six-point magic star, counter-rotating
+    ctx.save();ctx.rotate(this._fireCircleAngle2*Math.PI/180);
+    ctx.strokeStyle="#FF9900";ctx.lineWidth=2;ctx.shadowColor="#FFB020";ctx.shadowBlur=14;
+    ctx.beginPath();ctx.ellipse(0,0,R2,R2*flat,0,0,Math.PI*2);ctx.stroke();
+    for(let pass=0;pass<2;pass++){
+      ctx.beginPath();
+      for(let i=0;i<=6;i++){const a=(i/6)*Math.PI*2+(pass?Math.PI/6:0);const x=Math.cos(a)*R2,y=Math.sin(a)*R2*flat;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+      ctx.closePath();ctx.strokeStyle="#FF4400";ctx.lineWidth=1.6;ctx.stroke();
+    }
+    ctx.restore();
+    // inner ring: fast spin, radiating energy lines
+    ctx.save();ctx.rotate(this._fireCircleAngle*-1.6*Math.PI/180);
+    ctx.strokeStyle="#FFEE88";ctx.lineWidth=2;ctx.shadowColor="#FFF3C0";ctx.shadowBlur=10;
+    ctx.beginPath();ctx.ellipse(0,0,R3,R3*flat,0,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2;
+      ctx.globalAlpha=alpha*(0.4+0.3*Math.sin(af*0.15+i));
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*R3,Math.sin(a)*R3*flat);ctx.stroke();
+    }
+    ctx.globalAlpha=alpha;
+    ctx.restore();
+    // fire glyphs at 4 points, pulsing
+    for(let i=0;i<4;i++){
+      const a=(i/4)*Math.PI*2+this._fireCircleAngle*Math.PI/180*0.3;
+      const gx=Math.cos(a)*R2,gy=Math.sin(a)*R2*flat;
+      const pulse=0.7+0.3*Math.sin(af*0.2+i);
+      ctx.save();ctx.globalAlpha=alpha*pulse;ctx.translate(gx,gy);
+      ctx.fillStyle="#FF6600";ctx.shadowColor="#FFAA00";ctx.shadowBlur=10;
+      ctx.beginPath();
+      ctx.moveTo(0,-9);ctx.quadraticCurveTo(6,-2,3,5);ctx.quadraticCurveTo(6,3,0,9);
+      ctx.quadraticCurveTo(-6,3,-3,-1);ctx.quadraticCurveTo(-2,-6,0,-9);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+    // rising embers off the ring
+    if(!this._fireCircleEmbers)this._fireCircleEmbers=[];
+    if(rng()<0.55*intensity&&this._fireCircleEmbers.length<40){
+      const a=rng()*Math.PI*2;
+      this._fireCircleEmbers.push({x:cx+Math.cos(a)*R1*rng(),y:baseY+Math.sin(a)*R1*flat*rng(),vy:-(rng()*1.3+0.6),vx:(rng()-0.5)*0.4,life:50,maxLife:50,size:rndInt(2,4)});
+    }
+    this._fireCircleEmbers=this._fireCircleEmbers.filter(e=>e.life>0);
+    this._fireCircleEmbers.forEach(e=>{
+      e.x+=e.vx;e.y+=e.vy;e.life--;
+      ctx.save();ctx.globalAlpha=Math.max(0,e.life/e.maxLife)*alpha*0.9;
+      _oval(e.x-e.size,e.y-e.size,e.size*2,e.size*2,rndChoice(["#FF8800","#FFCC33","#FF4400"]),null);
+      ctx.restore();
+    });
+  }
+  // The 3-stage RED windup sequence described by design:
+  //  Stage 1 (0 -> 0.8s): magic circle fades in under the character's feet.
+  //  Stage 2 (0.8s -> ~3.2s): a towering pillar of fire erupts — camera
+  //    shake, a screen flash, a heat-wave overlay, and the circle brightens.
+  //  Stage 3 (~4.5s -> end): the pillar dissolves into drifting embers as
+  //    the new Hỏa Ma Thần form is revealed (finalized when landing completes).
+  _drawFireTransformWindup(rx,ry,af,age,total){
+    const t1=48, t3=270; // 0.8s ignite, matches the physical "begin descend" phase
+    if(!this._windupCrackled&&age>=t1){this._windupCrackled=true;sfxFireCrackle();screenShake=Math.max(screenShake,10);}
+    const circleAlpha=Math.min(1,age/20);
+    const circleIntensity=age<t1?0.5+0.5*(age/t1):1;
+    this._drawFireMagicCircle(rx,ry,circleAlpha,circleIntensity);
+    if(age>=t1&&age<t3){
+      const pillarAge=age-t1;
+      const pillarProg=Math.min(1,pillarAge/24);
+      screenShake=Math.max(screenShake,pillarAge<10?16:4);
+      ctx.save();
+      const ph=260*pillarProg;
+      const pw=70+Math.sin(af*0.3)*8;
+      const grad=ctx.createLinearGradient(0,ry-ph,0,ry+30);
+      grad.addColorStop(0,"rgba(255,240,180,0.05)");
+      grad.addColorStop(0.35,"rgba(255,150,30,0.55)");
+      grad.addColorStop(0.75,"rgba(255,60,0,0.8)");
+      grad.addColorStop(1,"rgba(180,20,0,0.9)");
+      ctx.fillStyle=grad;ctx.shadowColor="#FF6600";ctx.shadowBlur=30;
+      ctx.beginPath();
+      ctx.moveTo(rx-pw*0.5,ry+30);
+      ctx.quadraticCurveTo(rx-pw*0.8,ry-ph*0.5,rx-pw*0.25,ry-ph);
+      ctx.quadraticCurveTo(rx,ry-ph-16,rx+pw*0.25,ry-ph);
+      ctx.quadraticCurveTo(rx+pw*0.8,ry-ph*0.5,rx+pw*0.5,ry+30);
+      ctx.closePath();ctx.fill();
+      ctx.globalAlpha=0.85;ctx.fillStyle="rgba(255,255,220,0.5)";
+      ctx.beginPath();ctx.ellipse(rx,ry-ph*0.4,pw*0.22,ph*0.42,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+      if(af%2===0)for(let i=0;i<3;i++){const ex=rx+rndInt(-pw*0.5,pw*0.5),ey=ry-rng()*ph;hitEffects.push({x:ex,y:ey,vx:(rng()-0.5)*2,vy:-rng()*2-1,life:26,maxLife:26,particle:true,color:rndChoice(["#FF8800","#FFCC33","#FFEE88"])});}
+      ctx.save();ctx.setTransform(1,0,0,1,0,0);
+      ctx.globalAlpha=0.05+0.05*Math.sin(af*0.4);
+      ctx.fillStyle="#FF3300";ctx.fillRect(0,0,W,H);
+      ctx.restore();
+      if(pillarAge<10){
+        ctx.save();ctx.setTransform(1,0,0,1,0,0);
+        ctx.globalAlpha=Math.max(0,(10-pillarAge)/10)*0.5;
+        ctx.fillStyle="white";ctx.fillRect(0,0,W,H);
+        ctx.restore();
+      }
+    }else if(age>=t3){
+      const dProg=Math.min(1,(age-t3)/Math.max(1,total-t3));
+      const emberCount=Math.floor(6*(1-dProg))+2;
+      for(let i=0;i<emberCount;i++){
+        const ang=rng()*Math.PI*2,r=rng()*50;
+        hitEffects.push({x:rx+Math.cos(ang)*r,y:ry-20+Math.sin(ang)*r*0.5,vx:(rng()-0.5)*1.2,vy:-rng()*1.6-0.4,life:30,maxLife:30,particle:true,color:rndChoice(["#FF8800","#FFCC33","#FF4400"])});
+      }
+      ctx.save();ctx.globalAlpha=dProg*0.9;ctx.shadowColor="#FF6600";ctx.shadowBlur=20;
+      _oval(rx-30,ry-70,60,90,`rgba(255,120,0,${0.4*dProg})`,null);
+      ctx.restore();
+    }
+  }
+  // ================================================================
+  //  FIRE — "Flame V2" transformation windup.
+  //  The character stands completely still while:
+  //   0.0s-0.3s : body starts glowing red/orange, faint shake begins
+  //   0.3s-0.9s : a column of RED fire erupts straight up around them
+  //   0.9s-1.5s : the pillar FLIPS to blue mid-air with a burst of energy,
+  //               a shockwave ring races outward, and blue embers scatter
+  //   1.5s+     : holds in a settled blue-glow standby until the shared
+  //               6s windup finishes and _finalizeTransform() switches the
+  //               fighter into Flame V2 proper.
+  //  (The overall stand-still windup duration is the same 360-frame timer
+  //  shared by every character's transform, so other characters are 100%
+  //  unaffected — only the visuals inside these ~90 frames matter here.)
+  // ================================================================
+  _drawFireV2TransformWindup(rx,ry,af,age,total){
+    const t1=18,t2=54,t3=90; // frame marks: glow start, red pillar peak, blue flip complete (~0.3/0.9/1.5s)
+    if(age<t1){
+      const glowA=age/t1;
+      ctx.save();ctx.globalAlpha=glowA*0.6;ctx.shadowColor=FIRE_V1_COL;ctx.shadowBlur=26*glowA;
+      _oval(rx-34,ry-70,68,110,`rgba(255,69,0,${0.35*glowA})`,null);
+      ctx.restore();
+      if(age>t1*0.5)screenShake=Math.max(screenShake,3);
+      return;
+    }
+    if(!this._windupCrackled&&age>=t1){this._windupCrackled=true;sfxFireCrackle();}
+    if(age<t2){
+      // Rising red/orange fire column
+      const prog=Math.min(1,(age-t1)/(t2-t1));
+      screenShake=Math.max(screenShake,prog<0.3?12:5);
+      const ph=230*prog,pw=56+Math.sin(af*0.3)*6;
+      ctx.save();
+      const grad=ctx.createLinearGradient(0,ry-ph,0,ry+30);
+      grad.addColorStop(0,"rgba(255,220,150,0.05)");
+      grad.addColorStop(0.4,"rgba(255,120,20,0.55)");
+      grad.addColorStop(0.8,"rgba(255,40,0,0.85)");
+      grad.addColorStop(1,"rgba(160,10,0,0.9)");
+      ctx.fillStyle=grad;ctx.shadowColor=FIRE_V1_COL;ctx.shadowBlur=26;
+      ctx.beginPath();
+      ctx.moveTo(rx-pw*0.5,ry+30);
+      ctx.quadraticCurveTo(rx-pw*0.8,ry-ph*0.5,rx-pw*0.25,ry-ph);
+      ctx.quadraticCurveTo(rx,ry-ph-14,rx+pw*0.25,ry-ph);
+      ctx.quadraticCurveTo(rx+pw*0.8,ry-ph*0.5,rx+pw*0.5,ry+30);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+      if(af%2===0)for(let i=0;i<3;i++){const ex=rx+rndInt(-pw*0.5,pw*0.5),ey=ry-rng()*ph;hitEffects.push({x:ex,y:ey,vx:(rng()-0.5)*2,vy:-rng()*2-1,life:24,maxLife:24,particle:true,color:rndChoice(["#FF6600","#FF4400","#FFAA33"])});}
+      return;
+    }
+    if(age<t3){
+      // Blue flip: burst + shockwave
+      if(!this._fireFlipDone){
+        this._fireFlipDone=true;
+        screenShake=Math.max(screenShake,20);
+        sfxExplosion();
+        for(let i=0;i<26;i++){const ang=rng()*Math.PI*2,spd=rng()*7+3;hitEffects.push({x:rx,y:ry-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:34,maxLife:34,particle:true,color:rndChoice(["#00AEFF","#00E5FF","white","#66F0FF"])});}
+        hitEffects.push({x:rx,y:ry-20,life:30,maxLife:30,color:"#00CFFF",ring:true,big:true});
+        hitEffects.push({x:rx,y:ry-20,life:40,maxLife:40,color:"white",ring:true,big:true,delay:5});
+      }
+      const prog=(age-t2)/(t3-t2);
+      ctx.save();ctx.globalAlpha=Math.max(0,1-prog)*0.9;ctx.shadowColor=FIRE_V2_COL;ctx.shadowBlur=24;
+      _oval(rx-32,ry-90,64,110,`rgba(0,180,255,${0.4*(1-prog)})`,null);
+      ctx.restore();
+      return;
+    }
+    // Settled Flame V2 standby glow for the remainder of the windup
+    ctx.save();ctx.globalAlpha=0.35+0.15*Math.sin(af*0.15);ctx.shadowColor=FIRE_V2_COL;ctx.shadowBlur=18;
+    _oval(rx-28,ry-80,56,100,"rgba(0,180,255,0.3)",null);
+    ctx.restore();
+    if(rng()<0.4)hitEffects.push({x:rx+rndInt(-24,24),y:ry-30,vx:(rng()-0.5)*0.6,vy:-rng()*1.4-0.4,life:26,maxLife:26,particle:true,color:rndChoice(["#00AEFF","#00E5FF","white"])});
+  }
+  // Stack indicator for the Hỏa Chủng innate: 10 small flame pips + counter,
+  // floating above the fighter's head while V4 is active.
+  _drawHoaChungStacks(rx,ry){
+    const n=this.hoaChungStacks||0;
+    if(this.hoaChungFlashTimer>0)this.hoaChungFlashTimer--;
+    const flashBoost=this.hoaChungFlashTimer>0?(this.hoaChungFlashTimer/12)*6:0;
+    const y0=ry-205;
+    ctx.save();
+    ctx.font="10px Arial bold";ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillStyle=n>=10?"#FFEE88":"#FFAA33";
+    ctx.shadowColor="#FF6600";ctx.shadowBlur=8+flashBoost;
+    ctx.fillText(`🔥 HỎA CHỦNG ${n}/10`,rx,y0);
+    ctx.restore();
+    const spacing=13,startX=rx-(10*spacing)/2+spacing/2;
+    for(let i=0;i<10;i++){
+      const filled=i<n,px=startX+i*spacing,py=y0+13;
+      ctx.save();
+      ctx.globalAlpha=filled?1:0.25;
+      ctx.fillStyle=filled?(i===9?"#FFEE88":"#FF7700"):"#552200";
+      ctx.shadowColor=filled?"#FFAA00":"transparent";ctx.shadowBlur=filled?8:0;
+      ctx.beginPath();
+      ctx.moveTo(px,py-5);ctx.quadraticCurveTo(px+3.5,py-1,px+2,py+3);
+      ctx.quadraticCurveTo(px+3.5,py+1.5,px,py+5);
+      ctx.quadraticCurveTo(px-3.5,py+1.5,px-2,py+3);
+      ctx.quadraticCurveTo(px-3.5,py-1,px,py-5);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+  }
+  // Small scorch decals left behind on every V4 running step ("để lại dấu
+  // cháy khi di chuyển"). Fixed-length array, always trimmed — no leak.
+  _drawFireFootprints(ox,oy){
+    if(!this._fireFootprints)this._fireFootprints=[];
+    this._fireFootprints=this._fireFootprints.filter(f=>f.life>0);
+    this._fireFootprints.forEach(f=>{
+      f.life--;
+      const a=Math.max(0,f.life/f.maxLife)*0.5;
+      ctx.save();ctx.globalAlpha=a;ctx.fillStyle="#3a1000";
+      ctx.beginPath();ctx.ellipse(f.x+ox,f.y+oy+2,14,5,0,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=a*0.8;ctx.fillStyle="#FF6600";
+      ctx.beginPath();ctx.ellipse(f.x+ox,f.y+oy+1,7,2.4,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    });
+  }
+  // Long fire-comet tail drawn behind the fighter while airborne in "Hỏa
+  // Phi" — a distinct flight identity from any other character's aerial FX.
+  _drawFireFlyTrail(rx,ry){
+    if(!this._fireFlyTrail)this._fireFlyTrail=[];
+    this._fireFlyTrail.push({x:rx,y:ry-20});
+    if(this._fireFlyTrail.length>16)this._fireFlyTrail.shift();
+    ctx.save();
+    const n=this._fireFlyTrail.length;
+    this._fireFlyTrail.forEach((p,i)=>{
+      const frac=i/n;
+      const s=28*frac+6;
+      ctx.globalAlpha=frac*0.55;
+      ctx.shadowColor="#FF5500";ctx.shadowBlur=14;
+      _oval(p.x-s/2,p.y-s/2,s,s,rndChoice(["#FF6600","#FF9900","#FFCC33"]),null);
+    });
+    ctx.restore();
+  }
   _drawAfterImages(ox,oy){
     if(!this.afterImages||!this.afterImages.length)return;
     this.afterImages=this.afterImages.filter(a=>a.life>0);
@@ -1811,7 +2238,7 @@ class Fighter {
     }
   }
   _drawLivingAura(rx,ry){
-    const col=(this.charType==="red"&&this.transformActive)?"#00AEFF":(ELEMENT_COLORS[this.charType]||"white");
+    const col=(this.charType==="red"&&this.transformActive)?"#00AEFF":((this.charType==="fire"&&this.transformActive)?FIRE_V2_COL:(ELEMENT_COLORS[this.charType]||"white"));
     const af=this.animFrame;
     ctx.save();
     for(let l=0;l<4;l++){
@@ -1854,6 +2281,15 @@ class Fighter {
       }
       amb.parts=amb.parts.filter(p=>p.life>0);
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.85;ctx.shadowColor="orange";ctx.shadowBlur=6;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#FF6600","orange","yellow"]),null);ctx.restore();});
+    }
+    else if(this.charType==="fire"){
+      // Small licks of orange flame constantly curling off the fists/shoulders.
+      if(rng()<0.55&&amb.parts.length<12){
+        const side=rng()<0.5?-1:1;
+        amb.parts.push({x:rx+side*26,y:ry-8,vy:-rng()*1.3-0.4,vx:(rng()-0.5)*0.6,life:24,maxLife:24,r:rndInt(2,5)});
+      }
+      amb.parts=amb.parts.filter(p=>p.life>0);
+      amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.8;ctx.shadowColor=FIRE_V1_COL;ctx.shadowBlur=7;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice([FIRE_V1_COL,"#FF6600","#FFAA33"]),null);ctx.restore();});
     }
     else if(this.charType==="shadow"){
       ctx.save();ctx.globalAlpha=0.5;ctx.strokeStyle="#551a8b";ctx.lineWidth=2;
@@ -1918,42 +2354,13 @@ class Fighter {
     ctx.globalAlpha=Math.max(0,t/total)*0.9;
     ctx.strokeStyle="white";ctx.lineWidth=5;
     ctx.beginPath();ctx.arc(rx,ry-20,rad,0,Math.PI*2);ctx.stroke();
-    ctx.strokeStyle=(this.charType==="red"&&this.transformActive)?"#00AEFF":(ELEMENT_COLORS[this.charType]||"gold");ctx.lineWidth=3;
+    ctx.strokeStyle=(this.charType==="red"&&this.transformActive)?"#00AEFF":((this.charType==="fire"&&this.transformActive)?FIRE_V2_COL:(ELEMENT_COLORS[this.charType]||"gold"));ctx.lineWidth=3;
     ctx.beginPath();ctx.arc(rx,ry-20,rad*0.7,0,Math.PI*2);ctx.stroke();
     ctx.restore();
   }
   _drawSkillFX(rx,ry){
     const sk=this.activeSkill,af=this.animFrame;
-    if(sk==="red_s1"){
-      const _h=this.charType==="red"&&this.transformActive;
-      const fbx=rx+(50*this.direction),fby=ry-20;
-      ctx.save();ctx.shadowColor=_h?"#00AEFF":"orange";ctx.shadowBlur=_h?28:18;
-      _oval(fbx-22,fby-22,44,44,_h?"#0022DD":"#FF2200",null);
-      _oval(fbx-16,fby-16,32,32,_h?"#0077FF":"#FF8800","white",1);
-      _oval(fbx-9,fby-9,18,18,_h?"#66DFFF":"#FFEE55",null);
-      ctx.restore();
-      const sparkCount=_h?8:5;
-      for(let i=0;i<sparkCount;i++){const ang=(af*10+i*(360/sparkCount))*Math.PI/180,fr=24+Math.sin(af*0.2+i)*4,fx=fbx+fr*Math.cos(ang),fy=fby+fr*Math.sin(ang),s=rndInt(4,8);_oval(fx-s,fy-s,s*2,s*2,_h?rndChoice(["#0099FF","#66DFFF","white"]):rndChoice(["#FF6600","yellow","red"]),null);}
-      if(_h){for(let i=0;i<4;i++){const sx=fbx+rndInt(-20,20),sy=fby-rndInt(10,30),s=rndInt(10,16);ctx.save();ctx.globalAlpha=0.32;_oval(sx-s,sy-s,s*2,s*2,"#3399FF",null);ctx.restore();}}
-    }
-    else if(sk==="red_s2"){
-      const _h=this.charType==="red"&&this.transformActive;
-      _text(rx,ry-110,_h?"🔥 HỎA NGỤC DASH 🔥":"🔥 FIRE DASH 🔥",_h?"#00AEFF":"orange","11px Arial bold");
-      ctx.save();ctx.shadowColor=_h?"#00AEFF":"orange";ctx.shadowBlur=_h?20:12;
-      for(let i=0;i<16;i++){const tx=rx-(i+1)*10*this.direction,ty=ry+rndInt(-18,24),s=rndInt(7,20-i);_oval(tx-s,ty-s,s*2,s*2,_h?rndChoice(["#0033EE","#0088FF","#66DFFF","#0066FF","#0044CC"]):rndChoice(["red","orange","yellow","#FF6600","#FF3300"]),null);}
-      for(let i=0;i<6;i++){const tx=rx-(i+1)*16*this.direction,ty=ry+rndInt(-30,10)-i*2,s=rndInt(10,18);_oval(tx-s,ty-s,s*2,s*2,_h?"rgba(0,140,255,0.5)":"rgba(255,150,0,0.5)",null);}
-      if(_h){for(let i=0;i<5;i++){const tx=rx-(i+1)*13*this.direction,ty=ry+rndInt(-34,6)-i,s=rndInt(9,15);ctx.save();ctx.globalAlpha=0.28;_oval(tx-s,ty-s,s*2,s*2,"#3399FF",null);ctx.restore();}}
-      ctx.restore();
-    }
-    else if(sk==="red_s3"){
-      const _h=this.charType==="red"&&this.transformActive;
-      _text(rx,ry-110,_h?"🔥 HỎA DIỆM NGỤC GIỚI 🔥":"🔥 HỎA DIỆM 🔥",_h?"#00AEFF":"orange","10px Arial bold");
-      ctx.save();ctx.shadowColor=_h?"#00AEFF":"orange";ctx.shadowBlur=_h?24:14;
-      const cnt=_h?20:14;
-      for(let i=0;i<cnt;i++){const fs=rndInt(8,30),fx=rx+(rndInt(30,420)*this.direction),fy=ry+rndInt(-25,28);_oval(fx-fs/2,fy-fs/2,fs,fs,_h?rndChoice(["#0022DD","#0077FF","#66DFFF","#0055FF"]):rndChoice(["red","orange","yellow","#FF6600"]),null);}
-      ctx.restore();
-    }
-    else if(sk==="shadow_s1"){
+    if(sk==="shadow_s1"){
       const dir=this.direction;
       const cx=rx+26*dir, cy=ry-70;
       const ang=dir>0?55:125; // three near-parallel claw slashes sweeping from upper-back down to lower-forward
@@ -2014,13 +2421,16 @@ class Fighter {
       _text(rx,ry-125,"⚡ THIÊN LÔI TRUY KÍCH ⚡","yellow","11px Arial bold");
       boltPts.forEach(pt=>{
         const tx4=pt.x,ty4=pt.y!==undefined?pt.y:ry;
+        // Lightning starts from very high above sky
+        const skyStart=-200;
         ctx.save();ctx.shadowColor="yellow";ctx.shadowBlur=20;
         ctx.strokeStyle="#FFFFCC";ctx.lineWidth=6;ctx.lineCap="round";
-        ctx.beginPath();let cy2=0,cx2=tx4+rndInt(-15,15);ctx.moveTo(cx2,cy2);
-        while(cy2<ty4+40-52){const nx=tx4+rndInt(-18,18),ny=cy2+rndInt(30,60);ctx.lineTo(nx,ny);cy2=ny;}
+        ctx.beginPath();let cy2=skyStart,cx2=tx4+rndInt(-15,15);ctx.moveTo(cx2,cy2);
+        while(cy2<ty4+40){const nx=tx4+rndInt(-18,18),ny=cy2+rndInt(30,60);ctx.lineTo(nx,ny);cy2=ny;}
         ctx.stroke();
         ctx.strokeStyle="yellow";ctx.lineWidth=3;ctx.stroke();
         ctx.restore();
+        // Impact effects on ground
         _oval(tx4-18,ty4+18,36,12,"yellow",null);
         _text(tx4,ty4-42,"⚡","yellow","20px Arial bold");
         for(let i=0;i<4;i++){const sx=tx4+rndInt(-24,24),sy=ty4-52+rndInt(0,60),ss=rndInt(2,5);_oval(sx-ss,sy-ss,ss*2,ss*2,"#FFF9B0",null);}
@@ -2048,6 +2458,34 @@ class Fighter {
     }
     else if(sk==="frost_s3"){_text(rx,ry-110,"❄️ FROZEN DOMAIN ❄️","deepskyblue","10px Arial bold");}
     else if(sk==="frost_s4"){_text(rx,ry-110,"🧊 ICE PRISON 🧊","deepskyblue","10px Arial bold");}
+    else if(sk==="fire_s1"){
+      const v2=this.transformActive;
+      _text(rx,ry-110,v2?"🔵 BLUE FIRE BULLET 🔵":"🔥 FIRE BULLET 🔥",v2?"#00E5FF":"orangered","10px Arial bold");
+      ctx.save();ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=14;
+      const mx=rx+30*this.direction;
+      for(let i=0;i<6;i++){const a2=(af*10+i*60)*Math.PI/180,fr=14+Math.sin(af*0.2+i)*4,fx=mx+fr*Math.cos(a2),fy=ry-45+fr*Math.sin(a2),s=rndInt(3,6);_oval(fx-s,fy-s,s*2,s*2,rndChoice(v2?["#00AEFF","#00E5FF","white"]:["#FF6600","orange","yellow"]),null);}
+      ctx.restore();
+    }
+    else if(sk==="fire_s2"){
+      const v2=this.transformActive;
+      _text(rx,ry-110,v2?"🔵 BLUE FLAME PILLAR 🔵":"🔥 FIRE PILLAR 🔥",v2?"#00E5FF":"orangered","10px Arial bold");
+      (this.firePillarTargets||[]).forEach(t=>{
+        ctx.save();ctx.globalAlpha=0.7;ctx.strokeStyle=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.lineWidth=3;ctx.setLineDash([6,4]);
+        ctx.beginPath();ctx.ellipse(t.x,t.y+6,40*SR,14*SR,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+        ctx.restore();
+      });
+    }
+    else if(sk==="fire_s3"){
+      const v2=this.transformActive;
+      _text(rx,ry-110,v2?"🔵 BLUE FIRE DASH 🔵":"🔥 FIRE DASH 🔥",v2?"#00E5FF":"orangered","10px Arial bold");
+      ctx.save();ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=12;
+      for(let i=0;i<10;i++){const tx=rx-(i+1)*14*this.direction,ty=ry+rndInt(-20,20),s=rndInt(5,11);_oval(tx-s,ty-s,s*2,s*2,rndChoice(v2?["#00AEFF","#00E5FF","white"]:["#FF6600","#FF4400","yellow"]),null);}
+      ctx.restore();
+    }
+    else if(sk==="fire_s4"){
+      const v2=this.transformActive;
+      _text(rx,ry-130,v2?"🔵 BLUE INFERNO DESTROYER 🔵":"🔥 FLAME DESTROYER 🔥",v2?"#00E5FF":"orangered","12px Arial bold");
+    }
     else if(sk==="earth_s1"){
       _text(rx,ry-115,"🗿 EARTH BOULDER 🗿","burlywood","10px Arial bold");
       // Show the boulder being thrown from the character
@@ -2068,19 +2506,9 @@ class Fighter {
       for(let i=0;i<4;i++){const lx=rx+(30+i*12)*this.direction,ly=ry-50+rndInt(-8,8);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx+15*this.direction,ly);ctx.stroke();}
     }
     else if(sk==="earth_s2"){
-      _text(rx,ry-115,"🛡️ THẠCH GIÁP BẤT DIỆT 🛡️","peru","10px Arial bold");
-      ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=12;
-      // Armor plates appearing around character
-      for(let i=0;i<6;i++){
-        const ang=(i/6)*Math.PI*2;
-        const ax=rx+Math.cos(ang)*55,ay=ry-20+Math.sin(ang)*45;
-        _oval(ax-10,ay-8,20,16,"#8a6a4a","#4a3524",2);
-      }
-      ctx.restore();
-      // Shield glow
-      ctx.save();ctx.globalAlpha=0.3;ctx.fillStyle="#c68a4a";
-      ctx.beginPath();ctx.ellipse(rx,ry-20,50,70,0,0,Math.PI*2);ctx.fill();
-      ctx.restore();
+      // Safety-net only: _drawInner intercepts earthMudActive before this
+      // point every frame, so this branch normally never renders.
+      _text(rx,ry-115,"🟤 HÓA BÙN 🟤","#a67c52","10px Arial bold");
     }
     else if(sk==="earth_s3"){
       _text(rx,ry-115,"🌵 CỘT ĐÁ PHẢN ĐÒN 🌵","gold","10px Arial bold");
@@ -2167,18 +2595,7 @@ class Fighter {
   }
   _drawUlti(rx,ry){
     const af=this.animFrame;
-    if(this.activeSkill==="red_s4"){
-      this.ultiPulse+=9;
-      const _h=this.charType==="red"&&this.transformActive;
-      const fireCols=_h?["#0022DD","#0066FF","#0099FF","#33CCFF"]:["#FF2200","#FF6600","#FF9900","#FFCC00"];
-      const ringMax=350;
-      const ringCount=_h?7:5;
-      for(let i=1;i<=ringCount;i++){const r=(i*60+this.ultiPulse)%ringMax;if(r>15){ctx.save();ctx.shadowColor=_h?"#00AEFF":"orange";ctx.shadowBlur=_h?18:10;ctx.strokeStyle=fireCols[i%fireCols.length];ctx.lineWidth=4;ctx.setLineDash([14,6]);ctx.lineDashOffset=-af*1.5;ctx.beginPath();ctx.arc(rx,ry,r,0,Math.PI*2);ctx.stroke();ctx.restore();
-        const pCount=_h?9:6;
-        for(let j=0;j<pCount;j++){const ang=(af*6+j*(360/pCount))*Math.PI/180,fx=rx+r*Math.cos(ang),fy=ry+r*Math.sin(ang)*0.6,s=rndInt(4,9);_oval(fx-s,fy-s,s*2,s*2,_h?rndChoice(["#0099FF","#66DFFF","white"]):rndChoice(["red","orange","yellow"]),null);}
-      }}
-    }
-    else if(this.activeSkill==="shadow_s4"){
+    if(this.activeSkill==="shadow_s4"){
       const range=500*SR; // visual width tracks the actual damage radius below
       if(!this._smoke)this._smoke=[];
       if(this._smoke.length<50 && rng()<0.9){
@@ -2243,6 +2660,61 @@ class Fighter {
       this.earthPillars.forEach(pp=>{const[type,px2,pw,pmaxH,_]=pp;if(pp[4]<pp[3])pp[4]+=pp[3]/15;const curH=pp[4];const shake=pp[4]<pp[3]?Math.sin(af*0.5)*3:0;if(type==='d'){ctx.fillStyle="#5a4030";ctx.strokeStyle="#3a2518";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2+shake,floorYY);ctx.lineTo(px2-pw/2+shake,floorYY-curH+10);ctx.lineTo(px2+shake,floorYY-curH);ctx.lineTo(px2+pw/2+shake,floorYY-curH+10);ctx.lineTo(px2+pw/2+shake,floorYY);ctx.closePath();ctx.fill();ctx.stroke();}else{ctx.fillStyle="#4a3524";ctx.strokeStyle="#2a1a0a";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px2-pw/2+shake,0);ctx.lineTo(px2-pw/2+shake,curH-10);ctx.lineTo(px2+shake,curH);ctx.lineTo(px2+pw/2+shake,curH-10);ctx.lineTo(px2+pw/2+shake,0);ctx.closePath();ctx.fill();ctx.stroke();}});
       // Dust from earthquake
       if(af%3===0)for(let i=0;i<2;i++)hitEffects.push({x:rx+rndInt(-200,200),y:floorYY+rndInt(-5,5),vy:-rng()*1.5-0.3,vx:(rng()-0.5)*1,life:25,maxLife:25,smoke:true,r0:rndInt(5,10),color:rndChoice(["#c68a4a","#a67c52","#8a6a4a"])});
+    }
+    else if(this.activeSkill==="fire_s4"){
+      const v2=this.transformActive;
+      const tx=this._fireUltiTargetX||rx,ty=this._fireUltiTargetY||ry;
+      const total=this._fireUltiWindup||100, elapsed=total-this.ultiTimer;
+      const exploded=this._fireUltiExploded;
+      _text(rx,ry-170,v2?"🔵 BLUE INFERNO DESTROYER 🔵":"🔥 FLAME DESTROYER 🔥",v2?"#00E5FF":"orange","14px Arial bold");
+      if(!exploded){
+        // A truly GIANT fireball forms high above the target and descends
+        const preTotal=total-45;
+        const prog=Math.min(1,elapsed/Math.max(1,preTotal));
+        const fbY=(ty-420)+420*prog;
+        const fbR=(v2?170:130)*(0.5+0.5*prog); // 4-5x bigger than the original version
+        ctx.save();ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=50;
+        const grad=ctx.createRadialGradient(tx,fbY,4,tx,fbY,fbR);
+        if(v2){grad.addColorStop(0,"white");grad.addColorStop(0.3,"#AEEFFF");grad.addColorStop(0.55,"#33CCFF");grad.addColorStop(0.82,"#0066FF");grad.addColorStop(1,"rgba(0,40,180,0.15)");}
+        else{grad.addColorStop(0,"#FFFDE0");grad.addColorStop(0.3,"#FFEE99");grad.addColorStop(0.55,"#FF9900");grad.addColorStop(0.82,"#FF3300");grad.addColorStop(1,"rgba(140,10,0,0.15)");}
+        ctx.fillStyle=grad;
+        ctx.beginPath();ctx.arc(tx,fbY,fbR,0,Math.PI*2);ctx.fill();
+        // Roiling surface flares around the rim for a less-perfect-sphere, more "alive" look
+        for(let i=0;i<8;i++){const a2=(af*6+i*45)*Math.PI/180,fr=fbR*0.85,fx2=tx+fr*Math.cos(a2),fy2=fbY+fr*Math.sin(a2)*0.6,s=fbR*0.22;_oval(fx2-s,fy2-s,s*2,s*2,v2?"#66DDFF":"#FFCC55",null);}
+        ctx.restore();
+        if(af%2===0)for(let i=0;i<5;i++){const ang=rng()*Math.PI*2;hitEffects.push({x:tx+Math.cos(ang)*fbR,y:fbY+Math.sin(ang)*fbR,vx:(rng()-0.5)*3,vy:(rng()-0.5)*3,life:24,maxLife:24,particle:true,color:v2?rndChoice(["#00AEFF","#00E5FF","white"]):rndChoice(["#FF8800","#FFCC33","#FF4400"])});}
+      }else{
+        // MASSIVE multi-ring shockwave + ground scorch, custom-drawn (not
+        // limited by the generic hitEffects ring's 80px cap) so it can
+        // actually read as 5-10x bigger than a normal skill's impact.
+        const since=elapsed-(this._fireUltiExplodeFrame||elapsed);
+        const flashA=Math.max(0,1-since*0.18);
+        if(flashA>0){
+          ctx.save();ctx.globalAlpha=flashA*0.55;
+          const fl=ctx.createRadialGradient(tx,ty-20,0,tx,ty-20,420);
+          fl.addColorStop(0,"white");fl.addColorStop(0.4,v2?"#66DDFF":"#FFCC66");fl.addColorStop(1,"rgba(255,255,255,0)");
+          ctx.fillStyle=fl;ctx.beginPath();ctx.arc(tx,ty-20,420,0,Math.PI*2);ctx.fill();
+          ctx.restore();
+        }
+        for(let ring=0;ring<3;ring++){
+          const ringDelay=ring*6;
+          const rSince=Math.max(0,since-ringDelay);
+          if(rSince<=0)continue;
+          const maxR=900-ring*120; // huge — several times the character's own size
+          const rr=Math.min(maxR,rSince*26);
+          const a=Math.max(0,1-rSince/38);
+          if(a<=0)continue;
+          ctx.save();ctx.globalAlpha=a*0.75;
+          ctx.strokeStyle=[v2?"#00CFFF":"#FF6600","white",v2?"#66F0FF":"#FFDD55"][ring];
+          ctx.lineWidth=[9,5,7][ring];
+          ctx.beginPath();ctx.ellipse(tx,ty+10,rr,rr*0.32,0,0,Math.PI*2);ctx.stroke();
+          ctx.restore();
+        }
+        // Lingering ground fire glow
+        ctx.save();ctx.globalAlpha=Math.max(0,0.5-since*0.012);ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=40;
+        _oval(tx-140,ty-40,280,90,v2?"rgba(0,150,255,0.4)":"rgba(255,80,0,0.4)",null);
+        ctx.restore();
+      }
     }
     else if(this.activeSkill==="water_s4"){
       _text(rx,ry-155,"🌊 ĐẠI HỒNG THỦY - TSUNAMI 🌊","aqua","13px Arial bold");
@@ -2505,6 +2977,46 @@ class Fighter {
       ctx.strokeStyle="aqua";ctx.lineWidth=2;ctx.beginPath();for(let a=0;a<=48;a++){const ar=a*(Math.PI*2/48),w2=Math.sin(ar*5+af*0.18)*11+Math.cos(ar*3-af*0.12)*6,rw=160+w2,rh=50+w2*0.3,wx=rx+rw*Math.cos(ar),wy2=ry+20+rh*0.32*Math.sin(ar);a===0?ctx.moveTo(wx,wy2):ctx.lineTo(wx,wy2);}ctx.stroke();
       _text(rx,ry-122,"👼 THIÊN THẦN V4 👼","gold","9px Arial bold");
     }
+    else if(t==="fire"){
+      // FLAME V2 — blue fire body, white-hot core, cyan light, blue "hair"
+      // flame, glowing cyan eyes, and a steady stream of blue embers.
+      this._drawHellRing(rx,ry-15,true);
+      const cols=["#0033CC","#0066FF","#0099FF","#33CCFF","#99EEFF","white","#00E5FF"];
+      ctx.save();ctx.shadowColor=FIRE_V2_COL;ctx.shadowBlur=22;
+      for(let i=0;i<20;i++){
+        const fx=rx+rndInt(-40,40);
+        const fy=ry+56-i*13-rndInt(0,12);
+        const sz=Math.max(8,32-i*1.1);
+        const intens=i/20;
+        const col=intens<0.3?rndChoice(cols.slice(0,3)):intens<0.65?rndChoice(cols.slice(2,5)):rndChoice(cols.slice(4));
+        _oval(fx-sz,fy-sz,sz*2,sz*2,col,null);
+      }
+      // White-hot core at the base
+      const corePulse=Math.abs(Math.sin(af*0.2))*6;
+      _oval(rx-24-corePulse,ry+40,48+corePulse*2,32+corePulse,"#DFFCFF",null);
+      _oval(rx-12,ry+44,24,18,"white",null);
+      ctx.restore();
+      // Blue flame "hair" jutting up from the head (replaces the plain black hat while V2)
+      ctx.save();ctx.shadowColor=FIRE_V2_COL;ctx.shadowBlur=14;
+      this._fireHairFlicker=(this._fireHairFlicker||0)+1;
+      for(let i=0;i<3;i++){
+        const flick=Math.sin(af*0.3+i*1.4)*6;
+        const hx=rx-16+i*16,hLen=30+i%2*10+flick;
+        ctx.fillStyle=i%2===0?"#00AEFF":"white";
+        ctx.beginPath();
+        ctx.moveTo(hx-7,ry-88);ctx.quadraticCurveTo(hx+flick,ry-88-hLen,hx+7,ry-88);
+        ctx.closePath();ctx.fill();
+      }
+      ctx.restore();
+      // Glowing cyan eyes
+      _oval(rx-9,ry-46,7,7,"#AEEFFF",null);_oval(rx+2,ry-46,7,7,"#AEEFFF",null);
+      // Floating blue embers drifting up around the body
+      if(!this._fireV2Particles)this._fireV2Particles=[];
+      if(rng()<0.5&&this._fireV2Particles.length<16)this._fireV2Particles.push({x:rx+rndInt(-38,38),y:ry+30,vy:-(rng()*1.2+0.5),vx:(rng()-0.5)*0.5,life:40,maxLife:40,r:rndInt(2,4)});
+      this._fireV2Particles=this._fireV2Particles.filter(p=>p.life>0);
+      this._fireV2Particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.85;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#00AEFF","#00E5FF","white"]),null);ctx.restore();});
+      _text(rx,ry-192,"🔥 FLAME V2 🔥","#00E5FF","9px Arial bold");
+    }
     else if(t==="wind"){
       for(const[side,off]of[[-1,-14],[1,14]]){_oval(rx+off-5,ry-82,10,34,"#FFB6C1","white");_oval(rx+off-3,ry-84,6,28,"#FF69B4",null);}
       _oval(rx-19,ry+40,10,10,"white","lightgray");
@@ -2555,6 +3067,101 @@ class ChallengeEnemy {
 // ================================================================
 //  ICE PUPPET (Frost skill 2 summon)
 // ================================================================
+// ================================================================
+//  EARTH SOLDIERS — Melee Minions
+// ================================================================
+class EarthSoldier {
+  constructor(owner,x,y,direction){
+    this.owner=owner;this.x=x;this.y=y;this.vy=0;this.direction=direction;
+    this.hp=45;this.maxHp=45;this.atkTimer=0;this.anim=0;
+    this.spd=2.8;this.dmg=8;this.type="soldier";this.enemyList=[];
+  }
+  update(floorY,w){
+    this.anim++;
+    this.vy+=GRAVITY;this.y+=this.vy;if(this.y>=floorY){this.y=floorY;this.vy=0;}
+    const targets=getAllEnemies(this.owner);
+    if(targets.length){
+      const tgt=targets.reduce((best,c)=>dist(c.x,c.y,this.x,this.y)<dist(best.x,best.y,this.x,this.y)?c:best);
+      const dx=tgt.x-this.x;this.direction=dx>0?1:-1;
+      if(Math.abs(dx)>40)this.x+=this.spd*this.direction;
+      this.x=clamp(this.x,40,w-40);
+      this.atkTimer--;
+      if(this.atkTimer<=0&&Math.abs(dx)<70){applyDamage(tgt,this.dmg,this.owner);this.atkTimer=60;}
+    }else{
+      // Follow owner when no enemies
+      const ownerDx=this.owner.x-this.x;
+      if(Math.abs(ownerDx)>100)this.x+=this.spd*Math.sign(ownerDx);
+      else this.x+=Math.sign(ownerDx)*0.5;
+      this.x=clamp(this.x,40,w-40);
+    }
+  }
+  draw(){
+    const rx=this.x,ry=this.y,bob=Math.sin(this.anim*0.12)*1.5;
+    ctx.save();ctx.shadowColor="#c68a4a";ctx.shadowBlur=8;
+    // Body
+    _rect(rx-12,ry-35+bob,24,35,"#8a6a4a","#4a3524",2);
+    // Head
+    _oval(rx-10,ry-48+bob,20,16,"#a67c52","#6a4a2a",1.5);
+    // Eyes
+    _oval(rx-6+2*this.direction,ry-44+bob,3,3,"#000",null);
+    ctx.restore();
+    const bw=24*(this.hp/this.maxHp);
+    _rect(rx-12,ry-55+bob,24,3,"#333",null,0);_rect(rx-12,ry-55+bob,Math.max(0,bw),3,"#c68a4a",null,0);
+  }
+}
+
+// ================================================================
+//  EARTH ARCHERS — Ranged Minions
+// ================================================================
+class EarthArcher {
+  constructor(owner,x,y,direction){
+    this.owner=owner;this.x=x;this.y=y;this.vy=0;this.direction=direction;
+    this.hp=35;this.maxHp=35;this.atkTimer=0;this.anim=0;
+    this.spd=2.4;this.dmg=6;this.type="archer";
+  }
+  update(floorY,w){
+    this.anim++;
+    this.vy+=GRAVITY;this.y+=this.vy;if(this.y>=floorY){this.y=floorY;this.vy=0;}
+    const targets=getAllEnemies(this.owner);
+    if(targets.length){
+      const tgt=targets.reduce((best,c)=>dist(c.x,c.y,this.x,this.y)<dist(best.x,best.y,this.x,this.y)?c:best);
+      const dx=tgt.x-this.x;const dy=tgt.y-this.y;
+      const dist_to_tgt=Math.hypot(dx,dy);
+      this.direction=dx>0?1:-1;
+      // Keep distance between 80-200px
+      if(dist_to_tgt<100)this.x-=this.spd*this.direction;
+      else if(dist_to_tgt>200)this.x+=this.spd*this.direction;
+      this.x=clamp(this.x,40,w-40);
+      this.atkTimer--;
+      if(this.atkTimer<=0&&dist_to_tgt<220){
+        // Fire homing arrow
+        projectiles.push({x:this.x+20*this.direction,y:this.y-30,vx:8*this.direction,vy:-2,owner:this.owner,
+          damage:this.dmg,slow:30,slow_pct:0.3,color:"#8a6a4a",type:"earth_arrow",dir:this.direction,target:tgt,homing:true});
+        this.atkTimer=70;
+      }
+    }else{
+      // Follow owner when no enemies
+      const ownerDx=this.owner.x-this.x;
+      if(Math.abs(ownerDx)>120)this.x+=this.spd*Math.sign(ownerDx);
+      else this.x+=Math.sign(ownerDx)*0.3;
+      this.x=clamp(this.x,40,w-40);
+    }
+  }
+  draw(){
+    const rx=this.x,ry=this.y,bob=Math.sin(this.anim*0.1)*1;
+    ctx.save();ctx.shadowColor="#a67c52";ctx.shadowBlur=6;
+    // Body
+    _rect(rx-10,ry-32+bob,20,32,"#a67c52","#6a4a2a",1.5);
+    // Head
+    _oval(rx-9,ry-45+bob,18,15,"#c68a4a","#8a6a4a",1);
+    // Bow (simplified)
+    ctx.strokeStyle="#6a4a2a";ctx.lineWidth=2;ctx.beginPath();ctx.arc(rx+8*this.direction,ry-20+bob,6,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+    const bw=20*(this.hp/this.maxHp);
+    _rect(rx-10,ry-50+bob,20,2.5,"#333",null,0);_rect(rx-10,ry-50+bob,Math.max(0,bw),2.5,"#a67c52",null,0);
+  }
+}
+
 class IcePuppet {
   constructor(owner,x,y,direction){
     this.owner=owner;this.x=x;this.y=y;this.vy=0;this.direction=direction;
@@ -3996,7 +4603,10 @@ function _clawMark(cx,cy,angleDeg,length,maxWidth,bow,color,outline){
 // ================================================================
 function getAllEnemies(attacker){
   if(gameState==="GAMEPLAY"){
-    const fighters=[p1,p2].filter(p=>p!==attacker&&p.hp>0);
+    // KHÔNG BỊ CHỌN LÀM MỤC TIÊU: a fighter submerged in Mud Form is dropped
+    // from the enemy-selection pool entirely, so opposing skills/AOEs simply
+    // have no target to hit while it's active.
+    const fighters=[p1,p2].filter(p=>p!==attacker&&p.hp>0&&!(p.charType==="earth"&&p.earthMudActive));
     const oppPuppets=puppets.filter(pu=>pu.owner!==attacker&&pu.hp>0);
     return[...fighters,...oppPuppets];
   }
@@ -4011,7 +4621,7 @@ function getAllEnemies(attacker){
 function getFrontWall(){const ahead=roadWalls.filter(w=>w.hp>0&&w.x>=p1.x-80);if(!ahead.length)return null;return ahead.reduce((a,b)=>a.x<b.x?a:b);}
 // Fixed obstacles (gates) and the 3 major road bosses are anchored set-pieces —
 // knockback/push effects should still damage them but must never reposition them.
-function isPushable(t){return !(t instanceof RoadWall) && !(t instanceof RoadBoss);}
+function isPushable(t){return !(t instanceof RoadWall) && !(t instanceof RoadBoss) && !(t instanceof Fighter && t.charType==="earth" && t.earthMudActive);}
 function getRoadTarget(attacker){const cands=getAllEnemies(attacker);if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 // Called once per successful hit landed anywhere in applyDamage — feeds the
 // floating damage number, the human player's combo counter, and the (throttled)
@@ -4025,11 +4635,62 @@ function _afterHit(target,dmgVal,attacker,isCrit){
     if(comboCount>=5 && comboCount%5===0)sfxComboMilestone(comboCount);
   }
   if(_hitSfxCooldown<=0){ sfxHit(isCrit); _hitSfxCooldown=4; }
+  // RED V4 INNATE — HỎA CHỦNG (Fire Seed): every landed hit while transformed
+  // builds a stack (max 10). At 10 stacks the NEXT hit (this one) detonates,
+  // burning everything nearby, then resets to 0. Replaces the old flat
+  // damage-boost-only / invulnerability-only V4 mechanics.
+  if(attacker instanceof Fighter && attacker.charType==="red" && attacker.transformActive){
+    attacker.hoaChungStacks=(attacker.hoaChungStacks||0)+1;
+    attacker.hoaChungFlashTimer=12;
+    if(attacker.hoaChungStacks>=10){
+      attacker.hoaChungStacks=0;
+      triggerHoaChungExplosion(attacker,target);
+    }
+  }
+  // FIRE — every hit from any of Fire's 4 skills ignites the target with a
+  // burn (damage-over-time) tick, stronger while in Flame V2. Handled once
+  // here so it automatically works for every game mode/target type.
+  if(attacker instanceof Fighter && attacker.charType==="fire" && attacker.activeSkill && attacker.activeSkill.indexOf("fire_")===0){
+    const v2=attacker.transformActive;
+    igniteBurn(target,attacker,v2?3:1.5,v2?6:4);
+    if(attacker.activeSkill==="fire_s1"){
+      for(let i=0;i<10;i++){const ang=rng()*Math.PI*2,spd=rng()*4+2;hitEffects.push({x:target.x,y:target.y-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:22,maxLife:22,particle:true,color:rndChoice(v2?["#00AEFF","#00E5FF","white"]:["#FF6600","#FF4400","orange","yellow"])});}
+    }
+  }
+}
+// Fires once Hỏa Chủng reaches 10 stacks: the triggering hit detonates,
+// scorching the target a little extra and burning every other nearby enemy
+// of the attacker for area damage. Bounded to a small fixed radius/enemy
+// list (getAllEnemies is already capped per game mode) so it can never
+// runaway/recurse — each secondary hit only adds ordinary stacks again.
+function triggerHoaChungExplosion(attacker,centerTarget){
+  const cx=centerTarget.x, cy=centerTarget.y;
+  const R=170*SR, RY=120*SR;
+  screenShake=Math.max(screenShake,14);
+  sfxExplosion();
+  for(let i=0;i<26;i++){
+    const ang=rng()*Math.PI*2,spd=rng()*7+3;
+    hitEffects.push({x:cx,y:cy-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:34,maxLife:34,particle:true,color:rndChoice(["#FF2200","#FF6600","#FFAA00","#FFEE88","white"])});
+  }
+  hitEffects.push({x:cx,y:cy-20,life:26,maxLife:26,color:"#FF6600",ring:true,big:true});
+  hitEffects.push({x:cx,y:cy-20,life:36,maxLife:36,color:"#FFDD55",ring:true,big:true,delay:4});
+  _text(cx,cy-140,"💥 HỎA CHỦNG BÙNG NỔ 💥","#FFAA00","12px Arial bold");
+  const dmg=16;
+  applyDamage(centerTarget,dmg*0.6,attacker); // extra ignite payoff on the target that popped the stacks
+  getAllEnemies(attacker).forEach(en=>{
+    if(en===centerTarget)return;
+    const dx=en.x-cx, dy=(en.y!==undefined?en.y:cy)-cy;
+    if(Math.abs(dx)<R && Math.abs(dy)<RY) applyDamage(en,dmg,attacker);
+  });
 }
 function applyDamage(target,damage,attacker){
+  // EARTH MUD IMMUNITY: while in mud form, earth fighter is immune to all damage and CC
+  if(target instanceof Fighter&&target.charType==="earth"&&target.earthMudActive)return;
   // THUNDER DASH IMMUNITY: while dashing as a bolt of lightning, the thunder
   // fighter is immune to collisions/CC/pushback/damage for the ~0.3s dash.
   if(target instanceof Fighter&&target.charType==="thunder"&&target.thunderDashTimer>0)return;
+  // FIRE DASH IMMUNITY: while streaking through as living flame, immune to hits.
+  if(target instanceof Fighter&&target.charType==="fire"&&target.fireDashTimer>0)return;
   // CRITICAL HITS: any attacking Fighter has a flat chance to land a heavier,
   // more satisfying hit (bonus damage + bigger gold number + sharper sfx).
   let isCrit=false;
@@ -4176,6 +4837,255 @@ function thunderJudgmentTick(attacker){
 function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(tgt instanceof Fighter&&tgt.charType==="thunder"&&tgt.thunderDashTimer>0)return;const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
 function getChallengeTarget(attacker){const cands=[...challengeEnemies.filter(e=>e.hp>0),...challengeBosses.filter(b=>!b.dead&&b.hp>0)];if(!cands.length)return null;return cands.reduce((best,c)=>Math.abs(c.x-attacker.x)<Math.abs(best.x-attacker.x)?c:best);}
 
+// ================================================================
+//  EARTH S2: MUD FORM TICK
+// ================================================================
+function tickEarthMud(p){
+  if(!p.earthMudActive)return;
+  // MIỄN KHỐNG CHẾ: mud form is immune to all crowd control. applyDamage()
+  // already blocks damage-attached CC at the source; this clears any CC that
+  // gets set directly on the fighter (e.g. boss scripts) so nothing lingers.
+  p.stunTimer=0;p.slowTimer=0;
+  p.earthMudTimer--;
+  // Speed buff
+  if(p.earthMudTimer>0){
+    // HP regen
+    p.hp=Math.min(MAX_HP,p.hp+(p.earthMudRegen/60));
+  }
+  // End mud form
+  if(p.earthMudTimer<=0){
+    p.earthMudActive=false;
+    p.isAttacking=false;
+    p.activeSkill=null;
+    screenShake=6;
+  }
+}
+
+// ================================================================
+//  THUNDER S3: LIGHTNING STRIKE WITH DELAYED DAMAGE
+// ================================================================
+function tickThunderS3(p){
+  if(p.activeSkill!=="thunder_s3"||p.thunderS3Targets.length===0)return;
+  if(!p.thunderS3DelayTick)p.thunderS3DelayTick=0;
+  p.thunderS3DelayTick++;
+  // Damage happens after 20 frames (~0.33s) when lightning "touches ground"
+  if(p.thunderS3DelayTick>=p.thunderS3MaxTick){
+    // Deal damage to targets at their locked positions
+    p.thunderS3Targets.forEach(tgt=>{
+      if(tgt.targetRef&&tgt.targetRef.hp>0){
+        aoeHitAt(p,14,tgt.x,tgt.y,140);
+        addShock(tgt.targetRef,p);
+        if(tgt.targetRef instanceof Fighter&&tgt.targetRef.hp>0){
+          tgt.targetRef.thunderPrisonTimer=150;
+          tgt.targetRef.thunderPrisonCenterX=tgt.x;
+          tgt.targetRef.thunderPrisonCenterY=tgt.y;
+          tgt.targetRef._thunderPrisonCaster=p;
+          tgt.targetRef.stunTimer=Math.max(tgt.targetRef.stunTimer||0,20);
+        }
+      }
+    });
+    // Clear after damage
+    p.thunderS3Targets=[];
+    p.thunderS3DelayTick=0;
+  }
+}
+
+// ================================================================
+//  FIRE — Fire Pillar (skill 2): warning telegraph, then the pillar(s)
+//  erupt at the locked ground position(s) and deal AOE damage + knockback
+//  + ignite burn (burn itself is applied centrally in _afterHit).
+// ================================================================
+function tickFirePillar(p){
+  if(p.activeSkill!=="fire_s2"||!p.firePillarTargets||p.firePillarTargets.length===0)return;
+  p.firePillarDelayTick=(p.firePillarDelayTick||0)+1;
+  if(p.firePillarDelayTick>=(p.firePillarMaxTick||22)){
+    const v2=p.transformActive;
+    const buffs=v2?p.getTransformBuffs():{};
+    const dmg=v2?22:15, rad=v2?200:160;
+    if(!p._firePillarBursts)p._firePillarBursts=[];
+    p.firePillarTargets.forEach(t=>{
+      aoeHitAt(p,dmg,t.x,t.y,rad);
+      const kb=(v2?110:80)*(buffs.knockback_mult||1);
+      getAllEnemies(p).forEach(en=>{
+        if(en&&en.hp>0&&isPushable(en)&&Math.abs(en.x-t.x)<rad*SR&&Math.abs((en.y||t.y)-t.y)<120*SR){
+          const pd=en.x>=t.x?1:-1;
+          en.x=clamp(en.x+pd*kb,moveBoundLo(),moveBoundHi());
+          if(en instanceof Fighter)en.vy=-9;
+        }
+      });
+      screenShake=Math.max(screenShake,v2?26:18);
+      sfxExplosion();
+      // A tall, wide, roaring column of fire that lingers for ~0.6s
+      p._firePillarBursts.push({x:t.x,y:t.y,life:38,maxLife:38,v2});
+      for(let i=0;i<34;i++){const ang=rng()*Math.PI*2,spd=rng()*7+2;hitEffects.push({x:t.x,y:t.y-30,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-5,life:36,maxLife:36,particle:true,color:v2?rndChoice(["#00AEFF","#00E5FF","white","#66F0FF"]):rndChoice(["#FF6600","#FF4400","#FFAA33","#FFDD66"])});}
+      hitEffects.push({x:t.x,y:t.y,life:26,maxLife:26,color:v2?"#00CFFF":"#FF6600",ring:true,big:true});
+      hitEffects.push({x:t.x,y:t.y,life:34,maxLife:34,color:"white",ring:true,big:true});
+    });
+    p.firePillarTargets=[];
+    p.firePillarDelayTick=0;
+  }
+}
+// ================================================================
+//  FIRE — Flame Destroyer (skill 4 / ultimate): giant fireball forms above
+//  the target then explodes for a single big AOE hit. Visual growth is
+//  drawn in Fighter._drawUlti(); this function only handles the actual
+//  damage/knockback/shake trigger at the right moment.
+// ================================================================
+function tickFireUlti(p){
+  if(p.activeSkill!=="fire_s4"||p.ultiTimer<=0)return;
+  const windup=p._fireUltiWindup||100;
+  const triggerAt=Math.max(1,windup-45); // explode with ~45 frames (~0.75s) left for the big shockwave to play out
+  if(!p._fireUltiExploded&&p.ultiTimer<=triggerAt){
+    p._fireUltiExploded=true;
+    p._fireUltiExplodeFrame=windup-p.ultiTimer;
+    const v2=p.transformActive;
+    const buffs=v2?p.getTransformBuffs():{};
+    const dmg=v2?70:48, rad=v2?380:280;
+    aoeHitAt(p,dmg,p._fireUltiTargetX,p._fireUltiTargetY,rad);
+    getAllEnemies(p).forEach(en=>{
+      if(en&&en.hp>0&&isPushable(en)&&Math.abs(en.x-p._fireUltiTargetX)<rad*SR){
+        const pd=en.x>=p._fireUltiTargetX?1:-1;
+        const kb=(v2?220:160)*(buffs.knockback_mult||1);
+        en.x=clamp(en.x+pd*kb,moveBoundLo(),moveBoundHi());
+        if(en instanceof Fighter)en.vy=-13;
+      }
+    });
+    screenShake=Math.max(screenShake,v2?55:40);
+    sfxExplosion();
+    // Huge particle storm — the actual "big" shockwave rings are drawn every
+    // frame directly in Fighter._drawUlti() (see below) so their size isn't
+    // limited by the generic hitEffects "ring/big" 80px cap.
+    for(let i=0;i<70;i++){
+      const ang=rng()*Math.PI*2,spd=rng()*14+4;
+      hitEffects.push({x:p._fireUltiTargetX,y:p._fireUltiTargetY-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-4,life:50,maxLife:50,particle:true,color:v2?rndChoice(["#00AEFF","#00E5FF","white","#66F0FF","#0088FF"]):rndChoice(["#FF8800","#FFCC33","#FF4400","white","#FF2200"])});
+    }
+    for(let i=0;i<18;i++){
+      hitEffects.push({x:p._fireUltiTargetX+rndInt(-40,40),y:p._fireUltiTargetY+rndInt(-20,20),vy:-rng()*1.2-0.3,vx:(rng()-0.5)*0.6,life:70,maxLife:70,smoke:true,r0:rndInt(18,34),color:v2?rndChoice(["#0055CC","#1560c4","#3fa9ff"]):rndChoice(["#5a2a00","#8a3a00","#c65a10"])});
+    }
+  }
+}
+// ================================================================
+//  updateFire(p) — required per-frame update hook for the Fire character.
+//  Houses Fire Pillar's delayed eruption, the Flame Destroyer explosion
+//  trigger, and Fire Dash's fading trail. Safe to call every frame for
+//  any fighter — it's a no-op unless p.charType==="fire".
+// ================================================================
+function updateFire(p){
+  if(!p||p.charType!=="fire")return;
+  tickFirePillar(p);
+  tickFireUlti(p);
+  if(p.fireDashTrail&&p.fireDashTrail.length){
+    p.fireDashTrail.forEach(t=>t.life--);
+    p.fireDashTrail=p.fireDashTrail.filter(t=>t.life>0);
+  }
+}
+// ================================================================
+//  drawFire(p) — required per-frame draw hook for the Fire character.
+//  Draws the fading Fire Dash trail and the Fire Pillar ground warning
+//  markers. (The character's body/aura/skills are drawn inside the
+//  shared Fighter._drawInner()/_drawSkillFX()/_drawUlti() pipeline.)
+// ================================================================
+function drawFire(p){
+  if(!p||p.charType!=="fire")return;
+  const v2=p.transformActive;
+  if(p.fireDashTrail&&p.fireDashTrail.length){
+    ctx.save();ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=10;
+    p.fireDashTrail.forEach(t=>{
+      const a=Math.max(0,t.life/20)*0.55;
+      ctx.save();ctx.globalAlpha=a;
+      _oval(t.x-16,t.y-40,32,32,v2?"#00AEFF":"#FF5500",null);
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+  if(p.firePillarTargets&&p.firePillarTargets.length){
+    p.firePillarTargets.forEach(t=>{
+      const prog=(p.firePillarDelayTick||0)/(p.firePillarMaxTick||22);
+      const pulse=0.55+0.35*Math.sin(frameCount*0.5);
+      ctx.save();
+      ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=20;
+      // Filled glowing warning disc that grows as the eruption gets closer
+      ctx.globalAlpha=0.35*pulse+0.15;
+      _oval(t.x-(30+prog*30),t.y-(10+prog*10),(60+prog*60),(20+prog*20),v2?"#0088FF":"#FF3300",null);
+      ctx.globalAlpha=0.9;
+      ctx.strokeStyle=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.lineWidth=3+prog*2;
+      ctx.beginPath();ctx.ellipse(t.x,t.y+6,(35+prog*25)*SR,(12+prog*8)*SR,0,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+      if(rng()<0.6)hitEffects.push({x:t.x+rndInt(-30,30),y:t.y,vx:(rng()-0.5)*0.8,vy:-rng()*2-0.5,life:18,maxLife:18,particle:true,color:v2?rndChoice(["#00AEFF","#00E5FF"]):rndChoice(["#FF6600","#FFAA33"])});
+    });
+  }
+  // Tall roaring flame column left behind right after a pillar erupts
+  if(p._firePillarBursts&&p._firePillarBursts.length){
+    p._firePillarBursts=p._firePillarBursts.filter(b=>b.life>0);
+    p._firePillarBursts.forEach(b=>{
+      b.life--;
+      const t=1-b.life/b.maxLife; // 0 -> 1 over the column's lifetime
+      const h=Math.sin(Math.min(1,t*3))*260; // rockets up fast, then holds/fades
+      const w=70-t*20;
+      ctx.save();ctx.globalAlpha=Math.max(0,1-t*0.85);ctx.shadowColor=b.v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=30;
+      const grad=ctx.createLinearGradient(0,b.y-h,0,b.y+20);
+      if(b.v2){grad.addColorStop(0,"rgba(255,255,255,0.1)");grad.addColorStop(0.35,"rgba(150,230,255,0.7)");grad.addColorStop(0.75,"rgba(0,150,255,0.9)");grad.addColorStop(1,"rgba(0,40,180,0.95)");}
+      else{grad.addColorStop(0,"rgba(255,230,150,0.15)");grad.addColorStop(0.35,"rgba(255,150,20,0.75)");grad.addColorStop(0.75,"rgba(255,60,0,0.9)");grad.addColorStop(1,"rgba(140,10,0,0.95)");}
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.moveTo(b.x-w*0.5,b.y+20);
+      ctx.quadraticCurveTo(b.x-w*0.9,b.y-h*0.5,b.x-w*0.2,b.y-h);
+      ctx.quadraticCurveTo(b.x,b.y-h-20,b.x+w*0.2,b.y-h);
+      ctx.quadraticCurveTo(b.x+w*0.9,b.y-h*0.5,b.x+w*0.5,b.y+20);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+      if(frameCount%2===0)for(let i=0;i<2;i++)hitEffects.push({x:b.x+rndInt(-w*0.4,w*0.4),y:b.y-rng()*h,vx:(rng()-0.5)*2,vy:-rng()*2-1,life:22,maxLife:22,particle:true,color:b.v2?rndChoice(["#00AEFF","#00E5FF","white"]):rndChoice(["#FF6600","#FFAA33","#FFDD66"])});
+    });
+  }
+}
+
+// ================================================================
+//  EARTH S3: MINION MANAGEMENT
+// ================================================================
+function tickEarthMinions(p,worldW){
+  if(!p.earthMinions)p.earthMinions=[];
+  // Remove dead minions
+  p.earthMinions=p.earthMinions.filter(m=>m.hp>0);
+  // Update minions
+  p.earthMinions.forEach(m=>{
+    if(m instanceof EarthSoldier || m instanceof EarthArcher){
+      const floorY=H*FLOOR_Y_RATIO;
+      m.update(floorY,worldW);
+    }
+  });
+}
+
+function drawEarthMud(p){
+  if(!p.earthMudActive)return;
+  const rx=p.x,ry=p.y;
+  const af=p.animFrame;
+  const alpha=Math.max(0.4,Math.sin(af*0.08)*0.3+0.7);
+  ctx.save();
+  ctx.globalAlpha=alpha*0.6;
+  // Mud puddle
+  ctx.fillStyle="#5a4a3a";
+  ctx.beginPath();ctx.ellipse(rx,ry+20,70,40,0,0,Math.PI*2);ctx.fill();
+  // Mud splashes
+  for(let i=0;i<6;i++){
+    const ang=(af*0.1+i)*(Math.PI*2/6);
+    const d=50+Math.sin(af*0.12+i)*15;
+    const mx=rx+Math.cos(ang)*d,my=ry+Math.sin(ang)*d+15;
+    ctx.fillStyle="#6a5a4a";
+    ctx.beginPath();ctx.ellipse(mx,my,15,12,0,0,Math.PI*2);ctx.fill();
+  }
+  // Glow
+  ctx.fillStyle="rgba(138,106,74,0.3)";
+  ctx.beginPath();ctx.ellipse(rx,ry+15,90,50,0,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawEarthMinions(p){
+  if(!p.earthMinions||!p.earthMinions.length)return;
+  p.earthMinions.forEach(m=>{
+    if(m.hp>0)m.draw();
+  });
+}
+
 
 // ================================================================
 //  CAST SKILL
@@ -4211,6 +5121,67 @@ function castSkill(attacker,target,skillNum){
     else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=300;attacker.windBoostTimer=180;}
     else if(skillNum===3){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=180;getAllEnemies(attacker).forEach(t=>{if(t&&t.hp>0)applyDamage(t,30,attacker);});screenShake=Math.max(screenShake,14);}
     else if(skillNum===4){attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s4=600;attacker.windTornadoActive=true;attacker.windTornadoX=attacker.x;attacker.windTornadoDir=attacker.direction;attacker._tornadoHitTargets=new Set();attacker._tornadoDmg=35;}
+    return;
+  }
+  if(attacker.charType==="fire"){
+    const v2=attacker.transformActive;
+    const buffs=v2?attacker.getTransformBuffs():{};
+    if(skillNum===1){
+      // FIRE BULLET — a single fast fireball (Blox Fruits "Flame Fruit" bullet)
+      attacker.attackCooldown=10;attacker.activeSkill=skillId;attacker.cds.s1=85;
+      const spd=14*(buffs.proj_speed_mult||1);
+      projectiles.push({x:attacker.x+40*attacker.direction,y:attacker.y-42,vx:spd*attacker.direction,vy:0,owner:attacker,target:combatTarget,
+        damage:v2?11:7,slow:0,slow_pct:0,color:v2?FIRE_V2_COL:FIRE_V1_COL,type:"fire_bullet",radius:v2?20:15});
+      return;
+    }
+    if(skillNum===2){
+      // FIRE PILLAR — a column of fire erupts under the target after a short delay (Blox Fruits "Flame Pillar")
+      attacker.attackCooldown=30;attacker.activeSkill=skillId;attacker.cds.s2=230; // must exceed firePillarMaxTick or activeSkill resets before the eruption fires
+      const pos=combatTarget?{x:combatTarget.x,y:combatTarget.y}:{x:attacker.x+180*attacker.direction,y:attacker.y};
+      attacker.firePillarTargets=v2?[pos,{x:pos.x+70*attacker.direction,y:pos.y}]:[pos]; // V2 erupts a second pillar alongside the first
+      attacker.firePillarDelayTick=0;
+      attacker.firePillarMaxTick=22;
+      screenShake=Math.max(screenShake,6);
+      return;
+    }
+    if(skillNum===3){
+      // FIRE DASH — becomes living flame and rockets forward through anyone in the way
+      attacker.attackCooldown=14;attacker.activeSkill=skillId;attacker.cds.s3=190;
+      const dashDist=190*(buffs.dash_mult||1);
+      const oldX=attacker.x,oldY=attacker.y;
+      attacker.fireDashTimer=16;
+      attacker.x+=dashDist*attacker.direction;
+      attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());
+      _dashCapture(attacker,oldX,oldY);
+      const steps=9;
+      for(let i=0;i<=steps;i++){const t=i/steps;attacker.fireDashTrail.push({x:oldX+(attacker.x-oldX)*t,y:attacker.y,life:20,maxLife:20});}
+      aoeHit(attacker,v2?15:10,130);
+      const kb=(v2?70:50)*(buffs.knockback_mult||1);
+      getAllEnemies(attacker).forEach(t2=>{
+        if(t2&&t2.hp>0&&Math.abs(t2.x-attacker.x)<130*SR&&Math.abs(t2.y-attacker.y)<90*SR&&isPushable(t2)){
+          const pd=t2.x>=attacker.x?1:-1;
+          t2.x=clamp(t2.x+pd*kb,moveBoundLo(),moveBoundHi());
+          if(t2 instanceof Fighter)t2.vy=-6;
+        }
+      });
+      screenShake=Math.max(screenShake,10);
+      return;
+    }
+    if(skillNum===4){
+      // FLAME DESTROYER — summon a giant fireball above the target, then it explodes (ultimate)
+      attacker.attackCooldown=30;attacker.activeSkill=skillId;
+      const windup=100; // longer than before so the now much-bigger explosion has room to play out
+      attacker.ultiTimer=windup;
+      attacker._fireUltiWindup=windup;
+      attacker._fireUltiExploded=false;
+      attacker._fireUltiExplodeFrame=0;
+      attacker._fireUltiTargetX=combatTarget?combatTarget.x:attacker.x+220*attacker.direction;
+      attacker._fireUltiTargetY=combatTarget?combatTarget.y:attacker.y;
+      attacker.cds.s4=1080;
+      sfxEnergyCharge();
+      screenShake=Math.max(screenShake,8);
+      return;
+    }
     return;
   }
   if(attacker.charType==="frost"){
@@ -4278,23 +5249,16 @@ function castSkill(attacker,target,skillNum){
     for(let i=0;i<14;i++)attacker._dashSmoke.push({x:attacker.x+rndInt(-25,25),y:attacker.y-30+rndInt(-25,15),vx:(rng()-0.5)*1.6,vy:-rng()*1.4-0.3,life:34,r:rndInt(12,26)});
     aoeHit(attacker,10,160);screenShake=10;return;}
   if(attacker.charType==="thunder"&&skillNum===3){
-    // THUNDER PRISON: 5 columns of lightning strike down, then cage the
-    // target(s) - rooted (snapped back if they try to drift away), zapped
-    // periodically, unable to dash/teleport/speed out while caged.
+    // THUNDER S3: LIGHTNING STRIKE - Lightning bolts fall from sky, damage only when they touch ground
     attacker.attackCooldown=26;attacker.activeSkill=skillId;attacker.cds.s3=280;
     let targets=getAllEnemies(attacker);
     if(!targets.length)targets=combatTarget?[combatTarget]:[{x:attacker.x+200*attacker.direction,y:attacker.y}];
     targets=targets.slice(0,3);
+    // Store target positions when skill is cast (locked position)
+    attacker.thunderS3Targets=targets.map(t=>({x:t.x,y:t.y,targetRef:t,locked:true}));
+    attacker.thunderS3DelayTick=0;
     attacker.thunderBoltXs=targets.map(t=>({x:t.x,y:t.y}));
     attacker.thunderBoltX=attacker.thunderBoltXs.length?attacker.thunderBoltXs[0].x:attacker.x;
-    targets.forEach(t=>{
-      aoeHitAt(attacker,14,t.x,t.y,140);
-      addShock(t,attacker);
-      if(t instanceof Fighter&&t.hp>0){
-        t.thunderPrisonTimer=150;t.thunderPrisonCenterX=t.x;t.thunderPrisonCenterY=t.y;t._thunderPrisonCaster=attacker;
-        t.stunTimer=Math.max(t.stunTimer||0,20);
-      }
-    });
     screenShake=25;return;
   }
   if(attacker.charType==="thunder"&&skillNum===2){
@@ -4351,8 +5315,30 @@ function castSkill(attacker,target,skillNum){
       // Spawn boulder visual particles
       for(let i=0;i<6;i++)hitEffects.push({x:attacker.x+30*attacker.direction,y:attacker.y-50,vy:-rng()*2,vx:attacker.direction*2+rng(),life:15,maxLife:15,particle:true,color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});
     }
-    else if(skillNum===2){attacker.attackCooldown=14;attacker.activeSkill=skillId;attacker.cds.s2=480;attacker.dmgReduceTimer=180;}
-    else if(skillNum===3){attacker.attackCooldown=150;attacker.activeSkill=skillId;attacker.cds.s3=300;}
+    else if(skillNum===2){
+      // EARTH S2: MUD FORM - Transform into mud, become immune to damage/CC for 5 seconds
+      attacker.attackCooldown=14;attacker.activeSkill=skillId;attacker.cds.s2=600;
+      attacker.earthMudActive=true;attacker.earthMudTimer=300;attacker.earthMudSpeed=1.2;attacker.earthMudRegen=5;
+      attacker._mudBubbles=[];attacker._mudRiseShook=false;
+      screenShake=8;
+    }
+    else if(skillNum===3){
+      // EARTH S3: SUMMON MINIONS - Summon 3 melee soldiers + 2 archers (max 5 total)
+      attacker.attackCooldown=20;attacker.activeSkill=skillId;attacker.cds.s3=300;
+      const minionCount=attacker.earthMinions.filter(m=>m.hp>0).length;
+      const toAdd=Math.min(attacker.earthMinionLimit-minionCount,5);
+      const soldierNeeded=Math.min(3,toAdd);
+      const archerNeeded=Math.min(2,toAdd-soldierNeeded);
+      for(let i=0;i<soldierNeeded;i++){
+        const ox=attacker.x+(i-1)*40+rndInt(-20,20);
+        attacker.earthMinions.push(new EarthSoldier(attacker,ox,attacker.y,attacker.direction));
+      }
+      for(let i=0;i<archerNeeded;i++){
+        const ox=attacker.x+(i-1)*40+rndInt(-20,20);
+        attacker.earthMinions.push(new EarthArcher(attacker,ox,attacker.y,attacker.direction));
+      }
+      screenShake=12;
+    }
     else if(skillNum===4){attacker.attackCooldown=120;attacker.activeSkill=skillId;attacker.ultiTimer=120;attacker.boulderY=-320;attacker.boulderLanded=false;if(combatTarget)attacker.targetSpikeX=combatTarget.x;else attacker.targetSpikeX=attacker.x+220*attacker.direction;attacker.cds.s4=1080;attacker.hp=Math.min(MAX_HP,attacker.hp+10);screenShake=10;}
   }
 }
@@ -4366,6 +5352,19 @@ function updateBot(){
   if(botLevel>=1&&absD<140&&rng()<0.03)castSkill(p2,p1,1);
   if(botLevel>=2){p2.x+=3.0*(p1.x>p2.x?1:-1);if(rng()<0.01)p2.jump();if(absD>100&&absD<320&&rng()<0.02)castSkill(p2,p1,3);}
   if(botLevel>=3){p2.isShielding=p1.isAttacking;if(absD<250&&rng()<0.03)castSkill(p2,p1,4);if(absD<140)castSkill(p2,p1,1);}
+  // FIRE BOT AI — presses Y (skill 5) to transform once the Rage/Ultimate
+  // bar is full, then leans hard on the Flame Destroyer ultimate afterward.
+  if(p2.charType==="fire"&&botLevel>=1&&p2.hp>0&&p2.stunTimer<=0&&p2.transformWindupTimer===0&&p2.transformLandingTimer===0){
+    if(p2.cds.s5<=0&&!p2.transformActive&&rng()<0.05){
+      castSkill(p2,p1,5);
+    }else if(p2.transformActive){
+      if(p2.cds.s4<=0&&absD<420&&rng()<0.08)castSkill(p2,p1,4);
+      else if(p2.cds.s2<=0&&absD<300&&rng()<0.04)castSkill(p2,p1,2);
+      else if(p2.cds.s3<=0&&absD>90&&absD<260&&rng()<0.05)castSkill(p2,p1,3);
+    }else{
+      if(p2.cds.s2<=0&&absD<300&&rng()<0.02)castSkill(p2,p1,2);
+    }
+  }
 }
 
 // ================================================================
@@ -4386,6 +5385,19 @@ function updateProjectiles(floorY,player2){
       continue;
     }
     if(proj.type==="ice_spear"&&proj.vx===0&&proj.launchDelay<=0)proj.vx=17*(proj.dir||1);
+    // HOMING ARROWS: earth archer projectiles automatically track targets
+    if(proj.homing&&proj.target&&proj.target.hp>0){
+      const dx=proj.target.x-proj.x,dy=proj.target.y-proj.y;
+      const dist_to_target=Math.hypot(dx,dy);
+      if(dist_to_target>1){
+        const homingSpeed=0.3; // Smooth turning speed
+        proj.vx+=(dx/dist_to_target)*homingSpeed;
+        proj.vy+=(dy/dist_to_target)*homingSpeed;
+        // Cap speed
+        const projSpd=Math.hypot(proj.vx,proj.vy);
+        if(projSpd>12){proj.vx=(proj.vx/projSpd)*12;proj.vy=(proj.vy/projSpd)*12;}
+      }
+    }
     proj.x+=proj.vx;if(proj.vy!==undefined)proj.y+=proj.vy;
     const px=proj.x,py=proj.y,pDir=proj.vx>=0?1:-1,color=proj.color||"cyan",pType=proj.type||"";
     ctx.save();ctx.translate(px,py);ctx.scale(CHAR_VISUAL_SCALE,CHAR_VISUAL_SCALE);ctx.translate(-px,-py);
@@ -4409,6 +5421,12 @@ function updateProjectiles(floorY,player2){
       proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/12)*0.45;_oval(t.x-4,t.y-4,8,8,"white",null);ctx.restore();});
     }
     else if(pType==="ice_arrow"){ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(px,py-8);ctx.lineTo(px+20*pDir,py);ctx.lineTo(px,py+8);ctx.lineTo(px-8*pDir,py);ctx.closePath();ctx.fill();}
+    else if(pType==="earth_arrow"){
+      ctx.save();ctx.shadowColor="#8a6a4a";ctx.shadowBlur=8;
+      ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#4a3524";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(px,py-6);ctx.lineTo(px+18*pDir,py);ctx.lineTo(px,py+6);ctx.lineTo(px-6*pDir,py);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.restore();
+    }
     else if(pType==="ice_slash"){
       ctx.save();ctx.shadowColor="cyan";ctx.shadowBlur=12;
       ctx.strokeStyle="#E0FFFF";ctx.lineWidth=5;ctx.lineCap="round";
@@ -4416,6 +5434,17 @@ function updateProjectiles(floorY,player2){
       ctx.strokeStyle="white";ctx.lineWidth=2;ctx.stroke();
       ctx.restore();
       for(let i=0;i<3;i++)_oval(px-3+rndInt(-6,6),py-3+rndInt(-10,10),6,6,"white",null);
+    }
+    else if(pType==="fire_bullet"){
+      const r=proj.radius||15,v2=proj.color===FIRE_V2_COL;
+      ctx.save();ctx.shadowColor=v2?FIRE_V2_COL:FIRE_V1_COL;ctx.shadowBlur=14;
+      _oval(px-r,py-r,r*2,r*2,v2?"#0088FF":"#FF4500",v2?"#00E5FF":"#FFCC33",1.5);
+      _oval(px-r*0.4,py-r*0.4,r*0.6,r*0.6,"white",null);
+      ctx.restore();
+      if(!proj.trail)proj.trail=[];
+      proj.trail.push({x:px,y:py,life:14});
+      proj.trail=proj.trail.filter(t=>{t.life--;return t.life>0;});
+      proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/14)*0.5;const tr=r*0.6;_oval(t.x-tr,t.y-tr,tr*2,tr*2,v2?"#00AEFF":"orange",null);ctx.restore();});
     }
     else if(pType==="earth_boulder"){
       ctx.save();ctx.shadowColor="#8a6a4a";ctx.shadowBlur=10;
@@ -4679,15 +5708,14 @@ function tickV4(p){
   else{
     p.transformActive=false;p.isFlying=false;p.v4LifestealPct=0;p.ghostHp=0;p.transformInvisActive=false;p.transformInvisTimer=0;
     if(p.charType==="red"){
-      // Small closing burst + distinct sound as the blue hellfire fades and normal red fire returns.
+      // Small closing burst + distinct sound as the Hỏa Ma Thần fire dies down to embers.
       sfxTransformEnd();
-      for(let i=0;i<14;i++){const ang=rng()*Math.PI*2,spd=rng()*3+1.5;hitEffects.push({x:p.x,y:p.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1,life:26,maxLife:26,particle:true,color:rndChoice(["#0099FF","#66DFFF","#FF6600"])});}
-      hitEffects.push({x:p.x,y:p.y-60,life:22,maxLife:22,color:"#00AEFF",ring:true});
+      p.hoaChungStacks=0;p.hoaChungFlashTimer=0;p._fireFlyTrail=[];
+      for(let i=0;i<16;i++){const ang=rng()*Math.PI*2,spd=rng()*3+1.5;hitEffects.push({x:p.x,y:p.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1,life:28,maxLife:28,particle:true,color:rndChoice(["#FF6600","#FF9900","#FFCC33","#552200"])});}
+      hitEffects.push({x:p.x,y:p.y-60,life:22,maxLife:22,color:"#FF6600",ring:true});
     }
     return;
   }
-  if(p.charType==="red"&&p.v4InvisScheduled&&p.transformTimer<=300){p.v4InvisScheduled=false;p.transformInvisActive=true;p.transformInvisTimer=120;}
-  if(p.charType==="red"&&p.transformInvisActive){if(p.transformInvisTimer>0)p.transformInvisTimer--;else p.transformInvisActive=false;}
   if(p.charType==="thunder"){
     // V4 AURA (Storm Field): ~6m radius crackling field around the fighter.
     // Anyone standing in it gets a light shock, builds Shock Stack, and
@@ -4708,7 +5736,21 @@ function tickV4(p){
       spawnLightningArc(sx,sy,sx+rndInt(-20,20),p.y-30);
     }
   }
-  if(p.charType==="frost"&&!p.isFlying)p.isFlying=true;
+  if((p.charType==="frost"||p.charType==="red")&&!p.isFlying)p.isFlying=true;
+  // RED V4 — HỎA PHI: while streaking through the air as a living flame, anyone
+  // caught in the trail takes periodic burn damage (the "quái va vào luồng lửa" rule).
+  if(p.charType==="red"&&p.isFlying){
+    p.fireFlyDamageTick=(p.fireFlyDamageTick||0)+1;
+    if(p.fireFlyDamageTick>=14){
+      p.fireFlyDamageTick=0;
+      getAllEnemies(p).forEach(opp=>{
+        if(dist(p.x,p.y,opp.x,opp.y)<130*SR){
+          applyDamage(opp,4,p);
+          spawnHitEffect(opp.x,opp.y-40,"#FF6600");
+        }
+      });
+    }
+  }
   if(p.charType==="water"){p.waterRegenTick++;if(p.waterRegenTick>=15){p.waterRegenTick=0;p.hp=Math.min(MAX_HP,p.hp+3);}p.waterSlowAuraTick++;if(p.waterSlowAuraTick>=30){p.waterSlowAuraTick=0;getAllEnemies(p).forEach(opp=>{if(dist(p.x,p.y,opp.x,opp.y)<320){opp.slowTimer=Math.max(opp.slowTimer||0,45);opp._slowPct=0.8;}});}}
   if(p.charType==="wind"){p.windMiniTornadoTick++;if(p.windMiniTornadoTick===1){getAllEnemies(p).forEach(opp=>{if(dist(p.x,p.y,opp.x,opp.y)<160){if(opp instanceof Fighter)opp.vy=-16;applyDamage(opp,5,p);}});}else if(p.windMiniTornadoTick>=120)p.windMiniTornadoTick=0;}
   // EARTH V4: slow aura + ground rumble
@@ -5055,19 +6097,20 @@ function drawMenu(){
 //  CHAR SELECT DRAW
 // ================================================================
 const CHARS=[
-  {id:"red",   name:"RED (Lửa)",    desc:"Hồi máu & Phun lửa tầm xa",color:"red"},
   {id:"shadow",name:"SHADOW (Tối)", desc:"Áp sát & Hố đen xúc tua",color:"#551a8b"},
   {id:"thunder",name:"THUNDER (Lôi)",desc:"Chain Lightning, Thunder Prison & Thunder God Judgment",color:"gold"},
   {id:"frost", name:"FROST (Băng)", desc:"Tiễn băng & Hồi máu khiên",color:"deepskyblue"},
   {id:"earth", name:"TERRA (Thổ)",  desc:"Giáp đá sống & Tảng đá thần tốc",color:"sienna"},
   {id:"water", name:"WATER (Thủy)", desc:"Khiên xanh & Sóng thần",color:"dodgerblue"},
   {id:"wind",  name:"GIÓ (Phong)",  desc:"Hơi thổi & Lốc xoáy cực đại",color:"#90EE90"},
+  {id:"fire",  name:"FIRE (Hỏa)",   desc:"Fire Bullet, Fire Pillar, Fire Dash & Flame Destroyer",color:FIRE_V1_COL},
 ];
 function drawCharSelect(title,borderColor){
   _text(W/2,60,title,"yellow","24px Arial bold");
   const cardW=Math.floor(W/8);
+  const rowOffset=-(CHARS.length-1)*100;
   CHARS.forEach((ch,i)=>{
-    const cx=W/2-700+i*200,cy=H/2-50;
+    const cx=W/2+rowOffset+i*200,cy=H/2-50;
     _rect(cx,cy,170,250,"#222",borderColor||"white",2);
     _rect(cx+60,cy+40,50,50,ch.color,"white",1);
     _text(cx+85,cy+140,ch.name,"white","11px Arial bold");
@@ -5104,14 +6147,14 @@ function handleMenuClick(mx, my) {
       }
     }
   }else if(gameState==="ROAD_CHAR_SELECT"){
-    CHARS.forEach((ch,i)=>{const cx=W/2-700+i*200,cy=H/2-50;if(cx<=mx&&mx<=cx+170&&cy<=my&&my<=cy+250){selectedP1=ch.id;startRoadMode();}});
+    CHARS.forEach((ch,i)=>{const cx=W/2-(CHARS.length-1)*100+i*200,cy=H/2-50;if(cx<=mx&&mx<=cx+170&&cy<=my&&my<=cy+250){selectedP1=ch.id;startRoadMode();}});
   }else if(gameState==="CHALLENGE_SELECT"){
     for(let i=0;i<4;i++){const by1=H/2-80+i*80;if(W/2-100<=mx&&mx<=W/2+100&&by1<=my&&my<=by1+60){challengeStage=i+1;gameState="CHALLENGE_CHAR_SELECT";return;}}
   }else if(gameState==="CHALLENGE_CHAR_SELECT"){
-    CHARS.forEach((ch,i)=>{const cx=W/2-700+i*200,cy=H/2-50;if(cx<=mx&&mx<=cx+170&&cy<=my&&my<=cy+250){selectedP1=ch.id;startChallengeMode(challengeStage);}});
+    CHARS.forEach((ch,i)=>{const cx=W/2-(CHARS.length-1)*100+i*200,cy=H/2-50;if(cx<=mx&&mx<=cx+170&&cy<=my&&my<=cy+250){selectedP1=ch.id;startChallengeMode(challengeStage);}});
   }else if(gameState==="CHAR_SELECT"){
     CHARS.forEach((ch,i)=>{
-      const cx=W/2-700+i*200,cy=H/2-50;
+      const cx=W/2-(CHARS.length-1)*100+i*200,cy=H/2-50;
       if(cx<=mx&&mx<=cx+170&&cy<=my&&my<=cy+250){
         if(selectingPlayer===1){selectedP1=ch.id;if(gameMode==="PVP"){selectingPlayer=2;}else{const avail=CHARS.filter(c=>c.id!==ch.id);selectedP2=rndChoice(avail).id;startMatch();}}
         else{selectedP2=ch.id;startMatch();}
@@ -5135,6 +6178,7 @@ function update(){
   frameCount++;
   if(comboTimer>0){comboTimer--;if(comboTimer===0)comboCount=0;}
   if(_hitSfxCooldown>0)_hitSfxCooldown--;
+  updateBurnEffects();
   const floorY=H*FLOOR_Y_RATIO;
   ctx.save();ctx.translate(dx,dy);
   if(gameState==="MENU")drawMenu();
@@ -5173,19 +6217,22 @@ function updateGameplay(floorY){
     tickThunderDash(p);
     tickWaterCloud(p);
     tickFrost(p);
+    tickEarthMud(p);
+    tickThunderS3(p);
+    tickEarthMinions(p,worldW);
+    updateFire(p);
   }
   for(const[attacker,pvpTarget]of[[p1,p2],[p2,p1]]){
     if(attacker.ultiTimer>0){
       attacker.ultiTimer--;
       const d=dist(attacker.x,attacker.y,pvpTarget.x,pvpTarget.y);
-      if(attacker.activeSkill==="red_s4"&&d<350*SR)applyDamage(pvpTarget,0.25,attacker);
-      else if(attacker.activeSkill==="thunder_s4")thunderJudgmentTick(attacker);
+      if(attacker.activeSkill==="thunder_s4")thunderJudgmentTick(attacker);
       else if(attacker.activeSkill==="frost_s4"&&d<450*SR){applyDamage(pvpTarget,0.18,attacker);pvpTarget.slowTimer=Math.max(pvpTarget.slowTimer,10);}
       else if(attacker.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(pvpTarget.x-attacker.targetSpikeX)<60*SR))applyDamage(pvpTarget,0.26,attacker);
       else if(attacker.activeSkill==="shadow_s4"&&Math.abs(attacker.x-pvpTarget.x)<500*SR)applyDamage(pvpTarget,0.40,attacker);
       if(attacker.ultiTimer===0){attacker.isAttacking=false;attacker.activeSkill=null;if(attacker.charType==="earth")attacker.earthPillars=[];}
     }
-    if(attacker.attackCooldown>0&&attacker.activeSkill==="red_s3"){if(Math.abs(attacker.y-pvpTarget.y)<60*SR&&0<(pvpTarget.x-attacker.x)*attacker.direction&&(pvpTarget.x-attacker.x)*attacker.direction<600*SR)applyDamage(pvpTarget,0.18,attacker);}
+
   }
   for(const p of[p1,p2]){if(p.charType==="wind"&&p.windBoostTimer>0)p.windBoostTimer--;}
   const msb=4.3125;
@@ -5195,13 +6242,13 @@ function updateGameplay(floorY){
       let spd=msb*(p1.isShielding?0.35:1);
       if(p1.charType==="wind"&&p1.windBoostTimer>0)spd*=1.25;
       if(p1.slowTimer>0)spd*=(1-p1._slowPct);
-      if(p1.charType==="earth"&&["earth_s2","earth_s3"].includes(p1.activeSkill))spd*=0.8;
+      if(p1.charType==="earth"&&p1.earthMudActive)spd*=p1.earthMudSpeed;
       if(p1.transformActive)spd*=p1.getTransformBuffs().speed||1;
       const goLeft  = keys.has(keyBindings.left)      || (platformMode==="MOBILE"&&touch1.left);
       const goRight = keys.has(keyBindings.right)      || (platformMode==="MOBILE"&&touch1.right);
       const goUp    = keys.has(keyBindings.up)      || (platformMode==="MOBILE"&&touch1.up);
       const goDown  = keys.has(keyBindings.down)      || (platformMode==="MOBILE"&&touch1.down);
-      if(p1.activeSkill!=="red_s3"){if(goLeft)p1.x-=spd;if(goRight)p1.x+=spd;}
+      if(goLeft)p1.x-=spd;if(goRight)p1.x+=spd;
       if(p1.charType==="frost"&&p1.transformActive&&p1.isFlying&&goDown)p1.vy=8;
       if(goUp&&!p1._upPrevInput)p1.jump();
       p1._upPrevInput=goUp;
@@ -5233,8 +6280,9 @@ function updateGameplay(floorY){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
-  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p2);
+  drawEarthMinions(p1);drawEarthMinions(p2);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawEarthMud(p1);drawFire(p1);
+  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p2);drawEarthMud(p2);drawFire(p2);
   p1.draw();p2.draw();
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
@@ -5275,20 +6323,21 @@ function updateChallenge(w,h){
   tickThunderDash(p1);
   tickWaterCloud(p1);
   tickFrost(p1);
+  updateFire(p1);
   if(frameCount%60===0&&p1.charType==="red"&&p1.hp>0)p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0&&p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
   if(challengeBossIntroState!=="INTRO_RUNNING"&&p1.stunTimer<=0&&p1.hp>0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0){
     let spd=4.3125;
     if(p1.charType==="wind"&&p1.windBoostTimer>0){spd*=1.25;p1.windBoostTimer--;}
     if(p1.slowTimer>0)spd*=(1-p1._slowPct);
-    if(p1.charType==="earth"&&["earth_s2","earth_s3"].includes(p1.activeSkill))spd*=0.8;
+    if(p1.charType==="earth"&&p1.earthMudActive)spd*=p1.earthMudSpeed;
     if(p1.transformActive)spd*=p1.getTransformBuffs().speed||1;
     const canMoveH=p1.ultiTimer===0||p1.activeSkill==="water_s4";
     const goLeft  = keys.has(keyBindings.left)   || (platformMode==="MOBILE"&&touch1.left);
     const goRight = keys.has(keyBindings.right)   || (platformMode==="MOBILE"&&touch1.right);
     const goUp    = keys.has(keyBindings.up)   || (platformMode==="MOBILE"&&touch1.up);
     const goDown  = keys.has(keyBindings.down)   || (platformMode==="MOBILE"&&touch1.down);
-    if(canMoveH&&p1.activeSkill!=="red_s3"){if(goLeft)p1.x-=spd;if(goRight)p1.x+=spd;}
+    if(canMoveH){if(goLeft)p1.x-=spd;if(goRight)p1.x+=spd;}
     if(p1.charType==="frost"&&p1.transformActive&&p1.isFlying){if(goUp)p1.vy=-10;if(goDown)p1.vy=8;}
     else{if(goUp&&!p1._upPrevInput)p1.jump();}
     p1._upPrevInput=goUp;
@@ -5301,8 +6350,7 @@ function updateChallenge(w,h){
     const all=[...challengeEnemies,...challengeBosses.filter(b=>!b.dead&&b.hp>0)];
     all.forEach(tgt=>{
       const d=dist(p1.x,p1.y,tgt.x,tgt.y);
-      if(p1.activeSkill==="red_s4"&&d<350*SR)applyDamage(tgt,0.25,p1);
-      else if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
+      if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
       else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
@@ -5310,7 +6358,7 @@ function updateChallenge(w,h){
     });
     if(p1.ultiTimer===0){p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
   }
-  if(p1.attackCooldown>0&&p1.activeSkill==="red_s3"){const all=[...challengeEnemies,...challengeBosses.filter(b=>!b.dead&&b.hp>0)];all.forEach(tgt=>{if(Math.abs(p1.y-tgt.y)<80*SR&&0<(tgt.x-p1.x)*p1.direction&&(tgt.x-p1.x)*p1.direction<600*SR)applyDamage(tgt,0.18,p1);});}
+
   if(p1.charType==="wind"&&p1.windTornadoActive&&p1.windTornadoX!==null){
     p1.windTornadoX+=10*p1.windTornadoDir;
     if(!p1._tornadoHitTargets)p1._tornadoHitTargets=new Set();
@@ -5383,7 +6431,8 @@ function updateChallenge(w,h){
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
+  drawEarthMinions(p1);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawEarthMud(p1);drawFire(p1);
   p1.draw();
   challengeEnemies.forEach(e=>e.draw());
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
@@ -5618,7 +6667,7 @@ function updateRoad(){
   if(p1.poisonTimer>0){p1.poisonTimer--;if(p1.poisonTimer%60===0&&p1.hp>0)applyDamage(p1,2,null);}
   if(p1.thunderFTimer>0){p1.thunderFTimer--; if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds) if(p1.cds[s]>0)p1.cds[s]--;
-  tickV4(p1); tickWaterCloud(p1); tickFrost(p1); tickThunderDash(p1);
+  tickV4(p1); tickWaterCloud(p1); tickFrost(p1); tickThunderDash(p1); updateFire(p1);
   if(frameCount%60===0 && p1.charType==="red" && p1.hp>0) p1.hp=Math.min(MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0 && p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
 
@@ -5627,14 +6676,14 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     let spd=4.3125;
     if(p1.charType==="wind"&&p1.windBoostTimer>0){spd*=1.25;p1.windBoostTimer--;}
     if(p1.slowTimer>0)spd*=(1-p1._slowPct);
-    if(p1.charType==="earth"&&["earth_s2","earth_s3"].includes(p1.activeSkill))spd*=0.8;
+    if(p1.charType==="earth"&&p1.earthMudActive)spd*=p1.earthMudSpeed;
     if(p1.transformActive)spd*=p1.getTransformBuffs().speed||1;
     const canMoveH=p1.ultiTimer===0||p1.activeSkill==="water_s4";
     const goLeft  = keys.has(keyBindings.left) || (platformMode==="MOBILE"&&touch1.left);
     const goRight = keys.has(keyBindings.right) || (platformMode==="MOBILE"&&touch1.right);
     const goUp    = keys.has(keyBindings.up) || (platformMode==="MOBILE"&&touch1.up);
     const goDown  = keys.has(keyBindings.down) || (platformMode==="MOBILE"&&touch1.down);
-    if(canMoveH&&p1.activeSkill!=="red_s3"){ if(goLeft)p1.x-=spd; if(goRight)p1.x+=spd; }
+    if(canMoveH){ if(goLeft)p1.x-=spd; if(goRight)p1.x+=spd; }
     if(p1.charType==="frost"&&p1.transformActive&&p1.isFlying){ if(goUp)p1.vy=-10; if(goDown)p1.vy=8; }
     else{ if(goUp&&!p1._upPrevInput)p1.jump(); }
     p1._upPrevInput=goUp;
@@ -5665,8 +6714,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     p1.ultiTimer--;
     getAllEnemies(p1).forEach(tgt=>{
       const d=dist(p1.x,p1.y,tgt.x,tgt.y);
-      if(p1.activeSkill==="red_s4"&&d<350*SR)applyDamage(tgt,0.25,p1);
-      else if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
+      if(p1.activeSkill==="thunder_s4")thunderJudgmentTick(p1);
       else if(p1.activeSkill==="frost_s4"&&d<450*SR){applyDamage(tgt,0.18,p1);if(tgt instanceof Fighter)tgt.slowTimer=Math.max(tgt.slowTimer,10);}
       else if(p1.activeSkill==="earth_s4"&&(d<420*SR||Math.abs(tgt.x-p1.targetSpikeX)<60*SR))applyDamage(tgt,0.26,p1);
       else if(p1.activeSkill==="shadow_s4"&&Math.abs(p1.x-tgt.x)<500*SR)applyDamage(tgt,0.40,p1);
@@ -5674,9 +6722,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     });
     if(p1.ultiTimer===0){p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
   }
-  if(p1.attackCooldown>0&&p1.activeSkill==="red_s3"){
-    getAllEnemies(p1).forEach(tgt=>{ if(Math.abs(p1.y-tgt.y)<80*SR&&0<(tgt.x-p1.x)*p1.direction&&(tgt.x-p1.x)*p1.direction<600*SR) applyDamage(tgt,0.18,p1); });
-  }
+
   if(p1.charType==="wind"&&p1.windTornadoActive&&p1.windTornadoX!==null){
     p1.windTornadoX+=10*p1.windTornadoDir;
     if(!p1._tornadoHitTargets)p1._tornadoHitTargets=new Set();
@@ -5754,7 +6800,8 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W));
   puppets.forEach(pu=>pu.draw());
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);
+  drawEarthMinions(p1);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawEarthMud(p1);drawFire(p1);
   p1.draw();
   if(p1.poisonTimer>0){
     for(let i=0;i<3;i++){
