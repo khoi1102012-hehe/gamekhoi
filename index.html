@@ -6705,7 +6705,7 @@ function handleMinigameSelectClick(mx,my){
     const by1=H/2-150+i*80;
     if(W/2-130<=mx&&mx<=W/2+130&&by1<=my&&my<=by1+60){
       if(!it.enabled)return;
-      if(it.url){ window.open(it.url,"_blank"); return; }
+      if(it.url){ window.location.href=it.url; return; }
       if(it.state==="MINIGAME_DINO"){ dinoStarted=false; gameState="MINIGAME_DINO"; }
     }
   });
