@@ -20,10 +20,62 @@ html, body {
   cursor:default;
   touch-action:none;
 }
+
+/* ---- Nút Trở Lại Game, phát sáng, nổi cố định góc trên trái ---- */
+.back-to-game-float{
+  position:fixed;
+  top:12px; left:12px;
+  z-index:9999;
+  display:inline-flex; align-items:center; gap:8px;
+  padding:9px 16px;
+  border-radius:40px;
+  text-decoration:none;
+  font-family:'Trebuchet MS','Segoe UI',Arial,sans-serif;
+  font-size:13px; font-weight:800; letter-spacing:.3px;
+  color:#fff;
+  background:linear-gradient(90deg,#ff5a3c,#ff1a5e 50%,#7b68ee 100%);
+  background-size:200% 100%;
+  box-shadow:
+    0 0 14px rgba(255,26,94,.55),
+    0 0 30px rgba(123,104,238,.45),
+    0 6px 18px -8px rgba(0,0,0,.6);
+  animation: btnGlowFloat 2.2s ease-in-out infinite, btnGradientFloat 4s linear infinite;
+  transition: transform .18s ease;
+  user-select:none;
+}
+.back-to-game-float:hover{ transform:scale(1.05); }
+.back-to-game-float:active{ transform:scale(.97); }
+.back-to-game-float .icon{ font-size:15px; animation: iconPulseFloat 1.4s ease-in-out infinite; }
+
+@keyframes btnGlowFloat{
+  0%, 100% {
+    box-shadow:
+      0 0 14px rgba(255,26,94,.55),
+      0 0 30px rgba(123,104,238,.45),
+      0 6px 18px -8px rgba(0,0,0,.6);
+  }
+  50% {
+    box-shadow:
+      0 0 22px rgba(255,26,94,.85),
+      0 0 46px rgba(123,104,238,.7),
+      0 6px 18px -8px rgba(0,0,0,.6);
+  }
+}
+@keyframes btnGradientFloat{
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes iconPulseFloat{
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
+<a class="back-to-game-float" href="https://khoidoan.site/index">
+  <span class="icon">🎮</span><span>Trở Lại Game</span>
+</a>
 <script>
 // ================================================================
 //  RED VS SHADOW — Full 2026 v2 + Mobile/PC Mode
