@@ -63,6 +63,15 @@ let selectedP1   = "shadow";
 let selectedP2   = "shadow";
 let selectingPlayer = 1;
 let screenShake  = 0;
+
+// ================================================================
+//  CHARACTER PORTAL ENTRANCE — state used by the pre-battle intro
+//  (see PORTAL ENTRANCE SYSTEM block further down for the logic)
+// ================================================================
+let portalEntrants     = [];   // active entrants for the running PORTAL_INTRO
+let pendingGameState   = null; // gameState to switch into once the intro finishes
+let pendingAfterIntro  = null; // optional fn() run exactly at BATTLE_START (e.g. spawns waves)
+let pendingIntroFloorY = 0;
 let projectiles  = [];
 let puppets      = [];
 let frameCount   = 0;
@@ -12334,7 +12343,7 @@ function drawActiveBossBars() {
 function update(){
   try{
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = (gameState==="GAMEPLAY"||gameState==="CHALLENGE"||gameState==="ROAD") ? "#87CEFA" : "black";
+  ctx.fillStyle = (gameState==="GAMEPLAY"||gameState==="CHALLENGE"||gameState==="ROAD"||gameState==="PORTAL_INTRO") ? "#87CEFA" : "black";
   ctx.fillRect(0,0,W,H);
   let dx=0,dy=0;
   if(screenShake>0){dx=rndInt(-screenShake,screenShake);dy=rndInt(-screenShake,screenShake);screenShake*=0.96;if(screenShake<0.8)screenShake=0;}
@@ -12355,6 +12364,7 @@ function update(){
   else if(gameState==="GAMEPLAY")updateGameplay(floorY);
   else if(gameState==="CHALLENGE")updateChallenge(W,H);
   else if(gameState==="ROAD")updateRoad();
+  else if(gameState==="PORTAL_INTRO")updateCharacterEntrance();
   else if(gameState==="TOUCH_EDITOR")drawTouchEditor();
   else if(gameState==="KEY_EDITOR")drawKeyEditor();
   ctx.restore();
@@ -12732,11 +12742,177 @@ function onKeyPress(e){
 // ================================================================
 //  GAME START HELPERS
 // ================================================================
+// ================================================================
+//  CHARACTER PORTAL ENTRANCE SYSTEM
+//  Chạy TRƯỚC khi trận đấu bắt đầu (state riêng "PORTAL_INTRO"), hoàn
+//  toàn tách biệt khỏi combat/AI/damage/timer hiện có. Không đụng tới
+//  gameplay, không spawn enemy/boss — chỉ chạy animation cổng + nhân vật
+//  bước ra, rồi mới chuyển sang state trận đấu thật (GAMEPLAY/CHALLENGE/
+//  ROAD) để hệ thống spawn/AI cũ tiếp quản y như trước.
+// ================================================================
+const PORTAL_CONFIG = {
+  earth:   { color:"#c68a4a", glow:"#f0d9a6", particle:"#a9744a" }, // nâu / vàng đất
+  fire:    { color:"#ff6a1a", glow:"#ffcf40", particle:"#ff8c33" }, // đỏ cam / vàng
+  water:   { color:"#2fa8ff", glow:"#bfe9ff", particle:"#66c8ff" }, // xanh dương
+  wind:    { color:"#8be08b", glow:"#e3fff0", particle:"#aef0ae" }, // xanh lá nhạt / cyan
+  thunder: { color:"#ffe14d", glow:"#fff6b0", particle:"#fff08a" }, // vàng điện
+  frost:   { color:"#7fe0ff", glow:"#eafcff", particle:"#bff3ff" }, // xanh băng / cyan sáng
+  shadow:  { color:"#7a1acc", glow:"#2a0a3d", particle:"#b866ff" }, // tím đậm / tím đen
+  red:     { color:"#ff5533", glow:"#ffb066", particle:"#ff7744" }  // (Hỏa Ma Thần) dùng chung tông fire
+};
+
+// Mốc thời gian theo frame (@60fps) — tổng ~3.0s, nằm trong khoảng 2–3s yêu cầu.
+const PI_OPEN_END  = 30;   // 0.0–0.5s: cổng mở
+const PI_WALK_END  = 108;  // 0.5–1.8s: nhân vật bước ra
+const PI_READY_END = 132;  // 1.8–2.2s: đứng yên ở vị trí chiến đấu
+const PI_CLOSE_END = 156;  // 2.2–2.6s: cổng đóng
+const PI_FLASH_END = 180;  // 2.6–3.0s: hiệu ứng READY ngắn → BATTLE START
+
+function _piEase(t){ t=clamp(t,0,1); return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+
+// Bán kính vòng cổng (dùng cả khi vẽ lẫn khi tính bước-ra, để 2 nơi không lệch nhau).
+const PORTAL_RING_R = 56;
+
+// Tâm cổng theo trục Y, tính từ chân nhân vật (entranceY = fighter.y = mặt đất):
+// Trong Fighter._drawInner(), thân vẽ tại ry=this.y-52 cao 52px (chân ở this.y),
+// đầu vẽ tại ry-60..ry-20 → mép trên của đầu ở this.y-112 (chưa scale).
+// Fighter.draw() scale toàn bộ hình theo CHAR_VISUAL_SCALE quanh đúng điểm chân
+// (this.x,this.y), nên trên màn hình mép đầu hiển thị ở khoảng:
+//   this.y - 112*CHAR_VISUAL_SCALE ≈ this.y - 75.
+// Đặt tâm cổng ở this.y-70 để vòng cổng bán kính 56 bao trọn nhân vật từ chân
+// tới sát đỉnh đầu (đáy vòng ~14px trên mặt đất, đỉnh vòng ~4px trên đầu).
+const PORTAL_CENTER_DY = -70;
+
+// entrants: [{fighter, dir}] — dir = hướng nhân vật quay mặt (1 phải / -1 trái).
+// nextState: gameState thật sự sẽ vào khi intro xong ("GAMEPLAY"/"CHALLENGE"/"ROAD").
+// afterIntroFn: chạy đúng lúc BATTLE_START (vd: spawn wave đầu của Challenge) —
+//   đảm bảo "KHÔNG ĐƯỢC ĐỂ ENEMY SPAWN TRƯỚC KHI INTRO KẾT THÚC".
+function startCharacterEntrance(entrants, nextState, afterIntroFn, floorY){
+  portalEntrants = entrants.map(e=>({
+    fighter: e.fighter,
+    dir: e.dir,
+    // ANCHOR CHUNG — portal VÀ nhân vật luôn đọc đúng 1 điểm này, không tính
+    // hai hệ tọa độ riêng. Lấy trực tiếp từ vị trí spawn thật của fighter
+    // (W*0.2 / W*0.8 cho GAMEPLAY, 220 cho ROAD, v.v.) — KHÔNG hard-code.
+    entranceX: e.fighter.x,
+    entranceY: e.fighter.y,
+    // Bước ra rất ngắn, nhỏ hơn bán kính cổng (PORTAL_RING_R) — để nhân vật
+    // luôn nằm TRONG lòng cổng trong lúc "bước ra", không bao giờ hiện ra
+    // ngoài vòng cổng rồi mới chạy vào như trước.
+    stepOx: -Math.min(24, PORTAL_RING_R*0.42)*e.dir,
+    cfg: PORTAL_CONFIG[e.fighter.charType] || PORTAL_CONFIG.fire,
+    t: 0
+  }));
+  pendingGameState  = nextState;
+  pendingAfterIntro = afterIntroFn || null;
+  pendingIntroFloorY = floorY!==undefined ? floorY : H*FLOOR_Y_RATIO;
+  gameState = "PORTAL_INTRO";
+}
+
+function drawCharacterPortal(en){
+  const cfg=en.cfg, px=en.entranceX, py=en.entranceY; // luôn dùng anchor chung
+  let ringScale=0, ringAlpha=0, charOx=en.stepOx, charAlpha=0;
+
+  if(en.t<=PI_OPEN_END){
+    const p=_piEase(en.t/PI_OPEN_END);
+    ringScale=p; ringAlpha=p; charAlpha=0; charOx=en.stepOx;
+  }else if(en.t<=PI_WALK_END){
+    ringScale=1; ringAlpha=1;
+    const p=_piEase((en.t-PI_OPEN_END)/(PI_WALK_END-PI_OPEN_END));
+    charOx = en.stepOx*(1-p);
+    // Nhân vật "hiện dần" ngay trong lòng cổng ở 25% đầu giai đoạn bước ra,
+    // rồi mới di chuyển đoạn ngắn còn lại — tránh cảm giác vừa xuất hiện đã
+    // đứng cách xa cổng / chạy từ chỗ khác tới.
+    charAlpha = clamp(p/0.25,0,1);
+  }else if(en.t<=PI_READY_END){
+    ringScale=1; ringAlpha=1; charAlpha=1; charOx=0;
+  }else if(en.t<=PI_CLOSE_END){
+    const p=_piEase((en.t-PI_READY_END)/(PI_CLOSE_END-PI_READY_END));
+    ringScale=1-p; ringAlpha=1-p; charAlpha=1; charOx=0;
+  }else{
+    ringScale=0; ringAlpha=0; charAlpha=1; charOx=0;
+  }
+
+  // ---- cổng không gian (tâm tại px, py+PORTAL_CENTER_DY — cùng anchor với nhân vật) ----
+  if(ringAlpha>0.01){
+    ctx.save();
+    ctx.translate(px, py+PORTAL_CENTER_DY);
+    ctx.rotate(frameCount*0.03*en.dir);
+    ctx.scale(Math.max(0.001,ringScale),Math.max(0.001,ringScale));
+    ctx.globalAlpha=ringAlpha;
+    const grad=ctx.createRadialGradient(0,0,4,0,0,PORTAL_RING_R+2);
+    grad.addColorStop(0,cfg.glow); grad.addColorStop(0.55,cfg.color); grad.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.beginPath();ctx.arc(0,0,PORTAL_RING_R,0,Math.PI*2);ctx.fillStyle=grad;ctx.fill();
+    ctx.lineWidth=6;ctx.strokeStyle=cfg.color;ctx.shadowColor=cfg.glow;ctx.shadowBlur=18;
+    ctx.beginPath();ctx.arc(0,0,PORTAL_RING_R,0,Math.PI*2);ctx.stroke();
+    ctx.shadowBlur=0;
+    // hạt năng lượng xoay quanh viền cổng
+    for(let i=0;i<10;i++){
+      const ang=frameCount*0.05+i*(Math.PI*2/10);
+      const rr=PORTAL_RING_R+Math.sin(frameCount*0.1+i)*4;
+      ctx.beginPath();ctx.arc(Math.cos(ang)*rr,Math.sin(ang)*rr,3,0,Math.PI*2);
+      ctx.fillStyle=cfg.particle;ctx.fill();
+    }
+    // hiệu ứng méo nhẹ riêng cho SHADOW
+    if(en.fighter.charType==="shadow"){
+      ctx.globalAlpha=ringAlpha*0.5;
+      ctx.beginPath();ctx.arc(0,0,30+Math.sin(frameCount*0.15)*6,0,Math.PI*2);
+      ctx.fillStyle="#1a0a2a";ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ---- nhân vật bước ra — cùng px làm gốc, chỉ lệch thêm charOx (nhỏ, trong lòng cổng) ----
+  if(charAlpha>0.01 && en.fighter && typeof en.fighter.draw==="function"){
+    ctx.save();ctx.globalAlpha=charAlpha;
+    en.fighter.draw(charOx,0);
+    ctx.restore();
+  }
+
+  // ---- READY flash ngắn trước BATTLE START ----
+  if(en.t>PI_CLOSE_END){
+    const p=(en.t-PI_CLOSE_END)/(PI_FLASH_END-PI_CLOSE_END);
+    ctx.save();ctx.globalAlpha=1-p;ctx.font="bold 22px Arial";ctx.textAlign="center";
+    ctx.fillStyle=cfg.color;ctx.fillText("READY!",px,py+PORTAL_CENTER_DY-95);
+    ctx.restore();
+  }
+}
+
+function updateCharacterEntrance(){
+  const floorY = pendingIntroFloorY || H*FLOOR_Y_RATIO;
+  // Vẽ nền tương ứng với chế độ sắp vào, để không bị giật hình khi chuyển state.
+  if(pendingGameState==="ROAD"){ drawRoadSky(false); drawRoadTerrain(floorY); }
+  else { drawFloor(floorY,false,0); }
+
+  let allDone=true;
+  portalEntrants.forEach(en=>{
+    en.t++;
+    if(en.t<PI_FLASH_END) allDone=false;
+    drawCharacterPortal(en);
+  });
+
+  const title = pendingGameState==="ROAD" ? "🛣️ CHUẨN BỊ LÊN ĐƯỜNG..."
+              : pendingGameState==="CHALLENGE" ? "⚔️ CHUẨN BỊ CHIẾN ĐẤU..."
+              : "⚔️ TRẬN ĐẤU SẮP BẮT ĐẦU...";
+  _text(W/2,46,title,"white","20px Arial bold");
+
+  if(allDone) finishCharacterEntrance();
+}
+
+function finishCharacterEntrance(){
+  const next=pendingGameState, after=pendingAfterIntro;
+  portalEntrants=[]; pendingGameState=null; pendingAfterIntro=null;
+  gameState=next;          // chỉ bây giờ mới thật sự vào GAMEPLAY/CHALLENGE/ROAD
+  if(after) after();       // ...và chỉ bây giờ mới spawn enemy/wave (nếu có)
+}
+
 function startChallengeMode(stage){
   projectiles=[];puppets=[];p1=new Fighter(W*0.2,H*FLOOR_Y_RATIO,selectedP1,1);
-  p1.hp=MAX_HP;campX=0;gameState="CHALLENGE";_challengeWaveTimer=0;startChallenge(stage);
+  p1.hp=MAX_HP;campX=0;_challengeWaveTimer=0;
+  challengeEnemies=[];challengeBosses=[];challengeState="";challengeResult="";
   dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;_challengeEndSfxDone=false;
   bossIntroManager=null;challengeBossIntroState="IDLE";
+  startCharacterEntrance([{fighter:p1,dir:1}], "CHALLENGE", ()=>{ startChallenge(stage); }, H*FLOOR_Y_RATIO);
 }
 function terrainHeightAt(worldX){
   if(!roadTerrain) return 0;
@@ -12868,15 +13044,16 @@ function startRoadMode(){
   const trapXs=_spreadPositions(trapCount,400,totalLenPx-300,bossAvoid,220);
   roadTrapPlan=trapXs.map((x,i)=>({x,type:i%2===0?"spike":"fire",spawned:false}));
 
-  dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;roadKillCount=0;roadNewRecord=false;roadRunStartFrame=frameCount;_roadEndSfxDone=false;
-  gameState="ROAD";
+  dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;roadKillCount=0;roadNewRecord=false;_roadEndSfxDone=false;
+  startCharacterEntrance([{fighter:p1,dir:1}], "ROAD", ()=>{ roadRunStartFrame=frameCount; }, floorY);
 }
 function startMatch(){
   projectiles=[];puppets=[];const floorY=H*FLOOR_Y_RATIO;
   p1=new Fighter(W*0.2,floorY,selectedP1,1);
   p2=new Fighter(W*0.8,floorY,selectedP2,-1);
-  campX=0;gameState="GAMEPLAY";
+  campX=0;
   dmgNumbers=[];comboCount=0;comboTimer=0;comboMaxThisRun=0;_gameplayEndSfxDone=false;
+  startCharacterEntrance([{fighter:p1,dir:1},{fighter:p2,dir:-1}], "GAMEPLAY", null, floorY);
 }
 
 // ================================================================
