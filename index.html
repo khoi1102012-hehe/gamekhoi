@@ -2681,19 +2681,23 @@ window.addEventListener('resize', () => {
 // ================================================================
 //  TOUCH / VIRTUAL BUTTON STATE
 // ================================================================
-const touch1 = { left:false, right:false, up:false, down:false, s1:false, s2:false, s3:false, s4:false, shield:false, v4:false, _joyActive:false };
-const touch2 = { left:false, right:false, up:false, down:false, s1:false, s2:false, s3:false, s4:false, shield:false, v4:false, _joyActive:false };
+const touch1 = { left:false, right:false, up:false, down:false, s2:false, s3:false, s4:false, shield:false, v4:false, _joyActive:false };
+const touch2 = { left:false, right:false, up:false, down:false, s2:false, s3:false, s4:false, shield:false, v4:false, _joyActive:false };
 
 // ---------- PC key rebinding ----------
-let keyBindings = {left:"a", right:"d", up:"w", down:"s", s1:"e", s2:"f", s3:"t", s4:"g", v4:"y", shield:"r"};
-const KEY_ACTION_LABELS = {left:"◀ Trái", right:"▶ Phải", up:"▲ Nhảy", down:"▼ Né/Xuống", s1:"Chiêu 1", s2:"Chiêu 2", s3:"Chiêu 3", s4:"Chiêu 4", v4:"Biến Hình", shield:"Khiên"};
-const KEY_ACTION_ORDER = ["left","right","up","down","s1","s2","s3","s4","shield","v4"];
+// NOTE: Skill 1 ("Chiêu 1") no longer has its own button/key — it fires
+// automatically as the "basic attack" whenever the player clicks the mouse,
+// presses SPACE, or (on mobile) taps the screen. See the mousedown listener,
+// the " " case in onKeyPress(), and the free-tap branch in onMobileTap().
+let keyBindings = {left:"a", right:"d", up:"w", down:"s", s2:"f", s3:"t", s4:"g", v4:"y", shield:"r"};
+const KEY_ACTION_LABELS = {left:"◀ Trái", right:"▶ Phải", up:"▲ Nhảy", down:"▼ Né/Xuống", s2:"Chiêu 2", s3:"Chiêu 3", s4:"Chiêu 4", v4:"Biến Hình", shield:"Khiên"};
+const KEY_ACTION_ORDER = ["left","right","up","down","s2","s3","s4","shield","v4"];
 let rebindingAction = null; // when set, the next physical key press is captured into keyBindings[rebindingAction]
 
 // ---------- Mobile virtual-button layout customization ----------
 let mobileLayoutCfg = {
   joystick:{dx:0,dy:0,scale:1},
-  s1:{dx:0,dy:0,scale:1}, s2:{dx:0,dy:0,scale:1}, s3:{dx:0,dy:0,scale:1}, s4:{dx:0,dy:0,scale:1},
+  s2:{dx:0,dy:0,scale:1}, s3:{dx:0,dy:0,scale:1}, s4:{dx:0,dy:0,scale:1},
   shield:{dx:0,dy:0,scale:1}, v4:{dx:0,dy:0,scale:1}
 };
 let touchMoveStyle = "dpad"; // "joystick" (drag circle) | "dpad" (Minecraft PE style directional buttons)
@@ -2746,16 +2750,15 @@ function buildVBtns() {
   const startAng = Math.PI * 1.05;
   const endAng = Math.PI * 1.45;
   
-  vBtns1.s1 = { x: rightX + Math.cos(startAng) * arcR, y: rightY + Math.sin(startAng) * arcR, r: baseR * 1.0, label: "C1" };
-  vBtns1.s2 = { x: rightX + Math.cos(startAng + (endAng-startAng)*0.33) * arcR, y: rightY + Math.sin(startAng + (endAng-startAng)*0.33) * arcR, r: baseR * 1.0, label: "C2" };
-  vBtns1.s3 = { x: rightX + Math.cos(startAng + (endAng-startAng)*0.66) * arcR, y: rightY + Math.sin(startAng + (endAng-startAng)*0.66) * arcR, r: baseR * 1.0, label: "C3" };
-  vBtns1.s4 = { x: rightX + Math.cos(endAng) * arcR, y: rightY + Math.sin(endAng) * arcR, r: baseR * 1.0, label: "C4" };
+  vBtns1.s2 = { x: rightX + Math.cos(startAng) * arcR, y: rightY + Math.sin(startAng) * arcR, r: baseR * 1.0, label: "C1" };
+  vBtns1.s3 = { x: rightX + Math.cos(startAng + (endAng-startAng)*0.5) * arcR, y: rightY + Math.sin(startAng + (endAng-startAng)*0.5) * arcR, r: baseR * 1.0, label: "C2" };
+  vBtns1.s4 = { x: rightX + Math.cos(endAng) * arcR, y: rightY + Math.sin(endAng) * arcR, r: baseR * 1.0, label: "C3" };
   
   // Ultimate (v4) - Isolated
   vBtns1.v4 = { x: rightX - baseR * 5.5, y: rightY - baseR * 2.5, r: baseR * 1.2, label: "BIẾN\nHÌNH" };
   
   // Apply customizations if any
-  ["joystick", "up", "down", "s1", "s2", "s3", "s4", "shield", "v4"].forEach(k => {
+  ["joystick", "up", "down", "s2", "s3", "s4", "shield", "v4"].forEach(k => {
     if (vBtns1[k]) _applyMobileCfg(vBtns1[k], k);
   });
   vBtns2 = {}; // PVP layout not used for now
@@ -2940,7 +2943,6 @@ function drawMobileControls() {
   if (vBtns1.down) drawSkillBtn(vBtns1.down, touch1, "down", 0, 0);
   
   // Skills with Cooldowns
-  if (vBtns1.s1) drawSkillBtn(vBtns1.s1, touch1, "s1", p1.cds.s1, 60);
   if (vBtns1.s2) drawSkillBtn(vBtns1.s2, touch1, "s2", p1.cds.s2, 120);
   if (vBtns1.s3) drawSkillBtn(vBtns1.s3, touch1, "s3", p1.cds.s3, 180);
   if (vBtns1.s4) drawSkillBtn(vBtns1.s4, touch1, "s4", p1.cds.s4, 240);
@@ -3008,7 +3010,7 @@ function updateTouchState(touches) {
     }
 
     // Right Side: Skills & Movement buttons
-    const btnKeys = ["up", "down", "s1", "s2", "s3", "s4", "shield", "v4"];
+    const btnKeys = ["up", "down", "s2", "s3", "s4", "shield", "v4"];
     for (const k of btnKeys) {
       const btn = vBtns1[k];
       if (btn && Math.hypot(x - btn.x, y - btn.y) <= btn.r * 1.4) {
@@ -3048,14 +3050,12 @@ let prevTouch2 = {};
 function processTouchSkills() {
   if (platformMode !== "MOBILE") return;
   if ((gameState==="GAMEPLAY"||gameState==="CHALLENGE"||gameState==="ROAD") && p1.hp>0) {
-    if (touch1.s1 && !prevTouch1.s1) { if(gameState==="GAMEPLAY") castSkill(p1,p2,1); else castSkill(p1,null,1); }
     if (touch1.s2 && !prevTouch1.s2) { if(gameState==="GAMEPLAY") castSkill(p1,p2,2); else castSkill(p1,null,2); }
     if (touch1.s3 && !prevTouch1.s3) { if(gameState==="GAMEPLAY") castSkill(p1,p2,3); else castSkill(p1,null,3); }
     if (touch1.s4 && !prevTouch1.s4) { if(gameState==="GAMEPLAY") castSkill(p1,p2,4); else castSkill(p1,null,4); }
     if (touch1.v4 && !prevTouch1.v4) { if(gameState==="GAMEPLAY") castSkill(p1,p2,5); else castSkill(p1,null,5); }
     p1.isShielding = !!touch1.shield;
     if (gameMode==="PVP" && p2.hp>0) {
-      if (touch2.s1 && !prevTouch2.s1) castSkill(p2,p1,1);
       if (touch2.s2 && !prevTouch2.s2) castSkill(p2,p1,2);
       if (touch2.s3 && !prevTouch2.s3) castSkill(p2,p1,3);
       if (touch2.s4 && !prevTouch2.s4) castSkill(p2,p1,4);
@@ -3065,6 +3065,19 @@ function processTouchSkills() {
   }
   Object.keys(touch1).forEach(k => prevTouch1[k] = touch1[k]);
   Object.keys(touch2).forEach(k => prevTouch2[k] = touch2[k]);
+}
+
+// Skill 1 ("Chiêu 1") has no dedicated button anymore. Any tap that lands
+// on the right-hand control side but doesn't hit an actual button (up/down/
+// s2/s3/s4/shield/v4) is treated as a free "attack tap" and casts skill 1 —
+// mirroring the mouse-click behavior on PC.
+function _mobileTapHitsButton(mx, my) {
+  const btnKeys = ["up", "down", "s2", "s3", "s4", "shield", "v4"];
+  for (const k of btnKeys) {
+    const btn = vBtns1[k];
+    if (btn && Math.hypot(mx - btn.x, my - btn.y) <= btn.r * 1.4) return true;
+  }
+  return false;
 }
 
 function onMobileTap(points) {
@@ -3084,6 +3097,13 @@ function onMobileTap(points) {
       if (challengeStage < 6) { challengeStage++; gameState = "CHALLENGE_CHAR_SELECT"; }
     } else {
       startChallengeMode(challengeStage);
+    }
+    return;
+  }
+  // Free tap on the right-hand (attack) side during an active match = Skill 1.
+  if ((gameState==="GAMEPLAY"||gameState==="CHALLENGE"||gameState==="ROAD") && p1.hp>0) {
+    if (mx >= W*0.45 && !_mobileTapHitsButton(mx, my)) {
+      if (gameState==="GAMEPLAY") castSkill(p1,p2,1); else castSkill(p1,null,1);
     }
     return;
   }
@@ -3112,7 +3132,15 @@ document.addEventListener('keyup',   e => {
   if (e.key==="2") p2.isShielding = false;
   if (gameState==="MINIGAME_DINO" && e.key==="ArrowDown") dinoDuck(false);
 });
-canvas.addEventListener('mousedown', e => { const {x,y}=getCanvasPosM(e); handleMenuClick(x,y); });
+canvas.addEventListener('mousedown', e => {
+  const {x,y}=getCanvasPosM(e);
+  // Mouse click during an active match = Skill 1 ("Chiêu 1" / basic attack).
+  if (platformMode==="PC" && (gameState==="GAMEPLAY"||gameState==="CHALLENGE"||gameState==="ROAD") && p1.hp>0) {
+    if (gameState==="GAMEPLAY") castSkill(p1,p2,1); else castSkill(p1,null,1);
+    return;
+  }
+  handleMenuClick(x,y);
+});
 
 function getCanvasPosM(e) {
   const rect = canvas.getBoundingClientRect();
@@ -11661,12 +11689,15 @@ function drawRageBar(bx,by,bw,bh,fighter){
   _text(bx+bw/2,by+bh/2,ready?"NỘ (SẴN SÀNG)":"NỘ","white","9px Arial bold");
 }
 function drawCooldownUI(){
-  const skills=["s1","s2","s3","s4"],p1b=[keyBindings.s1,keyBindings.s2,keyBindings.s3,keyBindings.s4].map(k=>k.toUpperCase()),p2b=["1","4","3","5"];
+  // Skill 1 has no dedicated button anymore (it's the click/space/tap basic
+  // attack), so only s2-s4 get a HUD slot — relabeled C1/C2/C3 to stay a
+  // clean sequential 1-2-3 for the buttons actually shown.
+  const skills=["s2","s3","s4"],p1b=[keyBindings.s2,keyBindings.s3,keyBindings.s4].map(k=>k.toUpperCase()),p2b=["4","3","5"];
   skills.forEach((s,i)=>{const bx=50+i*100;_rect(bx,85,90,25,"#888","#555",1);if(p1.cds[s]>0)_text(bx+45,97,(p1.cds[s]/60).toFixed(1)+"s","black","9px Arial bold");else _text(bx+45,97,`C${i+1}(${p1b[i]})`,"black","8px Arial bold");});
   skills.forEach((s,i)=>{const bx=W-550+i*100;_rect(bx,85,90,25,"#888","#555",1);if(p2.cds[s]>0)_text(bx+45,97,(p2.cds[s]/60).toFixed(1)+"s","black","9px Arial bold");else _text(bx+45,97,`C${i+1}(${p2b[i]})`,"black","8px Arial bold");});
 }
 function drawCooldownChallenge(){
-  const skills=["s1","s2","s3","s4"],p1b=[keyBindings.s1,keyBindings.s2,keyBindings.s3,keyBindings.s4].map(k=>k.toUpperCase());
+  const skills=["s2","s3","s4"],p1b=[keyBindings.s2,keyBindings.s3,keyBindings.s4].map(k=>k.toUpperCase());
   skills.forEach((s,i)=>{const bx=50+i*100;_rect(bx,85,90,25,"#888","#555",1);if(p1.cds[s]>0)_text(bx+45,97,(p1.cds[s]/60).toFixed(1)+"s","black","9px Arial bold");else _text(bx+45,97,`C${i+1}(${p1b[i]})`,"black","8px Arial bold");});
 }
 
@@ -11758,7 +11789,7 @@ function handleKeyEditorClick(mx,my){
   const doneY=startY+KEY_ACTION_ORDER.length*rowH+22;
   if(mx>=px+pw/2-140&&mx<=px+pw/2-20&&my>=doneY&&my<=doneY+36){ gameState="MENU"; rebindingAction=null; return; }
   if(mx>=px+pw/2+20&&mx<=px+pw/2+140&&my>=doneY&&my<=doneY+36){
-    keyBindings={left:"a", right:"d", up:"w", down:"s", s1:"e", s2:"f", s3:"t", s4:"g", v4:"y", shield:"r"};
+    keyBindings={left:"a", right:"d", up:"w", down:"s", s2:"f", s3:"t", s4:"g", v4:"y", shield:"r"};
     rebindingAction=null; return;
   }
 }
@@ -11766,7 +11797,7 @@ function handleKeyEditorClick(mx,my){
 // ================================================================
 //  MOBILE TOUCH-CONTROL LAYOUT EDITOR
 // ================================================================
-const _TOUCH_EDITOR_BTN_LABELS = {joystick:"Cần điều khiển", s1:"Chiêu 1", s2:"Chiêu 2", s3:"Chiêu 3", s4:"Chiêu 4", shield:"Khiên", v4:"Biến Hình"};
+const _TOUCH_EDITOR_BTN_LABELS = {joystick:"Cần điều khiển", s2:"Chiêu 2", s3:"Chiêu 3", s4:"Chiêu 4", shield:"Khiên", v4:"Biến Hình"};
 function _hitTestVBtn(x,y,btn){ return btn && Math.hypot(x-btn.x, y-btn.y) <= ((btn.r||30)+6); }
 function drawTouchEditor(){
   ctx.fillStyle="#0d1b2a"; ctx.fillRect(0,0,W,H);
@@ -11779,7 +11810,7 @@ function drawTouchEditor(){
 
   if (touchMoveStyle==="dpad") { if (vBtns1.joystick) drawDpad(vBtns1, {}); }
   else if (vBtns1.joystick) drawJoystick(vBtns1.joystick, false);
-  ["s1","s2","s3","s4","shield"].forEach(k => { if (vBtns1[k]) drawSkillBtn(vBtns1[k], {}, k); });
+  ["s2","s3","s4","shield"].forEach(k => { if (vBtns1[k]) drawSkillBtn(vBtns1[k], {}, k); });
   if (vBtns1.v4) drawUltiBtn(vBtns1.v4, false, true, false);
 
   if(touchEditorSelKey){
@@ -11826,7 +11857,7 @@ function handleTouchEditorPointer(x,y,phase){
       }
     }
     buildVBtns();
-    const order=["joystick","s1","s2","s3","s4","shield","v4"];
+    const order=["joystick","s2","s3","s4","shield","v4"];
     for(const k of order){
       const testBtn = (k==="joystick"&&touchMoveStyle==="dpad") ? {x:vBtns1.joystick.x,y:vBtns1.joystick.y,r:vBtns1.joystick.r*1.6} : vBtns1[k];
       if(_hitTestVBtn(x,y,testBtn)){
@@ -12148,8 +12179,7 @@ function drawMenu(){
   ctx.shadowColor="cyan";ctx.shadowBlur=18+Math.sin(frameCount*0.05)*8;
   _text(W/2,H/5+bob,"GAME KHÔI LÀM","cyan","34px Arial bold");
   ctx.restore();
-  _text(W/2,H/5+50,"v2.1 — Chí Mạng · Combo Counter · Kỷ Lục Cá Nhân","#999","13px Arial");
-  if(roadBestDistance>0)_text(W/2,H/5+72,`🏅 Kỷ lục Đường Đi phiên này: ${roadBestDistance}m`,"gold","12px Arial bold");
+  if(roadBestDistance>0)_text(W/2,H/5+50,`🏅 Kỷ lục Đường Đi phiên này: ${roadBestDistance}m`,"gold","12px Arial bold");
   drawGearIcon(W-40,40,16);
   drawLeftMenuButtons();
   if(showSettings){
@@ -12215,11 +12245,6 @@ function drawCharSelect(title,borderColor){
     _rect(cx,cy,w,h,"#222",borderColor||"white",2);
     _rect(midX-22,cy+16,44,44,ch.color,"white",1);
     _text(midX,cy+78,ch.name,"white","11px Arial bold");
-    ctx.font="8px Arial";ctx.fillStyle="#888";ctx.textAlign="center";ctx.textBaseline="middle";
-    const words=ch.desc.split(" ");let line="",y=cy+102;
-    const wrapW=w-20;
-    words.forEach(w2=>{const test=line+" "+w2;if(ctx.measureText(test).width>wrapW&&line){_text(midX,y,line,"#888","8px Arial");line=w2;y+=13;}else line=test;});
-    _text(midX,y,line,"#888","8px Arial");
   });
 }
 
@@ -12720,9 +12745,13 @@ function onKeyPress(e){
     if(k===" "||k==="arrowup"){ if(dinoIsGameOver) dinoReset(); else dinoJump(); }
     if(k==="arrowdown"){ dinoDuck(true); }
   }
+  // Skill 1 ("Chiêu 1") is no longer bound to its own rebindable key — it
+  // now fires as the basic attack on SPACE (also on mouse click / mobile tap).
+  if(k===" "&&(gameState==="GAMEPLAY"||(gameState==="CHALLENGE"&&challengeState!=="DONE")||gameState==="ROAD")){
+    castSkill(p1,p2,1);
+  }
   if(k===keyBindings.shield&&gameState==="GAMEPLAY")p1.isShielding=true;
   if(k==="2"&&gameMode==="PVP"&&gameState==="GAMEPLAY")p2.isShielding=true;
-  if(k===keyBindings.s1)castSkill(p1,p2,1);
   if(k===keyBindings.s2)castSkill(p1,p2,2);
   if(k===keyBindings.s3)castSkill(p1,p2,3);
   if(k===keyBindings.s4)castSkill(p1,p2,4);
