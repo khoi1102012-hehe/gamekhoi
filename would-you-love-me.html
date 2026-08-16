@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bạn có yêu tôi không?</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,600&family=Nunito:wght@400;600;700&display=swap');
+
+  :root{
+    --pink-bg-1: #ffe4ea;
+    --pink-bg-2: #ffd3de;
+    --card-bg: #fffaf9;
+    --text-main: #4a2a35;
+    --text-soft: #9c7480;
+    --yes-btn: #d9557a;
+    --yes-btn-dark: #c14369;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html,body{
+    margin:0;
+    height:100%;
+    font-family: 'Nunito', sans-serif;
+    overflow:hidden;
+  }
+
+  body{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background: linear-gradient(135deg, var(--pink-bg-1), var(--pink-bg-2));
+  }
+
+  .scene{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+
+  .bear{
+    width: 128px;
+    height:auto;
+    margin-bottom: -22px;
+    position:relative;
+    z-index: 20;
+    filter: drop-shadow(0 10px 14px rgba(180,90,120,0.3));
+    animation: bearSway 3.4s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+  @keyframes bearSway{
+    0%,100%{ transform: rotate(-4deg) translateY(0); }
+    50%{ transform: rotate(4deg) translateY(-6px); }
+  }
+  .bear .eye{
+    animation: blink 4.5s ease-in-out infinite;
+    transform-origin: center;
+  }
+  @keyframes blink{
+    0%, 92%, 100%{ transform: scaleY(1); }
+    95%{ transform: scaleY(0.1); }
+  }
+  .bear .bear-heart{
+    animation: heartBeat 1.6s ease-in-out infinite;
+    transform-origin: 100px 168px;
+  }
+  @keyframes heartBeat{
+    0%,100%{ transform: scale(1); }
+    50%{ transform: scale(1.12); }
+  }
+  #mouth, #browL, #browR, #tear{
+    transition: opacity 0.35s ease, d 0.35s ease;
+  }
+  .bear.celebrate{
+    animation: bearCelebrate 0.7s ease-in-out 2;
+  }
+  @keyframes bearCelebrate{
+    0%{ transform: rotate(0deg) translateY(0) scale(1); }
+    25%{ transform: rotate(-10deg) translateY(-14px) scale(1.08); }
+    50%{ transform: rotate(8deg) translateY(-2px) scale(1.05); }
+    75%{ transform: rotate(-6deg) translateY(-10px) scale(1.08); }
+    100%{ transform: rotate(0deg) translateY(0) scale(1); }
+  }
+
+  /* floating hearts */
+  .heart{
+    position:absolute;
+    color:#f5b8c4;
+    opacity:0.6;
+    font-size:16px;
+    animation: float 6s ease-in-out infinite;
+    pointer-events:none;
+    user-select:none;
+  }
+  @keyframes float{
+    0%,100%{ transform: translateY(0) rotate(0deg); }
+    50%{ transform: translateY(-18px) rotate(10deg); }
+  }
+
+  .card{
+    position:relative;
+    overflow:visible;
+    background: var(--card-bg);
+    border-radius: 24px;
+    box-shadow: 0 20px 60px rgba(180, 90, 120, 0.25);
+    padding: 56px 64px;
+    text-align:center;
+    width: 420px;
+    max-width: 90vw;
+    min-height: 300px;
+  }
+
+  @media (max-width: 480px){
+    .card{
+      padding: 40px 28px;
+      width: 92vw;
+      min-height: 340px;
+    }
+    h1{ font-size: 26px; }
+    .eyebrow{ font-size: 12px; }
+  }
+
+  .eyebrow{
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--text-soft);
+    font-style: italic;
+    margin: 0 0 8px;
+  }
+
+  h1{
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 34px;
+    color: var(--text-main);
+    margin: 0 0 28px;
+  }
+
+  .btn-row{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap: 20px;
+    height: 56px;
+  }
+
+  button{
+    font-family: 'Nunito', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    border: none;
+    border-radius: 999px;
+    cursor:pointer;
+  }
+
+  #yes{
+    position: relative;
+    background: var(--yes-btn);
+    color: #fff;
+    padding: 14px 40px;
+    box-shadow: 0 8px 20px rgba(217, 85, 122, 0.4);
+    transform-origin: center center;
+    transition: transform 0.28s cubic-bezier(.34,1.56,.64,1), background 0.15s ease;
+    z-index: 6;
+    white-space: nowrap;
+  }
+  #yes:hover{
+    background: var(--yes-btn-dark);
+  }
+
+  #no{
+    position: relative;
+    background: #fff;
+    color: var(--text-main);
+    padding: 12px 26px;
+    border: 1px solid #f0d3da;
+    z-index: 5;
+    transition: left 0.18s ease, top 0.18s ease;
+  }
+  #no.dodging{
+    position: absolute;
+  }
+
+  .hint{
+    margin: 22px 0 0;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-soft);
+    min-height: 16px;
+  }
+
+  /* result screen */
+  .result{
+    display:none;
+  }
+  .result .eyebrow{ }
+  .result h1{ font-size: 32px; }
+  .result p.sub{
+    font-size: 14px;
+    color: var(--text-soft);
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="scene">
+
+  <svg class="bear" viewBox="0 0 200 210" xmlns="http://www.w3.org/2000/svg">
+    <!-- ears -->
+    <circle cx="55" cy="45" r="26" fill="#c98b5e"/>
+    <circle cx="145" cy="45" r="26" fill="#c98b5e"/>
+    <circle cx="55" cy="45" r="13" fill="#f3d9bd"/>
+    <circle cx="145" cy="45" r="13" fill="#f3d9bd"/>
+    <!-- head -->
+    <circle cx="100" cy="100" r="68" fill="#d9a06c"/>
+    <!-- muzzle -->
+    <ellipse cx="100" cy="118" rx="36" ry="28" fill="#f3d9bd"/>
+    <!-- blush -->
+    <ellipse cx="57" cy="112" rx="13" ry="8" fill="#f5b8c4" opacity="0.85"/>
+    <ellipse cx="143" cy="112" rx="13" ry="8" fill="#f5b8c4" opacity="0.85"/>
+    <!-- eyebrows (hidden until sad) -->
+    <path id="browL" d="M86 82 L66 90" stroke="#4a2a35" stroke-width="3" fill="none" stroke-linecap="round" opacity="0"/>
+    <path id="browR" d="M114 82 L134 90" stroke="#4a2a35" stroke-width="3" fill="none" stroke-linecap="round" opacity="0"/>
+    <!-- eyes -->
+    <g class="eye">
+      <circle cx="76" cy="93" r="6" fill="#4a2a35"/>
+      <circle cx="78" cy="90" r="2" fill="#fff"/>
+    </g>
+    <g class="eye">
+      <circle cx="124" cy="93" r="6" fill="#4a2a35"/>
+      <circle cx="126" cy="90" r="2" fill="#fff"/>
+    </g>
+    <!-- tear (appears when very sad) -->
+    <path id="tear" d="M70 100 C70 100 78 112 78 118 C78 123 74 126 70 126 C66 126 62 123 62 118 C62 112 70 100 70 100 Z" fill="#8fd3f4" opacity="0"/>
+    <!-- nose -->
+    <ellipse cx="100" cy="113" rx="8" ry="6" fill="#4a2a35"/>
+    <!-- mouth -->
+    <path id="mouth" d="M85 122 Q100 134 115 122" stroke="#4a2a35" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <!-- paws -->
+    <circle cx="66" cy="168" r="17" fill="#d9a06c"/>
+    <circle cx="134" cy="168" r="17" fill="#d9a06c"/>
+    <!-- heart held between paws -->
+    <path class="bear-heart" d="M100 152 C90 141 68 147 68 165 C68 183 100 200 100 200 C100 200 132 183 132 165 C132 147 110 141 100 152 Z" fill="#d9557a"/>
+  </svg>
+
+  <div class="card">
+    <div class="question" id="question">
+      <p class="eyebrow">chỉ là một câu hỏi nhỏ thôi</p>
+      <h1>Bạn có yêu tôi không?</h1>
+      <div class="btn-row" id="btnRow">
+        <button id="yes">Có</button>
+        <button id="no">Không</button>
+      </div>
+      <p class="hint" id="hint">&nbsp;</p>
+    </div>
+
+    <div class="result" id="result">
+      <p class="eyebrow">đã nói rồi mà</p>
+      <h1>Biết ngay mà...</h1>
+      <p class="sub">có những điều đâu cần phải hỏi tới hai lần.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const noBtn = document.getElementById('no');
+  const yesBtn = document.getElementById('yes');
+  const card = document.querySelector('.card');
+  const bear = document.querySelector('.bear');
+  const hint = document.getElementById('hint');
+  const question = document.getElementById('question');
+  const result = document.getElementById('result');
+  const mouth = document.getElementById('mouth');
+  const browL = document.getElementById('browL');
+  const browR = document.getElementById('browR');
+  const tear = document.getElementById('tear');
+
+  const hints = [
+    "cố lên nào.",
+    "suýt bắt được rồi.",
+    "hôm nay chưa được đâu.",
+    "cố lên nữa \u{1F609}",
+    "gần lắm rồi!",
+    "hông được đâu.",
+    "chịu thua chưa? \u{1F60F}"
+  ];
+  let hintIndex = 0;
+  let yesScale = 1;
+  const maxScale = 5.5;
+  const scaleSteps = 10;
+  const growStep = (maxScale - 1) / scaleSteps;
+
+  let sadnessLevel = 0;
+  const maxSadness = 7; // 8 expressions total: level 0 (happy) through level 7 (saddest)
+
+  function updateBearFace(){
+    const t = sadnessLevel / maxSadness; // 0 -> 1
+    const controlY = 134 - t * 34; // 134 = big smile, 100 = deep frown
+    mouth.setAttribute('d', 'M85 122 Q100 ' + controlY.toFixed(1) + ' 115 122');
+    browL.style.opacity = t;
+    browR.style.opacity = t;
+    tear.style.opacity = Math.max(0, (t - 0.65) / 0.35);
+  }
+
+  function growYes(){
+    yesScale = Math.min(yesScale + growStep, maxScale);
+    yesBtn.style.transform = 'scale(' + yesScale.toFixed(2) + ')';
+  }
+
+  function dodge(){
+    // lock the button's current on-screen spot, then switch to absolute so it can jump anywhere in the card
+    const cardRect = card.getBoundingClientRect();
+    const btnRect = noBtn.getBoundingClientRect();
+
+    if (!noBtn.classList.contains('dodging')){
+      noBtn.style.left = (btnRect.left - cardRect.left) + 'px';
+      noBtn.style.top = (btnRect.top - cardRect.top) + 'px';
+      noBtn.classList.add('dodging');
+      // force layout so the transition starts from this locked spot, not the new one
+      noBtn.offsetHeight;
+    }
+
+    const margin = 12;
+    const maxX = Math.max(card.clientWidth - btnRect.width - margin * 2, 0);
+    const maxY = Math.max(card.clientHeight - btnRect.height - margin * 2, 0);
+
+    const randX = margin + Math.random() * maxX;
+    const randY = margin + Math.random() * maxY;
+
+    noBtn.style.left = randX + 'px';
+    noBtn.style.top = randY + 'px';
+
+    hint.textContent = hints[hintIndex % hints.length];
+    hintIndex++;
+
+    growYes();
+
+    sadnessLevel = Math.min(sadnessLevel + 1, maxSadness);
+    updateBearFace();
+  }
+
+  noBtn.addEventListener('mouseenter', dodge);
+  noBtn.addEventListener('click', dodge);
+  noBtn.addEventListener('touchstart', function(e){
+    e.preventDefault();
+    dodge();
+  }, { passive:false });
+
+  yesBtn.addEventListener('click', function(){
+    sadnessLevel = 0;
+    updateBearFace();
+    bear.classList.add('celebrate');
+    question.style.display = 'none';
+    result.style.display = 'block';
+  });
+
+  // floating hearts background
+  const heartsCount = 18;
+  for(let i=0;i<heartsCount;i++){
+    const h = document.createElement('div');
+    h.className = 'heart';
+    h.textContent = '\u2661';
+    h.style.left = Math.random()*100 + 'vw';
+    h.style.top = Math.random()*100 + 'vh';
+    h.style.fontSize = (12 + Math.random()*14) + 'px';
+    h.style.animationDuration = (4 + Math.random()*4) + 's';
+    h.style.animationDelay = (Math.random()*4) + 's';
+    document.body.appendChild(h);
+  }
+</script>
+
+</body>
+</html>
