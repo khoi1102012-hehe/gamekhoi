@@ -55,6 +55,21 @@
   }
   #arena{ display:block; width:100%; height:100%; }
 
+  .whatsnew{
+    margin:28px auto 0; max-width:900px;
+    background:rgba(123,104,238,.08);
+    border:1px solid rgba(123,104,238,.3);
+    border-radius:14px;
+    padding:18px 24px;
+  }
+  .whatsnew h3{
+    font-size:13px; text-transform:uppercase; letter-spacing:.5px;
+    color:#c9c2ec; margin-bottom:10px;
+  }
+  .whatsnew-list{ display:flex; flex-direction:column; gap:6px; }
+  .whatsnew-list div{ font-size:13.5px; color:#cfc9ff; }
+  .whatsnew-list b{ color:#fff; }
+
   .choice-row{
     display:flex; gap:28px; justify-content:center; flex-wrap:wrap;
     margin:40px 0 8px;
@@ -220,6 +235,17 @@
     <canvas id="arena"></canvas>
   </div>
 
+  <div class="whatsnew">
+    <h3>🆕 Có gì mới</h3>
+    <div class="whatsnew-list">
+      <div>🛣️ Thêm chế độ <b>Đường Đi (3 Ma Thú)</b> — một mình băng đường dài, đánh quái, né bẫy, hạ 3 trùm.</div>
+      <div>🎮 Thêm <b>Minigame</b> — 8 game nhỏ độc lập, mỗi game có kỷ lục riêng.</div>
+      <div>⚔️ <b>Thử Thách</b> nay có <b>7 màn</b> boss (trước chỉ 4).</div>
+      <div>🕹️ Bỏ chế độ <b>Đấu Người (PVP)</b> — game hiện chỉ chơi một mình.</div>
+      <div>⌨️📱 Có thể tự đổi phím (PC) hoặc kéo thả đổi vị trí nút (điện thoại) trong <b>⚙️ Thiết lập</b>.</div>
+    </div>
+  </div>
+
   <div class="choice-row">
     <div class="choice-btn phone" id="btnPhone">
       <div class="choice-icon">📱</div>
@@ -249,31 +275,28 @@
     <div class="grid">
       <div class="card">
         <h3>🕹️ Di chuyển</h3>
-        <div class="key-row"><span class="btn-chip">◀▶</span><span class="desc">Chạm giữ D-pad ảo góc trái màn hình để đi trái/phải</span></div>
-        <div class="key-row"><span class="btn-chip">▲</span><span class="desc">Chạm mũi tên lên của D-pad để nhảy</span></div>
-        <div class="key-row"><span class="btn-chip">▼</span><span class="desc">Chạm mũi tên xuống (chỉ có tác dụng khi nhân vật Băng đang biến hình bay)</span></div>
+        <div class="key-row"><span class="btn-chip">◀▶</span><span class="desc">Chạm giữ <b>cần điều khiển ảo (joystick)</b> góc dưới bên trái, kéo theo hướng muốn đi</span></div>
+        <div class="key-row"><span class="btn-chip">▲</span><span class="desc">Chạm nút tròn <b>NHẢY</b> ở góc dưới bên phải (nhảy liên tiếp được tối đa 3 lần)</span></div>
+        <div class="key-row"><span class="btn-chip">▼</span><span class="desc">Chạm nút <b>CÚI</b> cạnh nút Nhảy — chỉ có tác dụng khi nhân vật Băng đang biến hình bay</span></div>
       </div>
 
       <div class="card violet">
         <h3>✨ Kỹ năng</h3>
-        <div class="key-row"><span class="btn-chip">C1</span><span class="desc">Chạm nút tròn <b>C1</b> để tung chiêu 1</span></div>
-        <div class="key-row"><span class="btn-chip">C2</span><span class="desc">Chạm nút tròn <b>C2</b> để tung chiêu 2</span></div>
-        <div class="key-row"><span class="btn-chip">C3</span><span class="desc">Chạm nút tròn <b>C3</b> để tung chiêu 3</span></div>
-        <div class="key-row"><span class="btn-chip">C4</span><span class="desc">Chạm nút tròn <b>C4</b> để tung chiêu ngoại truyện/AOE</span></div>
-        <div class="key-row"><span class="btn-chip">💠</span><span class="desc">Nút <b>KHIÊN</b> to nhất — giữ để đỡ đòn (giảm 80% sát thương, nhưng đi chậm hơn)</span></div>
+        <div class="key-row"><span class="btn-chip">👆</span><span class="desc">Chạm tự do vào <b>nửa bên phải màn hình</b> (không trúng nút nào) để tung <b>Đòn đánh cơ bản (Chiêu 1)</b></span></div>
+        <div class="key-row"><span class="btn-chip">C1</span><span class="desc">Chạm nút tròn <b>C1</b> để tung Kỹ năng 2</span></div>
+        <div class="key-row"><span class="btn-chip">C2</span><span class="desc">Chạm nút tròn <b>C2</b> để tung Kỹ năng 3</span></div>
+        <div class="key-row"><span class="btn-chip">C3</span><span class="desc">Chạm nút tròn <b>C3</b> để tung Kỹ năng 4</span></div>
+        <div class="key-row"><span class="btn-chip">💠</span><span class="desc">Nút <b>BIẾN HÌNH</b> riêng biệt → biến hình V4 / chiêu Nộ (hồi chiêu dài, rất mạnh)</span></div>
+        <div class="key-row"><span class="btn-chip">🛡️</span><span class="desc">Nút <b>KHIÊN</b> cạnh cần điều khiển bên trái — giữ để đỡ đòn (giảm 80% sát thương, đi chậm hơn)</span></div>
       </div>
     </div>
 
     <div class="note">
-      Nút <b>ESC</b> luôn nằm ở góc trên bên phải màn hình — chạm vào đó bất cứ lúc nào để thoát trận đấu, về lại menu chính.
+      Nút thoát (mũi tên/ESC dạng tròn) nằm ở <b>góc trên bên trái</b> màn hình — chạm vào đó bất cứ lúc nào để thoát trận đấu, về lại menu chính.
     </div>
 
-    <div class="modes">
-      <h3>Cách bố trí nút theo chế độ</h3>
-      <div class="mode-list">
-        <div class="mode-item"><b>1 người (PVE / Thử Thách):</b> D-pad + KHIÊN bên trái cho bạn, cụm 4 nút kỹ năng C1–C4 bên phải màn hình.</div>
-        <div class="mode-item"><b>2 người (PVP):</b> Người chơi 1 dùng cụm bên trái (D-pad trái + kỹ năng cạnh đó), người chơi 2 dùng cụm bên phải (D-pad phải + kỹ năng cạnh đó) — chơi chung một máy.</div>
-      </div>
+    <div class="note blue">
+      Muốn đổi vị trí từng nút cho vừa tay? Vào <b>⚙️ Thiết lập → 📱 CHỈNH NÚT CẢM ỨNG</b>, kéo thả nút tới chỗ bạn muốn.
     </div>
   </div>
 
@@ -285,14 +308,18 @@
     <div class="card">
       <h3>👤 Điều khiển nhân vật</h3>
       <div class="key-row"><kbd>A</kbd><kbd>D</kbd><span class="desc">Di chuyển trái / phải</span></div>
-      <div class="key-row"><kbd>W</kbd><span class="desc">Nhảy</span></div>
+      <div class="key-row"><kbd>W</kbd><span class="desc">Nhảy (nhảy liên tiếp được tối đa 3 lần trên không)</span></div>
       <div class="key-row"><kbd>S</kbd><span class="desc">Bay xuống (chỉ khi nhân vật Băng đang biến hình bay)</span></div>
-      <div class="key-row"><kbd>E</kbd><span class="desc">Kỹ năng 1 (C1)</span></div>
-      <div class="key-row"><kbd>F</kbd><span class="desc">Kỹ năng 2 (C2)</span></div>
-      <div class="key-row"><kbd>T</kbd><span class="desc">Kỹ năng 3 (C3)</span></div>
-      <div class="key-row"><kbd>G</kbd><span class="desc">Kỹ năng 4 (C4)</span></div>
+      <div class="key-row"><kbd>Space</kbd><span class="desc">Đòn đánh cơ bản (Chiêu 1) — cũng bấm được bằng click chuột trái</span></div>
+      <div class="key-row"><kbd>F</kbd><span class="desc">Kỹ năng 2 (hiện trong game là C1)</span></div>
+      <div class="key-row"><kbd>T</kbd><span class="desc">Kỹ năng 3 (hiện trong game là C2)</span></div>
+      <div class="key-row"><kbd>G</kbd><span class="desc">Kỹ năng 4 (hiện trong game là C3)</span></div>
       <div class="key-row"><kbd>Y</kbd><span class="desc">Biến hình V4 / chiêu Nộ (hồi chiêu dài, rất mạnh)</span></div>
-      <div class="key-row"><kbd>R</kbd><span class="desc">Giữ để đỡ đòn bằng khiên</span></div>
+      <div class="key-row"><kbd>R</kbd><span class="desc">Giữ để đỡ đòn bằng khiên (giảm 80% sát thương, đi chậm hơn)</span></div>
+    </div>
+
+    <div class="note blue">
+      Muốn đổi phím tuỳ ý? Vào <b>⚙️ Thiết lập → ⌨️ CHỈNH PHÍM ĐIỀU KHIỂN</b>, bấm vào ô phím rồi nhấn phím bạn muốn dùng.
     </div>
 
     <div class="note blue">
@@ -300,19 +327,20 @@
     </div>
 
     <div class="modes">
-      <h3>Chọn chế độ chơi (bấm chuột ở menu)</h3>
+      <h3>Các chế độ chơi (bấm chuột ở menu)</h3>
       <div class="mode-list">
-        <div class="mode-item"><b>Đấu Người (PVP):</b> hai người chơi cùng một bàn phím, dùng bộ phím riêng ở trên.</div>
-        <div class="mode-item"><b>Máy Cấp 1 / 2 / 3:</b> đấu với máy (bot), độ khó tăng dần.</div>
-        <div class="mode-item"><b>⚔️ Thử Thách (4 Màn):</b> một người chơi lần lượt vượt qua 4 màn quái + trùm (boss) khác nhau, càng lên màn cao quái càng mạnh.</div>
+        <div class="mode-item"><b>🤖 Đấu Với Máy:</b> đấu với máy (bot) — Cấp 1 / 2 / 3, độ khó tăng dần.</div>
+        <div class="mode-item"><b>⚔️ Thử Thách (7 Màn):</b> lần lượt vượt qua 7 màn quái + trùm — FROST KING, EARTH TITAN, FLAME LORD, THE ABYSSAL, THE TEMPEST, THE TIDAL, THE VOLTAGE — càng lên màn cao quái càng mạnh.</div>
+        <div class="mode-item"><b>🛣️ Đường Đi (3 Ma Thú):</b> một mình băng qua quãng đường dài, đánh quái, né bẫy, phá vật cản và hạ 3 trùm (Ma Thú) dọc đường — đi càng xa điểm càng cao, kỷ lục được lưu lại.</div>
+        <div class="mode-item"><b>🎮 Minigame:</b> dàn 8 game nhỏ độc lập (bắn mục tiêu, hứng vật phẩm, xếp khối, chạy vô tận, bóng bay, phản xạ màu, lướt sóng, câu cá) — mỗi game có kỷ lục riêng.</div>
       </div>
     </div>
   </div>
 
-  <div class="footer-hint">7 nhân vật để chọn: RED · SHADOW · THUNDER · FROST · TERRA · WATER · GIÓ — mỗi người có bộ 4 kỹ năng riêng cộng chiêu biến hình Nộ (V4).</div>
+  <div class="footer-hint">7 nhân vật để chọn: SHADOW · THUNDER · FROST · TERRA · WATER · GIÓ · FIRE — mỗi người có bộ 4 kỹ năng riêng cộng chiêu biến hình Nộ (V4).</div>
 
   <div class="back-to-game-wrap">
-    <a class="back-to-game" href="https://khoidoan.site/index">
+    <a class="back-to-game" href="https://khoidoan.site/index.html">
       <span class="icon">🎮</span>
       <span>Trở Lại Game</span>
     </a>
