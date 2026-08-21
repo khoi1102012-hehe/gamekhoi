@@ -76,6 +76,33 @@ let projectiles  = [];
 let puppets      = [];
 let frameCount   = 0;
 
+// ================================================================
+//  PERF: in-place array compaction (replaces `arr = arr.filter(pred)`)
+// ----------------------------------------------------------------
+//  `.filter()` allocates and returns a brand-new array every call.
+//  These particle/trail/entity-pruning filters run every single
+//  frame (60x/sec) across dozens of live characters, projectiles
+//  and FX systems, so the old code was generating a large amount
+//  of garbage every second — a common cause of periodic GC micro
+//  stutters, especially in ROAD mode where many systems run at
+//  once. `_compact` keeps the SAME array object and just shifts
+//  the surviving elements down, preserving order and calling
+//  `pred` on every element exactly once (identical semantics to
+//  `.filter`), but with zero extra allocation.
+// ================================================================
+function _compact(arr, pred) {
+  let w = 0;
+  for (let i = 0; i < arr.length; i++) {
+    const item = arr[i];
+    if (pred(item, i, arr)) {
+      if (w !== i) arr[w] = item;
+      w++;
+    }
+  }
+  arr.length = w;
+  return arr;
+}
+
 // ---------- Combat feel: combo counter, crit hits, floating damage numbers ----------
 let dmgNumbers        = [];   // floating damage number popups
 let comboCount         = 0;   // consecutive hits landed by the human player (p1) without a timeout/being-hit reset
@@ -3712,7 +3739,7 @@ function spawnDamageNumber(x,y,amount,isCrit){
   });
 }
 function updateAndDrawDmgNumbers(){
-  dmgNumbers=dmgNumbers.filter(d=>d.life>0);
+  _compact(dmgNumbers,d=>d.life>0);
   dmgNumbers.forEach(d=>{
     d.life--; d.y+=d.vy; d.vy+=0.045; d.x+=d.crit?Math.sin(d.life*0.5):0;
     const a=Math.max(0,d.life/d.maxLife);
@@ -3787,7 +3814,7 @@ function spawnJumpSmoke(x,y){
   }
 }
 function updateAndDrawHitEffects(){
-  hitEffects=hitEffects.filter(fx=>fx.life>0);
+  _compact(hitEffects,fx=>fx.life>0);
   hitEffects.forEach(fx=>{
     fx.life--;
     if(fx.smoke){
@@ -3826,7 +3853,7 @@ function igniteBurn(target,attacker,dmgPerTick,ticks){
 }
 function updateBurnEffects(){
   if(!burnEffects.length)return;
-  burnEffects=burnEffects.filter(b=>b.target&&b.target.hp>0&&b.ticksLeft>0);
+  _compact(burnEffects,b=>b.target&&b.target.hp>0&&b.ticksLeft>0);
   burnEffects.forEach(b=>{
     b.tick++;
     if(b.tick>=18){ // ~0.3s per tick @60fps
@@ -3931,32 +3958,6 @@ class Fighter {
         screenShake=Math.max(screenShake,6);
       }
       if(this.thunderPrisonTimer%20===0)applyDamage(this,3,this._thunderPrisonCaster);
-    }
-    if(this.transformWindupTimer>0){
-      // 3-phase V4 transform: rise (2s), hover+burst (2s), descend (1.5s)
-      this.transformWindupTimer--;
-      this._windupFloorY=floorY;
-      const remaining=this.transformWindupTimer;
-      const total=360;
-      if(remaining>240){
-        // Phase 1: Rise up slowly (frames 360->240, ~2s)
-        this.y-=1.8;
-        if(this.y<floorY-160)this.y=floorY-160;
-      }else if(remaining>90){
-        // Phase 2: Hover in air with elemental burst (frames 240->90, ~2.5s)
-        // Gentle bobbing motion while hovering
-        this.y=floorY-160+Math.sin(frameCount*0.08)*3;
-      }else{
-        // Phase 3: Descend (frames 90->0, ~1.5s)
-        this.y+=3.2;
-        // Use the actual ground level at current x (accounts for terrain dips)
-        const actualFloor = this._windupFloorY;
-        if(this.y>=actualFloor){this.y=actualFloor;this.transformWindupTimer=0;this._finalizeTransform(actualFloor);return;}
-      }
-      this.vy=0;this.onGround=false;
-      // If windup reaches 0 but we haven't landed yet, finalize anyway
-      if(this.transformWindupTimer===0&&this.y>=this._windupFloorY-5)this._finalizeTransform(this._windupFloorY);
-      return;
     }
     if(this.transformLandingTimer>0){
       this.transformLandingTimer--;
@@ -4138,7 +4139,7 @@ class Fighter {
       ctx.setLineDash([]);
     }
     if(this._dashSmoke&&this._dashSmoke.length){
-      this._dashSmoke=this._dashSmoke.filter(s=>s.life>0);
+      _compact(this._dashSmoke,s=>s.life>0);
       this._dashSmoke.forEach(s=>{s.x+=s.vx;s.y+=s.vy;s.life--;const a=Math.max(0,s.life/30*0.55);ctx.beginPath();ctx.fillStyle=`rgba(50,15,70,${a})`;ctx.arc(s.x+ox,s.y+oy,s.r,0,Math.PI*2);ctx.fill();});
     }
     if(this.transformWindupTimer>0)this._drawTransformWindup(rx,ry);
@@ -4202,7 +4203,7 @@ class Fighter {
       _oval(rx-22,groundY-6,44,9,"#8a6a4a",null);
       if(!this._mudBubbles)this._mudBubbles=[];
       if(af%10===0&&this._mudBubbles.length<6)this._mudBubbles.push({x:rx+rndInt(-32,32),y:groundY-6,life:24,maxLife:24});
-      this._mudBubbles=this._mudBubbles.filter(b=>b.life>0);
+      _compact(this._mudBubbles,b=>b.life>0);
       this._mudBubbles.forEach(b=>{
         b.life--;
         const bp=1-b.life/b.maxLife;
@@ -4426,7 +4427,7 @@ class Fighter {
       const a=rng()*Math.PI*2;
       this._fireCircleEmbers.push({x:cx+Math.cos(a)*R1*rng(),y:baseY+Math.sin(a)*R1*flat*rng(),vy:-(rng()*1.3+0.6),vx:(rng()-0.5)*0.4,life:50,maxLife:50,size:rndInt(2,4)});
     }
-    this._fireCircleEmbers=this._fireCircleEmbers.filter(e=>e.life>0);
+    _compact(this._fireCircleEmbers,e=>e.life>0);
     this._fireCircleEmbers.forEach(e=>{
       e.x+=e.vx;e.y+=e.vy;e.life--;
       ctx.save();ctx.globalAlpha=Math.max(0,e.life/e.maxLife)*alpha*0.9;
@@ -4593,7 +4594,7 @@ class Fighter {
   // cháy khi di chuyển"). Fixed-length array, always trimmed — no leak.
   _drawFireFootprints(ox,oy){
     if(!this._fireFootprints)this._fireFootprints=[];
-    this._fireFootprints=this._fireFootprints.filter(f=>f.life>0);
+    _compact(this._fireFootprints,f=>f.life>0);
     this._fireFootprints.forEach(f=>{
       f.life--;
       const a=Math.max(0,f.life/f.maxLife)*0.5;
@@ -4623,7 +4624,7 @@ class Fighter {
   }
   _drawAfterImages(ox,oy){
     if(!this.afterImages||!this.afterImages.length)return;
-    this.afterImages=this.afterImages.filter(a=>a.life>0);
+    _compact(this.afterImages,a=>a.life>0);
     this.afterImages.forEach(a=>{
       a.life--;
       const ax=a.x+ox,ay=a.y+oy-52;
@@ -4702,7 +4703,7 @@ class Fighter {
     if(this.hp>0&&rng()<0.32&&this.auraParticles.length<14){
       this.auraParticles.push({x:rx+rndInt(-24,24),y:ry+22,vy:-(rng()*1.1+0.6),life:38,maxLife:38,r:rndInt(2,4)});
     }
-    this.auraParticles=this.auraParticles.filter(p=>p.life>0);
+    _compact(this.auraParticles,p=>p.life>0);
     this.auraParticles.forEach(p=>{
       p.y+=p.vy;p.life--;
       ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.65;
@@ -4725,7 +4726,7 @@ class Fighter {
         const side=rng()<0.5?-1:1;
         amb.parts.push({x:rx+side*28,y:ry-4,vy:-rng()*1.1-0.35,vx:(rng()-0.5)*0.5,life:22,maxLife:22,r:rndInt(3,6)});
       }
-      amb.parts=amb.parts.filter(p=>p.life>0);
+      _compact(amb.parts,p=>p.life>0);
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.85;ctx.shadowColor="orange";ctx.shadowBlur=6;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#FF6600","orange","yellow"]),null);ctx.restore();});
     }
     else if(this.charType==="fire"){
@@ -4734,7 +4735,7 @@ class Fighter {
         const side=rng()<0.5?-1:1;
         amb.parts.push({x:rx+side*26,y:ry-8,vy:-rng()*1.3-0.4,vx:(rng()-0.5)*0.6,life:24,maxLife:24,r:rndInt(2,5)});
       }
-      amb.parts=amb.parts.filter(p=>p.life>0);
+      _compact(amb.parts,p=>p.life>0);
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.8;ctx.shadowColor=FIRE_V1_COL;ctx.shadowBlur=7;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice([FIRE_V1_COL,"#FF6600","#FFAA33"]),null);ctx.restore();});
     }
     else if(this.charType==="shadow"){
@@ -4745,7 +4746,7 @@ class Fighter {
       }
       ctx.restore();
       if(rng()<0.3&&amb.parts.length<8)amb.parts.push({x:rx+rndInt(-20,20),y:ry+40,vy:-rng()*0.5-0.2,life:30,maxLife:30,r:rndInt(2,4)});
-      amb.parts=amb.parts.filter(p=>p.life>0);
+      _compact(amb.parts,p=>p.life>0);
       amb.parts.forEach(p=>{p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.5;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,"#8844aa",null);ctx.restore();});
     }
     else if(this.charType==="thunder"){
@@ -4759,7 +4760,7 @@ class Fighter {
     }
     else if(this.charType==="frost"){
       if(rng()<0.4&&amb.parts.length<14)amb.parts.push({x:rx+rndInt(-40,40),y:ry-90,vy:rng()*0.8+0.4,vx:(rng()-0.5)*0.4,life:70,maxLife:70,r:rndInt(2,4)});
-      amb.parts=amb.parts.filter(p=>p.life>0&&p.y<ry+30);
+      _compact(amb.parts,p=>p.life>0&&p.y<ry+30);
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.8;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,"white",null);ctx.restore();});
     }
     else if(this.charType==="earth"){
@@ -4775,12 +4776,12 @@ class Fighter {
       });
       // Extra dust particles floating around
       if(rng()<0.4&&amb.parts.length<12)amb.parts.push({x:rx+rndInt(-30,30),y:ry+rndInt(-10,20),vy:-rng()*0.3-0.1,vx:(rng()-0.5)*0.4,life:25,maxLife:25,r:rndInt(2,4)});
-      amb.parts=amb.parts.filter(p=>p.life>0);
+      _compact(amb.parts,p=>p.life>0);
       amb.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.6;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#c68a4a","#a67c52","#8a6a4a","#6a4a2a"]),null);ctx.restore();});
     }
     else if(this.charType==="water"){
       if(rng()<0.3&&amb.parts.length<8)amb.parts.push({x:rx+rndInt(-24,24),y:ry-10,vy:-rng()*0.5-0.2,life:26,maxLife:26,r:rndInt(2,4)});
-      amb.parts=amb.parts.filter(p=>p.life>0);
+      _compact(amb.parts,p=>p.life>0);
       amb.parts.forEach(p=>{p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.7;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,"aqua",null);ctx.restore();});
     }
     else if(this.charType==="wind"){
@@ -5042,7 +5043,7 @@ class Fighter {
         this._smoke.push({x:rndInt(-range,range),y:rndInt(-120,55),r:rndInt(45,95),vx:(rng()-0.5)*0.4,vy:-rng()*0.5-0.15,life:0,maxLife:rndInt(70,130)});
       }
       ctx.save();ctx.shadowColor="#3a0a55";ctx.shadowBlur=22;
-      this._smoke=this._smoke.filter(p=>p.life<p.maxLife);
+      _compact(this._smoke,p=>p.life<p.maxLife);
       this._smoke.forEach(p=>{
         p.x+=p.vx;p.y+=p.vy;p.life++;
         const t=p.life/p.maxLife,fade=Math.sin(t*Math.PI);
@@ -5584,7 +5585,7 @@ class Fighter {
       if(rng()<0.5&&this._waterLightMotes.length<22){
         this._waterLightMotes.push({x:rx+rndInt(-45,45),y:beamTopY,vy:rng()*1.4+0.9,life:80,maxLife:80,r:rndInt(1,3)});
       }
-      this._waterLightMotes=this._waterLightMotes.filter(p=>p.life>0&&p.y<beamBotY+10);
+      _compact(this._waterLightMotes,p=>p.life>0&&p.y<beamBotY+10);
       this._waterLightMotes.forEach(p=>{
         p.y+=p.vy;p.life--;
         ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.9;
@@ -5664,7 +5665,7 @@ class Fighter {
       // Floating blue embers drifting up around the body
       if(!this._fireV2Particles)this._fireV2Particles=[];
       if(rng()<0.5&&this._fireV2Particles.length<16)this._fireV2Particles.push({x:rx+rndInt(-38,38),y:ry+30,vy:-(rng()*1.2+0.5),vx:(rng()-0.5)*0.5,life:40,maxLife:40,r:rndInt(2,4)});
-      this._fireV2Particles=this._fireV2Particles.filter(p=>p.life>0);
+      _compact(this._fireV2Particles,p=>p.life>0);
       this._fireV2Particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife)*0.85;_oval(p.x-p.r,p.y-p.r,p.r*2,p.r*2,rndChoice(["#00AEFF","#00E5FF","white"]),null);ctx.restore();});
       _text(rx,ry-192,"🔥 FLAME V2 🔥","#00E5FF","9px Arial bold");
     }
@@ -6374,7 +6375,7 @@ class Boss {
     }
 
     // Update ice trails
-    this.dashIceTrails=this.dashIceTrails.filter(t=>{t.life--;return t.life>0;});
+    _compact(this.dashIceTrails,t=>{t.life--;return t.life>0;});
   }
 
   // ===== SKILL 5: ABSOLUTE ZERO (ULTIMATE) =====
@@ -6437,7 +6438,7 @@ class Boss {
     }
 
     // Update heat crystals
-    this.heatCrystals=this.heatCrystals.filter(c=>{c.life--;return c.life>0;});
+    _compact(this.heatCrystals,c=>{c.life--;return c.life>0;});
   }
 
   // ===== SKILL 6: WRATH PHASE 2 =====
@@ -6454,7 +6455,7 @@ class Boss {
     this.elementTimer--;if(this.elementTimer<=0){this.elementTimer=this.phase===2?120:180;let closest=0,minD=999;ELEM_HUES.forEach((h,i)=>{const d=Math.min(Math.abs(this.rainbowHue-h),360-Math.abs(this.rainbowHue-h));if(d<minD){minD=d;closest=i;}});this.currentElement=ELEMENTS[closest];}
     if(this.hp<=this.phase2Hp&&this.phase===1){this.phase=2;screenShake=Math.max(screenShake,25);}
     if(this.phase===2&&!this.cloneSpawnDone){this.cloneSpawnDone=true;for(const cx of[w*0.2,w*0.8])this.clones.push({x:cx,y:this.y,hp:40,hue:(this.rainbowHue+120)%360});}
-    this.clones=this.clones.filter(c=>c.hp>0);this.clones.forEach(c=>{const dx=player.x-c.x;c.x+=2.5*(dx>0?1:-1);if(Math.abs(c.x-player.x)<50)applyDamage(player,2,this);});
+    _compact(this.clones,c=>c.hp>0);this.clones.forEach(c=>{const dx=player.x-c.x;c.x+=2.5*(dx>0?1:-1);if(Math.abs(c.x-player.x)<50)applyDamage(player,2,this);});
     const isP2=this.phase===2,spdBase=isP2?4.2:3.3,s1cd=isP2?180:300;
     const approaching=this.skillTimer.s1>s1cd*0.3;
     const dx=player.x-this.x;
@@ -6565,7 +6566,7 @@ class Boss {
     sfxVoidCrack?.();
   }
   _updateVoidRift(player,w){
-    this.voidRifts=this.voidRifts.filter(r=>{
+    _compact(this.voidRifts,r=>{
       r.life--;
       if(!r.erupted){
         const dx=r.targetX-r.x;
@@ -6614,12 +6615,12 @@ class Boss {
     sfxVoidPulse?.();
   }
   _updateChains(player,w){
-    this.chainWarnings=this.chainWarnings.filter(cw=>{
+    _compact(this.chainWarnings,cw=>{
       cw.timer--;
       if(cw.timer<=0){this.chains.push({x:cw.x,life:70,caught:false});screenShake=Math.max(screenShake,6);return false;}
       return true;
     });
-    this.chains=this.chains.filter(c=>{
+    _compact(this.chains,c=>{
       c.life--;
       if(!c.caught&&Math.abs(player.x-c.x)<55&&player.hp>0){
         c.caught=true;
@@ -6768,7 +6769,7 @@ class Boss {
     sfxEarthRumble?.();
   }
   _updateBossEarthStoneSpear(player,w){
-    this.stoneSpearWarnings=this.stoneSpearWarnings.filter(sw=>{
+    _compact(this.stoneSpearWarnings,sw=>{
       sw.timer--;
       if(sw.timer<=0){
         this.stoneSpears.push({x:sw.x,life:22,dmg:sw.dmg,hitDone:false});
@@ -6777,7 +6778,7 @@ class Boss {
       }
       return true;
     });
-    this.stoneSpears=this.stoneSpears.filter(sp=>{
+    _compact(this.stoneSpears,sp=>{
       sp.life--;
       if(!sp.hitDone&&sp.life>10&&Math.abs(player.x-sp.x)<40&&player.hp>0){
         sp.hitDone=true;applyDamage(player,sp.dmg,this);player.vy=-9;
@@ -6801,7 +6802,7 @@ class Boss {
         sfxEarthCrack?.();
       }
     }
-    this.smashShockwaves=this.smashShockwaves.filter(sw=>{
+    _compact(this.smashShockwaves,sw=>{
       const prevR=sw.r;
       sw.r+=14;sw.alpha-=0.05;
       if(sw.alpha>0&&player.hp>0&&Math.abs(player.x-this.x)>prevR&&Math.abs(player.x-this.x)<=sw.r){
@@ -6834,7 +6835,7 @@ class Boss {
     }
   }
   _updateBossEarthBoulderRain(player,floorY){
-    this.boulderWarnings=this.boulderWarnings.filter(bw=>{
+    _compact(this.boulderWarnings,bw=>{
       bw.timer--;
       if(bw.timer<=0){
         this.boulders.push({x:bw.x,y:floorY-360,vy:6,dmg:bw.dmg,hitDone:false});
@@ -6842,7 +6843,7 @@ class Boss {
       }
       return true;
     });
-    this.boulders=this.boulders.filter(b=>{
+    _compact(this.boulders,b=>{
       b.vy+=0.55;b.y+=b.vy;
       if(b.y>=floorY){
         if(!b.hitDone){
@@ -6960,7 +6961,7 @@ class Boss {
     screenShake=Math.max(screenShake,5);
   }
   _updateBossFlameTornado(player,w){
-    this.fireTornadoes=this.fireTornadoes.filter(t=>{
+    _compact(this.fireTornadoes,t=>{
       t.life--;t.ang+=0.4;
       const chaseSpd=2.1;
       const tdx=player.x-t.x;
@@ -6985,7 +6986,7 @@ class Boss {
     sfxSpiritSummon?.();
   }
   _updateBossFlameSpirits(player,w,floorY){
-    this.fireSpirits=this.fireSpirits.filter(s=>{
+    _compact(this.fireSpirits,s=>{
       s.life--;s.bob+=0.12;
       const sdx=player.x-s.x,sdy=(player.y-90)-s.y,d=Math.max(1,Math.sqrt(sdx*sdx+sdy*sdy));
       const spd=1.6;
@@ -7014,7 +7015,7 @@ class Boss {
     }
   }
   _updateBossFlameInfernoPillars(player,floorY){
-    this.infernoPillarWarnings=this.infernoPillarWarnings.filter(fw=>{
+    _compact(this.infernoPillarWarnings,fw=>{
       fw.timer--;
       if(fw.timer<=0){
         this.infernoPillars.push({x:fw.x,life:26,dmg:fw.dmg,hitDone:false});
@@ -7023,7 +7024,7 @@ class Boss {
       }
       return true;
     });
-    this.infernoPillars=this.infernoPillars.filter(fp=>{
+    _compact(this.infernoPillars,fp=>{
       fp.life--;
       if(!fp.hitDone&&fp.life>12&&player.hp>0&&Math.abs(player.x-fp.x)<45){
         fp.hitDone=true;applyDamage(player,fp.dmg,this);
@@ -7049,7 +7050,7 @@ class Boss {
     sfxLavaRumble?.();
   }
   _updateBossFlameMeteorStorm(player,floorY){
-    this.meteorWarnings=this.meteorWarnings.filter(mw=>{
+    _compact(this.meteorWarnings,mw=>{
       mw.timer--;
       if(mw.timer<=0){
         this.meteorRocks.push({x:mw.x,y:floorY-340,vy:5,dmg:mw.dmg,hitDone:false});
@@ -7057,7 +7058,7 @@ class Boss {
       }
       return true;
     });
-    this.meteorRocks=this.meteorRocks.filter(m=>{
+    _compact(this.meteorRocks,m=>{
       m.vy+=0.5;m.y+=m.vy;
       if(m.y>=floorY){
         if(!m.hitDone){
@@ -7339,7 +7340,7 @@ class Boss {
       this.frostTrail.push({x:this.x,y:floorY,life:150,r:6});
       for(let i=0;i<6;i++)this.frostTrail.push({x:this.x+rndInt(-18,18),y:floorY-rndInt(0,6),life:40,r:2,puff:true,vx:(rng()-0.5)*1.2,vy:-rng()*1.4});
     }
-    this.frostTrail=this.frostTrail.filter(t=>t.life>0);
+    _compact(this.frostTrail,t=>t.life>0);
     this.frostTrail.forEach(t=>{t.life--;if(t.puff){t.x+=t.vx;t.y+=t.vy;}else if(t.r<34)t.r+=0.35;});
   }
   // ---- The Frost King's body itself: crown, horns, glowing-fog head, spiked crystal shoulders,
@@ -8011,7 +8012,7 @@ class Boss {
     sfxWindGust?.();
   }
   _updateWindBlades(player,w){
-    this.windBlades=this.windBlades.filter(b=>{
+    _compact(this.windBlades,b=>{
       b.life--;b.x+=b.vx;b.y+=b.vy;
       if(!b.hit&&Math.abs(player.x-b.x)<26&&Math.abs((player.y-90)-b.y)<50&&player.hp>0){
         b.hit=true;applyDamage(player,b.dmg,this);
@@ -8027,7 +8028,7 @@ class Boss {
     sfxTornadoSwirl?.();
   }
   _updateTornadoes(player,w){
-    this.tornadoWarnings=this.tornadoWarnings.filter(tw=>{
+    _compact(this.tornadoWarnings,tw=>{
       tw.timer--;
       if(tw.timer<=0){
         this.tornadoes.push({x:tw.x,targetX:clamp(player.x,80,w-80),r:22,life:170,tick:0});
@@ -8036,7 +8037,7 @@ class Boss {
       }
       return true;
     });
-    this.tornadoes=this.tornadoes.filter(t=>{
+    _compact(this.tornadoes,t=>{
       t.life--;t.tick++;
       const dx=t.targetX-t.x;
       if(Math.abs(dx)>3)t.x+=Math.sign(dx)*1.6;
@@ -8080,7 +8081,7 @@ class Boss {
     this._updateWindDashTrail(player,w);
   }
   _updateWindDashTrail(player,w){
-    this.windDashTrail=this.windDashTrail.filter(t=>{
+    _compact(this.windDashTrail,t=>{
       t.life--;
       if(t.life>10&&Math.abs(player.x-t.x)<26&&player.hp>0&&this.anim%14===0){
         applyDamage(player,(this.phase===2?4:3)*this.phase2DmgMult,this);
@@ -8462,7 +8463,7 @@ class Boss {
     sfxTridentThrust?.();
   }
   _updateWaterSpears(player,w){
-    this.waterSpears=this.waterSpears.filter(sp=>{
+    _compact(this.waterSpears,sp=>{
       sp.life--;sp.x+=sp.vx;sp.y+=sp.vy;
       if(!sp.hit&&Math.abs(player.x-sp.x)<24&&Math.abs((player.y-90)-sp.y)<48&&player.hp>0){
         sp.hit=true;applyDamage(player,sp.dmg,this);
@@ -8479,7 +8480,7 @@ class Boss {
     screenShake=Math.max(screenShake,6);sfxWaveCrash?.();
   }
   _updateTidalWaves(player,w){
-    this.tidalWaves=this.tidalWaves.filter(t=>{
+    _compact(this.tidalWaves,t=>{
       t.life--;t.h=Math.min(1,t.h+0.05);
       t.x+=t.dir*(this.phase===2?4.6:3.6);
       if(t.hitTimer>0)t.hitTimer--;
@@ -8500,7 +8501,7 @@ class Boss {
     sfxWhirlpoolSwirl?.();
   }
   _updateWaterWhirls(player,w){
-    this.waterWhirls=this.waterWhirls.filter(wh=>{
+    _compact(this.waterWhirls,wh=>{
       wh.life--;wh.tick++;
       wh.r=Math.min(50,wh.r+0.1);
       const pd=Math.abs(player.x-wh.x);
@@ -8552,7 +8553,7 @@ class Boss {
     sfxWaterSurge?.();
   }
   _updateRisingTide(player,w){
-    this.risingTideWarnings=this.risingTideWarnings.filter(rw=>{
+    _compact(this.risingTideWarnings,rw=>{
       rw.timer--;
       if(rw.timer<=0){
         this.risingTideColumns.push({x:rw.x,h:0,life:60,hitTimer:0});
@@ -8560,7 +8561,7 @@ class Boss {
       }
       return true;
     });
-    this.risingTideColumns=this.risingTideColumns.filter(c=>{
+    _compact(this.risingTideColumns,c=>{
       c.life--;c.h=Math.min(1,c.h+0.12);
       if(c.hitTimer>0)c.hitTimer--;
       if(c.h>0.5&&c.hitTimer<=0&&Math.abs(player.x-c.x)<30&&player.hp>0){
@@ -8602,7 +8603,7 @@ class Boss {
     this._updateTridentRushTrail(player,w);
   }
   _updateTridentRushTrail(player,w){
-    this.tridentRushTrail=this.tridentRushTrail.filter(t=>{
+    _compact(this.tridentRushTrail,t=>{
       t.life--;
       if(t.life>8&&Math.abs(player.x-t.x)<24&&player.hp>0&&this.anim%14===0){
         applyDamage(player,(this.phase===2?4:3)*this.phase2DmgMult,this);
@@ -9046,7 +9047,7 @@ class Boss {
     sfxLightningZap?.();
   }
   _updateChainLightning(player,w){
-    this.chainBolts=this.chainBolts.filter(b=>{
+    _compact(this.chainBolts,b=>{
       if(b.warnT>0){b.warnT--;return true;}
       b.life++;
       if(!b.hit && Math.abs(player.x-b.tx)<50 && Math.abs(player.y-b.ty)<70 && player.hp>0){
@@ -9068,7 +9069,7 @@ class Boss {
     }
   }
   _updateThunderStrikes(player,w){
-    this.thunderWarnings=this.thunderWarnings.filter(tw=>{
+    _compact(this.thunderWarnings,tw=>{
       tw.timer--;
       if(tw.timer<=0){
         this.thunderStrikes.push({x:tw.x,life:22,hitTimer:0});
@@ -9077,7 +9078,7 @@ class Boss {
       }
       return true;
     });
-    this.thunderStrikes=this.thunderStrikes.filter(ts=>{
+    _compact(this.thunderStrikes,ts=>{
       ts.life--;
       if(ts.hitTimer>0)ts.hitTimer--;
       if(ts.life>10&&ts.hitTimer<=0&&Math.abs(player.x-ts.x)<34&&player.hp>0){
@@ -9111,7 +9112,7 @@ class Boss {
     this._updateLightningDashTrail(player,w);
   }
   _updateLightningDashTrail(player,w){
-    this.lightningDashTrail=this.lightningDashTrail.filter(t=>{
+    _compact(this.lightningDashTrail,t=>{
       t.life--;
       if(t.life>10&&Math.abs(player.x-t.x)<20&&player.hp>0&&this.anim%16===0){
         applyDamage(player,(this.phase===2?3:2)*this.phase2DmgMult,this);
@@ -9126,7 +9127,7 @@ class Boss {
     this.electricFields.push({x:clamp(player.x+rndInt(-30,30),120,w-120),r:70,life:260,tick:0,driftDir:rndChoice([-1,1])});
   }
   _updateElectricFields(player,w){
-    this.electricFields=this.electricFields.filter(ef=>{
+    _compact(this.electricFields,ef=>{
       ef.life--;ef.tick++;
       ef.x=clamp(ef.x+ef.driftDir*0.5,100,w-100);
       if(ef.tick%90===0)ef.driftDir*=-1;
@@ -9147,7 +9148,7 @@ class Boss {
     sfxLightningZap?.();
   }
   _updateVoltageOrbs(player,w){
-    this.voltageOrbs=this.voltageOrbs.filter(o=>{
+    _compact(this.voltageOrbs,o=>{
       o.life--;
       if(o.orbitT>0){
         o.orbitT--;o.orbitAng+=0.18;
@@ -9177,7 +9178,7 @@ class Boss {
     }
   }
   _updateThunderPillars(player,w){
-    this.thunderPillarWarnings=this.thunderPillarWarnings.filter(pw=>{
+    _compact(this.thunderPillarWarnings,pw=>{
       pw.timer--;
       if(pw.timer<=0){
         this.thunderPillars.push({x:pw.x,life:24,hitTimer:0});
@@ -9186,7 +9187,7 @@ class Boss {
       }
       return true;
     });
-    this.thunderPillars=this.thunderPillars.filter(tp=>{
+    _compact(this.thunderPillars,tp=>{
       tp.life--;
       if(tp.hitTimer>0)tp.hitTimer--;
       if(tp.life>10&&tp.hitTimer<=0&&Math.abs(player.x-tp.x)<32&&player.hp>0){
@@ -9680,7 +9681,7 @@ class RoadBoss{
     }
     // dust trail particles while moving
     if(rng()<0.5)this.dustP.push({x:this.x-30*this.direction,y:this.floorY-6,life:22,maxLife:22,r:rndInt(3,7)});
-    this.dustP=this.dustP.filter(d=>{d.x-=1.2*this.direction;d.life--;return d.life>0;});
+    _compact(this.dustP,d=>{d.x-=1.2*this.direction;d.life--;return d.life>0;});
 
     // Chiêu 4 — Triệu Hồi Bọ Cạp Con (chỉ một lần khi HP < 50%)
     if(!this.summonedOnce&&this.hp<=this.maxHp*0.5&&this.action==="IDLE"){
@@ -9829,7 +9830,7 @@ class RoadBoss{
         this.emberParticles.push({x:this.x+this._breathDir*(40+rndInt(0,24)),y:this.y-30+rndInt(-28,28),vx:this._breathDir*(4.5+rng()*4.5),vy:rndInt(-2,2)*0.6,life,maxLife:life,r:6+rng()*7});
       }
     }
-    this.emberParticles=this.emberParticles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vy*=0.98;p.life--;return p.life>0;});
+    _compact(this.emberParticles,p=>{p.x+=p.vx;p.y+=p.vy;p.vy*=0.98;p.life--;return p.life>0;});
 
     // Chiêu 2: Bổ Nhào Vực Thẳm — bay vọt lên rồi lao bổ xuống vị trí người chơi, tạo dư chấn + gai bóng tối
     if(!this.slamActive&&s.slam<=0){
@@ -9854,7 +9855,7 @@ class RoadBoss{
         }
       }
     }
-    this.groundSpikes=this.groundSpikes.filter(sp=>{
+    _compact(this.groundSpikes,sp=>{
       if(sp.rise<1)sp.rise=Math.min(1,sp.rise+0.1);
       sp.life--;
       if(!sp.hit&&sp.rise>=1&&player.hp>0&&Math.abs(sp.x-player.x)<28){applyDamage(player,isP2?4:3,null);sp.hit=true;}
@@ -10403,7 +10404,7 @@ function spawnLightningArc(x1,y1,x2,y2){
   lightningArcs.push({pts,life:12,maxLife:12});
 }
 function updateAndDrawLightningArcs(){
-  lightningArcs=lightningArcs.filter(a=>a.life>0);
+  _compact(lightningArcs,a=>a.life>0);
   lightningArcs.forEach(a=>{
     a.life--;
     const alpha=Math.max(0,a.life/a.maxLife);
@@ -10634,7 +10635,7 @@ function updateFire(p){
   tickFireUlti(p);
   if(p.fireDashTrail&&p.fireDashTrail.length){
     p.fireDashTrail.forEach(t=>t.life--);
-    p.fireDashTrail=p.fireDashTrail.filter(t=>t.life>0);
+    _compact(p.fireDashTrail,t=>t.life>0);
   }
 }
 // ================================================================
@@ -10674,7 +10675,7 @@ function drawFire(p){
   }
   // Tall roaring flame column left behind right after a pillar erupts
   if(p._firePillarBursts&&p._firePillarBursts.length){
-    p._firePillarBursts=p._firePillarBursts.filter(b=>b.life>0);
+    _compact(p._firePillarBursts,b=>b.life>0);
     p._firePillarBursts.forEach(b=>{
       b.life--;
       const t=1-b.life/b.maxLife; // 0 -> 1 over the column's lifetime
@@ -10703,7 +10704,7 @@ function drawFire(p){
 function tickEarthMinions(p,worldW){
   if(!p.earthMinions)p.earthMinions=[];
   // Remove dead minions
-  p.earthMinions=p.earthMinions.filter(m=>m.hp>0);
+  _compact(p.earthMinions,m=>m.hp>0);
   // Update minions — bám theo địa hình gồ ghề ở chế độ ROAD (trước đây luôn dùng
   // mặt sàn phẳng nên ở khu vực gồ ghề chúng bị lún xuống đất hoặc lơ lửng trên không)
   p.earthMinions.forEach(m=>{
@@ -10771,17 +10772,13 @@ function castSkill(attacker,target,skillNum){
   const sKey=`s${skillNum}`;
   if(attacker.cds[sKey]>0)return;
   if(skillNum===5){
-    // V4 TRANSFORM WINDUP: the fighter stands completely still and rises into
-    // the air first; only once the windup finishes does the powerful 20-ray
-    // spark explosion fire off and the V4 skin actually appear (see
-    // Fighter#_finalizeTransform, triggered from applyGravity).
-    if(attacker.transformWindupTimer>0)return;
-    attacker.transformWindupTimer=360;
-    attacker.stunTimer=Math.max(attacker.stunTimer,360);
+    // V4 TRANSFORM: transforms instantly on cast — no more fly-up-and-wait
+    // windup delay. The 20-ray spark explosion + V4 skin fire off immediately.
     attacker.isAttacking=false;attacker.activeSkill=null;
     attacker.cds.s5=1200;
     screenShake=Math.max(screenShake,10);
     sfxEnergyCharge();
+    attacker._finalizeTransform(attacker.y);
     return;}
   if(!(attacker.charType==="shadow"&&skillNum===2)){if(attacker.isAttacking)return;}
   attacker.isAttacking=true;
@@ -11138,7 +11135,7 @@ function updateProjectiles(floorY,player2){
       ctx.restore();
       if(!proj.trail)proj.trail=[];
       proj.trail.push({x:px,y:py,life:10});
-      proj.trail=proj.trail.filter(t=>{t.life--;return t.life>0;});
+      _compact(proj.trail,t=>{t.life--;return t.life>0;});
       proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/10)*0.4;_oval(t.x-5,t.y-5,10,10,"#CCFFCC",null);ctx.restore();});
     }
     else if(pType==="water_orb"){
@@ -11156,7 +11153,7 @@ function updateProjectiles(floorY,player2){
       ctx.restore();
       if(!proj.trail)proj.trail=[];
       proj.trail.push({x:px,y:py,life:12});
-      proj.trail=proj.trail.filter(t=>{t.life--;return t.life>0;});
+      _compact(proj.trail,t=>{t.life--;return t.life>0;});
       proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/12)*0.45;_oval(t.x-4,t.y-4,8,8,"white",null);ctx.restore();});
     }
     else if(pType==="ice_arrow"){ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(px,py-8);ctx.lineTo(px+20*pDir,py);ctx.lineTo(px,py+8);ctx.lineTo(px-8*pDir,py);ctx.closePath();ctx.fill();}
@@ -11182,7 +11179,7 @@ function updateProjectiles(floorY,player2){
       ctx.restore();
       if(!proj.trail)proj.trail=[];
       proj.trail.push({x:px,y:py,life:14});
-      proj.trail=proj.trail.filter(t=>{t.life--;return t.life>0;});
+      _compact(proj.trail,t=>{t.life--;return t.life>0;});
       proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/14)*0.5;const tr=r*0.6;_oval(t.x-tr,t.y-tr,tr*2,tr*2,v2?"#00AEFF":"orange",null);ctx.restore();});
     }
     else if(pType==="earth_boulder"){
@@ -11197,7 +11194,7 @@ function updateProjectiles(floorY,player2){
       ctx.restore();
       if(!proj.boulderTrail)proj.boulderTrail=[];
       proj.boulderTrail.push({x:px,y:py,life:15});
-      proj.boulderTrail=proj.boulderTrail.filter(bt=>{bt.life--;return bt.life>0;});
+      _compact(proj.boulderTrail,bt=>{bt.life--;return bt.life>0;});
       proj.boulderTrail.forEach(bt=>{const ba=Math.max(0,bt.life/15)*0.5;ctx.save();ctx.globalAlpha=ba;_oval(bt.x-6,bt.y-4,12,8,"#a67c52",null);ctx.restore();});
       proj.vy=(proj.vy||0)+0.25;
     }
@@ -11311,7 +11308,7 @@ function tickFrost(p){
   // age the ice slide trail and slow anyone standing on it
   if(p.frostSlideTrail.length){
     p.frostSlideTrail.forEach(t=>t.life--);
-    p.frostSlideTrail=p.frostSlideTrail.filter(t=>t.life>0);
+    _compact(p.frostSlideTrail,t=>t.life>0);
     if(p.frostSlideTrail.length){
       getAllEnemies(p).forEach(opp=>{
         if(opp.hp<=0)return;
@@ -11341,7 +11338,7 @@ function tickFrost(p){
   }
   // Ice Prison — tracks all locked targets, each explodes on expiry or if it's hit early
   if(p._icePrisonedTargets&&p._icePrisonedTargets.length){
-    p._icePrisonedTargets=p._icePrisonedTargets.filter(tgt=>{
+    _compact(p._icePrisonedTargets,tgt=>{
       if(!tgt||tgt.hp<=0)return false;
       const tookDamage=tgt._icePrisonHpLast!==undefined&&tgt.hp<tgt._icePrisonHpLast-0.01;
       tgt._icePrisonHpLast=tgt.hp;
@@ -11398,7 +11395,7 @@ function tickThunderDash(p){
     }
     seg.life--;
   });
-  p.thunderDashTrail=p.thunderDashTrail.filter(s=>s.life>0);
+  _compact(p.thunderDashTrail,s=>s.life>0);
 }
 function drawThunderDashTrail(p){
   if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
@@ -11426,7 +11423,7 @@ function drawFrostDomain(p){
   ctx.save();ctx.globalAlpha=0.7;ctx.strokeStyle="deepskyblue";ctx.lineWidth=2;ctx.setLineDash([6,5]);
   ctx.beginPath();ctx.ellipse(rx,ry,rad,rad*0.45,0,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.restore();
   if(p._domainSnow.length<36&&rng()<0.6)p._domainSnow.push({x:rx+rndInt(-rad,rad),y:ry-rndInt(60,160),vy:rng()*1.4+1,r:rndInt(2,4)});
-  p._domainSnow=p._domainSnow.filter(s=>s.y<ry+30);
+  _compact(p._domainSnow,s=>s.y<ry+30);
   p._domainSnow.forEach(s=>{s.y+=s.vy;_oval(s.x-s.r,s.y-s.r,s.r*2,s.r*2,"white",null);});
   _text(rx,ry-rad*0.45-14,"❄️ FROZEN DOMAIN ❄️","deepskyblue","11px Arial bold");
 }
@@ -11451,7 +11448,7 @@ function tickWind(p){
   if(p.windDashTimer>0)p.windDashTimer--;
   if(p.windDashTrail.length){
     p.windDashTrail.forEach(t=>t.life--);
-    p.windDashTrail=p.windDashTrail.filter(t=>t.life>0);
+    _compact(p.windDashTrail,t=>t.life>0);
   }
   // LỐC GIAM CẦM — stationary cyclone that pulls enemies toward its core,
   // chips damage every ~0.33s, then bursts them upward when it collapses
@@ -11491,7 +11488,7 @@ function tickWind(p){
         }
       });
     });
-    p.windSideCyclones=p.windSideCyclones.filter(c=>c.life>0&&c.x>moveBoundLo()-150&&c.x<moveBoundHi()+150);
+    _compact(p.windSideCyclones,c=>c.life>0&&c.x>moveBoundLo()-150&&c.x<moveBoundHi()+150);
   }
 }
 function spawnWindSideCyclones(p){
@@ -11632,7 +11629,7 @@ function tickWaterCloud(p){
   if(!p.waterCloudDrops)p.waterCloudDrops=[];
   if(rng()<0.5&&p.waterCloudDrops.length<20)p.waterCloudDrops.push({x:p.x+rndInt(-45,45),y:p.y-rndInt(60,130),r:rndInt(2,4)});
   p.waterCloudDrops.forEach(d=>{d.y+=6;});
-  p.waterCloudDrops=p.waterCloudDrops.filter(d=>d.y<p.y+10);
+  _compact(p.waterCloudDrops,d=>d.y<p.y+10);
   getAllEnemies(p).forEach(opp=>{
     if(Math.abs(opp.x-p.x)<75&&Math.abs(opp.y-p.y)<100){
       opp.slowTimer=Math.max(opp.slowTimer||0,15);opp._slowPct=0.5;
@@ -11683,7 +11680,7 @@ function drawRageBar(bx,by,bw,bh,fighter){
   if(ready||fighter.transformActive){
     if(!fighter._smokeParts)fighter._smokeParts=[];
     if(rng()<0.6)fighter._smokeParts.push({x:bx+rng()*bw,y:by,vy:-rng()*0.8-0.3,life:30,r:rng()*4+2});
-    fighter._smokeParts=fighter._smokeParts.filter(s=>s.life>0);
+    _compact(fighter._smokeParts,s=>s.life>0);
     fighter._smokeParts.forEach(s=>{s.y+=s.vy;s.life--;ctx.beginPath();ctx.fillStyle=`rgba(180,180,180,${Math.max(0,s.life/30*0.5)})`;ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();});
   }
   _text(bx+bw/2,by+bh/2,ready?"NỘ (SẴN SÀNG)":"NỘ","white","9px Arial bold");
@@ -11889,44 +11886,22 @@ function drawGearIcon(cx,cy,r){
 }
 
 // ================================================================
-//  LEFT-SIDE COMPACT BUTTONS (menu): Minigame (placeholder) + Hướng Dẫn
+//  MAIN MENU — danh sách chế độ hiển thị giữa màn hình (gồm cả
+//  Minigame + Hướng Dẫn, gộp chung với các chế độ chơi để dễ nhìn)
 // ================================================================
-const LEFT_BTN_X = 18, LEFT_BTN_W = 168, LEFT_BTN_H = 48, LEFT_BTN_GAP = 12;
-const LEFT_BTN_MINIGAME_Y = 90;
-const LEFT_BTN_GUIDE_Y = LEFT_BTN_MINIGAME_Y + LEFT_BTN_H + LEFT_BTN_GAP;
-
-function drawLeftMenuButtons(){
-  // Minigame — nút tạm thời, chưa gắn chức năng gì
-  _rect(LEFT_BTN_X, LEFT_BTN_MINIGAME_Y, LEFT_BTN_W, LEFT_BTN_H, "#3a3a3a", "rgba(255,255,255,0.4)", 2);
-  _text(LEFT_BTN_X+LEFT_BTN_W/2, LEFT_BTN_MINIGAME_Y+LEFT_BTN_H/2, "🎮 Minigame", "white", "14px Arial bold");
-
-  // Hướng Dẫn — gọn lại, chuyển sang góc trái
-  _rect(LEFT_BTN_X, LEFT_BTN_GUIDE_Y, LEFT_BTN_W, LEFT_BTN_H, "#2c7be5", "white", 2);
-  _text(LEFT_BTN_X+LEFT_BTN_W/2, LEFT_BTN_GUIDE_Y+LEFT_BTN_H/2, "📖 Hướng Dẫn", "white", "14px Arial bold");
-}
-
-function handleLeftMenuButtonsClick(mx,my){
-  if(LEFT_BTN_X<=mx&&mx<=LEFT_BTN_X+LEFT_BTN_W){
-    if(LEFT_BTN_MINIGAME_Y<=my&&my<=LEFT_BTN_MINIGAME_Y+LEFT_BTN_H){
-      gameState="MINIGAME_SELECT";
-      return true;
-    }
-    if(LEFT_BTN_GUIDE_Y<=my&&my<=LEFT_BTN_GUIDE_Y+LEFT_BTN_H){
-      window.open("https://khoidoan.site/huongdan.html","_blank");
-      return true;
-    }
-  }
-  return false;
-}
+const MAIN_MENU_MODES = [
+  { name:"🤖 Đấu Với Máy",          col:"#34a853" },
+  { name:"⚔️ Thử Thách",            col:"#9c27b0" },
+  { name:"🛣️ Đường Đi (3 Ma Thú)", col:"#e67e22" },
+  { name:"🎮 Minigame",             col:"#3a3a3a" },
+  { name:"📖 Hướng Dẫn",            col:"#2c7be5" },
+];
 
 // ================================================================
 //  MINIGAME SELECT — danh sách các minigame (dàn game chờ)
 // ================================================================
 const MINIGAME_LIST = [
-  {name:"🦖 Khủng Long (Dino)", desc:"Né vật cản, phá kỷ lục điểm số", col:"#535353", enabled:true, state:"MINIGAME_DINO"},
-  {name:"⚔️ Chiến Tranh", desc:"Mở game Chiến Tranh ở tab mới", col:"#8b3a3a", enabled:true, url:"https://khoidoan.site/gamecu.html"},
-  {name:"🧮 Toán Học Cấp 2", desc:"5 chặng đường, mỗi chặng 10 câu hỏi", col:"#1f3a2e", enabled:true, url:"https://khoidoan.site/toan-cap-2.html"},
-  {name:"🔒 Sắp ra mắt", desc:"Minigame tiếp theo đang được làm", col:"#2a2a2a", enabled:false},
+  {name:"🕹️ Mini Game Tổng Hợp", desc:"8 game nhỏ: bắn mục tiêu, hứng vật phẩm, xếp khối, chạy vô tận, bóng bay, phản xạ màu, lướt sóng, câu cá", col:"#4b3f72", enabled:true, url:"https://khoidoan.site/minigame.html"},
 ];
 
 function drawMinigameSelect(){
@@ -12068,9 +12043,9 @@ function dinoUpdatePhysics(){
   if(dinoFrame%Math.max(50,Math.floor(90-dinoSpeed*3))===0) dinoSpawnObstacle();
   if(dinoFrame%150===0) dinoSpawnCloud();
   dinoObstacles.forEach(o=>o.x-=dinoSpeed);
-  dinoObstacles=dinoObstacles.filter(o=>o.x+o.width>0);
+  _compact(dinoObstacles,o=>o.x+o.width>0);
   dinoClouds.forEach(c=>c.x-=dinoSpeed*0.4);
-  dinoClouds=dinoClouds.filter(c=>c.x+c.width>0);
+  _compact(dinoClouds,c=>c.x+c.width>0);
   const dinoBox={
     x:dinoChar.x,
     y:dinoChar.isDucking?DINO_GROUND_Y-20:dinoChar.y,
@@ -12181,19 +12156,18 @@ function drawMenu(){
   ctx.restore();
   if(roadBestDistance>0)_text(W/2,H/5+50,`🏅 Kỷ lục Đường Đi phiên này: ${roadBestDistance}m`,"gold","12px Arial bold");
   drawGearIcon(W-40,40,16);
-  drawLeftMenuButtons();
   if(showSettings){
     drawSettingsPanel();
   }else{
-    const modes=["🤖 Đấu Với Máy","⚔️ Thử Thách","🛣️ Đường Đi (3 Ma Thú)"];
-    const cols=["#34a853","#9c27b0","#e67e22"];
+    const modes=MAIN_MENU_MODES;
+    const startY=H/2-((modes.length-1)*60)/2;
     modes.forEach((m,i)=>{
-      const by1=H/2+i*60-(modes.length>5?70:0);
+      const by1=startY+i*60;
       const pulse=1+Math.sin(frameCount*0.06+i)*0.015;
       ctx.save();
       ctx.translate(W/2,by1+22);ctx.scale(pulse,pulse);ctx.translate(-W/2,-(by1+22));
-      _rect(W/2-150,by1,300,45,cols[i],"white",2);
-      _text(W/2,by1+22,m,"white","12px Arial bold");
+      _rect(W/2-150,by1,300,45,m.col,"white",2);
+      _text(W/2,by1+22,m.name,"white","12px Arial bold");
       ctx.restore();
     });
   }
@@ -12275,14 +12249,17 @@ function handleMenuClick(mx, my) {
   if(gameState==="MENU"){
     // Gear icon
     if(W-60<=mx&&mx<=W-20&&20<=my&&my<=60){showSettings=!showSettings;return;}
-    if(handleLeftMenuButtonsClick(mx,my))return;
     if(showSettings){handleSettingsClick(mx,my);return;}
-    for(let i=0;i<3;i++){
-      const by1=H/2+i*60-(3>5?70:0);
+    const modes=MAIN_MENU_MODES;
+    const startY=H/2-((modes.length-1)*60)/2;
+    for(let i=0;i<modes.length;i++){
+      const by1=startY+i*60;
       if(W/2-150<=mx&&mx<=W/2+150&&by1<=my&&my<=by1+45){
         if(i===0){gameState="BOT_SELECT";return;}
         if(i===1){gameState="CHALLENGE_SELECT";return;}
         if(i===2){gameState="ROAD_CHAR_SELECT";return;}
+        if(i===3){window.location.href="https://khoidoan.site/minigame.html";return;}
+        if(i===4){window.open("https://khoidoan.site/huongdan.html","_blank");return;}
       }
     }
   }else if(gameState==="MINIGAME_SELECT"){
@@ -12476,7 +12453,7 @@ function updateGameplay(floorY){
   ctx.save();ctx.translate(-campX,0);
   drawFloor(floorY,false,campX);
   updateProjectiles(floorY,p2);
-  puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
+  _compact(puppets,pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);drawEarthMinions(p2);
@@ -12567,7 +12544,7 @@ function updateChallenge(w,h){
     if(p1.ultiTimer===0){if(p1.charType==="wind"&&p1.activeSkill==="wind_s4")spawnWindSideCyclones(p1);p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
   }
 
-  challengeEnemies=challengeEnemies.filter(e=>{if(e.hp>0&&p1.hp>0)e.update(p1,floorY,worldW);return e.hp>0;});
+  _compact(challengeEnemies,e=>{if(e.hp>0&&p1.hp>0)e.update(p1,floorY,worldW);return e.hp>0;});
   if(challengeEnemies.length===0&&challengeState==="WAVE"){
     if(challengeWaveIdx<challengeWaveSched.length){_challengeWaveTimer++;if(_challengeWaveTimer>=120){_challengeWaveTimer=0;_spawnChallengeWave(floorY,worldW);}}
     else if(!challengeBossSpawned){
@@ -12680,7 +12657,7 @@ function updateChallenge(w,h){
   }
   drawFloor(floorY,false,campX);
   updateProjectiles(floorY,null);
-  puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
+  _compact(puppets,pu=>pu.hp>0&&pu.life>0);
   puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);
@@ -13204,9 +13181,9 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     }
   }
 
-  roadEnemies=roadEnemies.filter(e=>{ if(e.hp>0&&p1.hp>0)e.update(pickRoadMeleeTarget(e),floorY+terrainHeightAt(e.x),projectiles); return e.hp>0 && e.x>roadCameraX-200; });
+  _compact(roadEnemies,e=>{ if(e.hp>0&&p1.hp>0)e.update(pickRoadMeleeTarget(e),floorY+terrainHeightAt(e.x),projectiles); return e.hp>0 && e.x>roadCameraX-200; });
   roadTraps.forEach(t=>{ if(p1.hp>0)t.update(p1,floorY+terrainHeightAt(t.x)); });
-  roadWalls=roadWalls.filter(w=>w.hp>0 || w.x>roadCameraX-100);
+  _compact(roadWalls,w=>w.hp>0 || w.x>roadCameraX-100);
 
   if(p1.hp<=0 && roadState!=="LOST"){
     roadState="LOST";
@@ -13225,7 +13202,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   updateProjectiles(floorY,null);
   roadEnemies.forEach(e=>e.draw());
   if(roadBoss && !roadBoss.dead) roadBoss.draw();
-  puppets=puppets.filter(pu=>pu.hp>0&&pu.life>0);
+  _compact(puppets,pu=>pu.hp>0&&pu.life>0);
   tickEarthMud(p1);
   tickEarthMeteor(p1);
   tickEarthMinions(p1,roadCameraX+W);
