@@ -1032,8 +1032,12 @@ function castSkill(attacker,target,skillNum){
       // once, from applyGravity(), when the timer reaches 0.
       attacker.isAttacking=false;attacker.activeSkill=null;
       attacker.cds.s5=1200;
-      attacker.transformWindupTimer=210; // 3.5s @ 60fps
-      attacker._transformWindupTotal=210;
+      // 45 extra frames (0.75s) up front: 15f (0.25s) of nothing, then a
+      // 30f (0.5s) camera punch-in/zoom (see shadowCamZoomState() in
+      // 07-fx-ticks-ui-and-main-menu.js) — the existing 3.5s (210f) VFX
+      // sequence below only starts once that punch-in finishes.
+      attacker.transformWindupTimer=255; // 0.75s cam punch-in + 3.5s VFX = 4.25s @ 60fps
+      attacker._transformWindupTotal=255;
       attacker._windupCrackled=false;
       attacker._shadowRiftCracked=false;
       attacker._shadowWhispered=false;
