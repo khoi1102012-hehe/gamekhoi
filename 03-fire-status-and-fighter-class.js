@@ -77,6 +77,8 @@ class Fighter {
     this.waterCloudTimer=0;this.waterCloudTick=0;this.waterCloudDrops=[];
     this.auraParticles=[];this.afterImages=[];this.transformBurstTimer=0;
     this.transformWindupTimer=0;this.transformLandingTimer=0;this._ringAngle=0;
+    this._transformWindupTotal=0; // total-frame length of the currently running windup (set at cast time; SHADOW uses 210 = 3.5s @60fps, other types default to 360 if ever used)
+    this._shadowRiftCracked=false;this._shadowWhispered=false;this._shadowWindupBurstDone=false; // one-shot SFX/FX flags for the Shadow V4 wind-up sequence
     this._runTrailTick=0;this._lastX=x;
     // --- RED (Hỏa Ma Thần) V4-only state — namespaced, only ever touched when charType==="red" ---
     this.hoaChungStacks=0;this.hoaChungFlashTimer=0;
@@ -135,6 +137,20 @@ class Fighter {
         screenShake=Math.max(screenShake,6);
       }
       if(this.thunderPrisonTimer%20===0)applyDamage(this,3,this._thunderPrisonCaster);
+    }
+    // TRANSFORM WIND-UP: freezes the fighter in place (no gravity drift) while
+    // the charge-up sequence plays out in _drawTransformWindup(). When the
+    // timer reaches 0 we hand off to _finalizeTransform() exactly once —
+    // this is the single choke point every element's windup (currently only
+    // SHADOW actually sets this timer > 0; see castSkill skillNum===5) funnels
+    // through, so nothing else needs its own parallel completion check.
+    if(this.transformWindupTimer>0){
+      this.transformWindupTimer--;
+      this.vy=0;
+      if(this.transformWindupTimer===0){
+        this._finalizeTransform(floorY);
+      }
+      return;
     }
     if(this.transformLandingTimer>0){
       this.transformLandingTimer--;
@@ -304,11 +320,16 @@ class Fighter {
     this._drawElementalBody(rx,ry,cFill,cOut);
     if(isRedV4||isThunderV4||isFireV2)ctx.restore();
     if(this.transformWindupTimer>0){
-      const _windupProg=1-(this.transformWindupTimer/360);
+      const _windupTotal=this._transformWindupTotal||360;
+      const _windupProg=1-(this.transformWindupTimer/_windupTotal);
       const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="fire"?"🔥 CHUYỂN HÓA FLAME V2 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
       _text(rx,ry-105,_windupText,"white","9px Arial bold");
-      // Show phase indicator (timing: rise 0-0.33, hover 0.33-0.75, descend 0.75-1.0)
-      const _phase=_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống";
+      // Show phase indicator. SHADOW stands its ground the whole time (no
+      // rise/descend flight), so it gets its own awaken -> drain -> burst
+      // labels instead of the generic fly-up-and-land phrasing.
+      const _phase=(this.charType==="shadow")
+        ? (_windupProg<0.4?"Thức tỉnh bóng tối":_windupProg<0.86?"Hút năng lượng":"Bùng nổ")
+        : (_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống");
       _text(rx,ry-115,`[${_phase}]`,"#aaa","7px Arial");
     }
     else if(this.stunTimer>0) _text(rx,ry-105,"⛓ STUNNED ⛓","orange","9px Arial bold");
@@ -1087,7 +1108,7 @@ class Fighter {
   // and upward around the still-frozen, rising fighter, building in intensity
   // until the moment it detonates into the finishing spark explosion.
   _drawTransformWindup(rx,ry){
-    const af=this.animFrame,total=360,t=Math.max(0,this.transformWindupTimer),age=total-t,prog=age/total;
+    const af=this.animFrame,total=this._transformWindupTotal||360,t=Math.max(0,this.transformWindupTimer),age=total-t,prog=age/total;
     if(t===0){this._windupCrackled=false;this._fireFlipDone=false;}
     if(this.charType==="red"){
       // Hỏa Ma Thần awakening — fully custom 3-stage sequence (magic circle ->
@@ -1098,6 +1119,14 @@ class Fighter {
     }
     if(this.charType==="fire"){
       this._drawFireV2TransformWindup(rx,ry,af,age,total);
+      return;
+    }
+    if(this.charType==="shadow"){
+      // SHADOW — "Bóng Tối Thức Tỉnh": fully custom 3.5s (210-frame) sequence,
+      // kept entirely separate from the shared generic swirl below so other
+      // elements are untouched. See _drawShadowTransformWindup() for the
+      // phase-by-phase breakdown.
+      this._drawShadowTransformWindup(rx,ry,af,age,total);
       return;
     }
     const col=ELEMENT_COLORS[this.charType]||"#FFAA33";
@@ -1414,6 +1443,129 @@ class Fighter {
     _oval(rx-28,ry-80,56,100,"rgba(0,180,255,0.3)",null);
     ctx.restore();
     if(rng()<0.4)hitEffects.push({x:rx+rndInt(-24,24),y:ry-30,vx:(rng()-0.5)*0.6,vy:-rng()*1.4-0.4,life:26,maxLife:26,particle:true,color:rndChoice(["#00AEFF","#00E5FF","white"])});
+  }
+  // ================================================================
+  //  SHADOW — "Bóng Tối Thức Tỉnh" (Darkness Awakening) V4 wind-up.
+  //  Total length: 210 frames = 3.5s @60fps (set by castSkill / read via
+  //  this._transformWindupTotal so the shared timer stays generic).
+  //   0.0s-0.5s (age   0- 30): Kích hoạt — aura bóng tối nhẹ bắt đầu hiện ra.
+  //   0.5s-1.4s (age  30- 84): Mở năng lượng — bóng dưới chân lan rộng,
+  //                            portal/hố đen hé mở, hạt năng lượng bay vào.
+  //   1.4s-2.4s (age  84-144): Tụ lực mạnh — aura + particle tăng tốc, rung
+  //                            màn hình rất nhẹ tăng dần.
+  //   2.4s-3.0s (age 144-180): Cao trào — portal đạt max, silhouette Reaper
+  //                            hiện mờ phía sau lưng Shadow.
+  //   3.0s-3.2s (age 180-192): "Nín thở" — mọi hiệu ứng dịu lại cực ngắn,
+  //                            silhouette nhập vào Shadow.
+  //   3.2s-3.5s (age 192-210): BÙNG NỔ — vòng xung kích + particle bắn ra +
+  //                            flash ngắn. _finalizeTransform() được
+  //                            applyGravity() gọi đúng 1 lần khi age=210.
+  // ================================================================
+  _drawShadowTransformWindup(rx,ry,af,age,total){
+    const T1=30,T2=84,T3=144,T4=180,BURST=192; // frame marks (60fps, total=210)
+    const footY=ry+52;
+    // ---- one-shot ambient SFX as each phase begins (sfxEnergyCharge already
+    // fired once at the moment the skill was cast, in castSkill) ----
+    if(!this._shadowRiftCracked&&age>=T1){this._shadowRiftCracked=true;sfxVoidCrack?.();}
+    if(!this._shadowWhispered&&age>=T2){this._shadowWhispered=true;sfxShadowWhisper?.();}
+
+    // ---- growing shadow pool + black-hole/portal ring under the feet ----
+    const poolProg=Math.min(1,age/T4);
+    const poolR=16+poolProg*95;
+    ctx.save();
+    ctx.globalAlpha=0.3+0.45*poolProg;
+    const poolGrad=ctx.createRadialGradient(rx,footY,4,rx,footY,poolR);
+    poolGrad.addColorStop(0,"rgba(8,4,16,0.95)");
+    poolGrad.addColorStop(0.55,"rgba(90,40,180,0.35)");
+    poolGrad.addColorStop(1,"rgba(90,40,180,0)");
+    ctx.fillStyle=poolGrad;
+    ctx.beginPath();ctx.ellipse(rx,footY,poolR,poolR*0.32,0,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+    if(age>=T1){
+      const ringProg=Math.min(1,(age-T1)/(T4-T1));
+      const ringR=12+ringProg*(poolR-4);
+      ctx.save();
+      ctx.globalAlpha=0.5+0.4*ringProg;
+      ctx.strokeStyle="#bb44ff";ctx.shadowColor="#6654ff";ctx.shadowBlur=14;ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.ellipse(rx,footY,ringR,ringR*0.32,0,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
+
+    // ---- inbound dark/purple energy particles converging on the caster ----
+    if(age>=T1){
+      const inProg=Math.min(1,(age-T1)/(T4-T1));
+      const count=Math.floor(6+inProg*18); // 6 -> 24 particles as it intensifies
+      const spinSpeed=3+inProg*9+(age>=T2?5:0);
+      for(let i=0;i<count;i++){
+        const ang=(af*spinSpeed+i*(360/count))*Math.PI/180;
+        const pullT=((af*2+i*11)%90)/90; // each particle loops its own pull-in cycle
+        const rad=190-(190-10)*pullT;
+        const px=rx+rad*Math.cos(ang);
+        const py=ry-15+rad*Math.sin(ang)*0.55-inProg*10;
+        const s=2+(1-pullT)*3;
+        ctx.save();ctx.globalAlpha=(0.45+0.4*inProg)*(age>=T4&&age<BURST?0.5:1);ctx.shadowColor="#bb44ff";ctx.shadowBlur=8;
+        _oval(px-s,py-s,s*2,s*2,i%2===0?"#6654ff":"#bb44ff",null);
+        ctx.restore();
+      }
+    }
+
+    // ---- rising dark aura wrapping the body ----
+    const auraProg=Math.min(1,age/T4);
+    const holdBreath=age>=T4&&age<BURST; // brief lull right before the burst
+    const pulse=0.5+0.5*Math.sin(af*(0.08+auraProg*0.15));
+    ctx.save();
+    ctx.globalAlpha=(holdBreath?0.4:1)*(0.14+0.5*auraProg*pulse);
+    ctx.shadowColor="#6654ff";ctx.shadowBlur=(holdBreath?8:14)+auraProg*22;
+    _oval(rx-36-auraProg*10,ry-95-auraProg*10,72+auraProg*20,130+auraProg*20,`rgba(80,40,170,${holdBreath?0.1:0.22})`,null);
+    ctx.restore();
+
+    // ---- very light, gradually-increasing screen shake (capped low) ----
+    if(age>=T2&&!holdBreath){
+      const shakeProg=Math.min(1,(age-T2)/(T4-T2));
+      screenShake=Math.max(screenShake,1+shakeProg*3);
+    }
+
+    // ---- climax silhouette: cái bóng ngả thành silhouette Reaper phía sau
+    // lưng Shadow, hiện rõ dần rồi nhập vào nhân vật ngay trước khi nín thở ----
+    if(age>=T3&&age<T4){
+      const silProg=(age-T3)/(T4-T3);
+      ctx.save();
+      ctx.globalAlpha=silProg*0.75;
+      ctx.fillStyle="#0a0812";
+      ctx.shadowColor="#6654ff";ctx.shadowBlur=18;
+      const sx=rx,sy=ry-10-silProg*6;
+      ctx.beginPath();
+      ctx.moveTo(sx-30,sy+60);
+      ctx.quadraticCurveTo(sx-40,sy-10,sx-24,sy-55);
+      ctx.quadraticCurveTo(sx,sy-85,sx+24,sy-55);
+      ctx.quadraticCurveTo(sx+40,sy-10,sx+30,sy+60);
+      ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+
+    // ---- BÙNG NỔ: fires once at age===BURST (3.2s), then the shockwave
+    // ring/particles play out through the remaining ~0.3s before
+    // applyGravity() hits age=total and calls _finalizeTransform() ----
+    if(age>=BURST){
+      if(!this._shadowWindupBurstDone){
+        this._shadowWindupBurstDone=true;
+        screenShake=Math.max(screenShake,14);
+        sfxVoidExplode?.();
+        for(let i=0;i<22;i++){
+          const ang=rng()*Math.PI*2,spd=rng()*6+3;
+          hitEffects.push({x:rx,y:ry-40,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd*0.6-2,life:36,maxLife:36,particle:true,size:rndInt(6,14),color:rndChoice(["#0a0a10","#6654ff","#bb44ff","white"])});
+        }
+        hitEffects.push({x:rx,y:footY,life:30,maxLife:30,color:"#6654ff",ring:true,big:true});
+        hitEffects.push({x:rx,y:footY,life:40,maxLife:40,color:"white",ring:true,big:true,delay:4});
+      }
+      const burstProg=(age-BURST)/Math.max(1,total-BURST);
+      if(burstProg<0.3){
+        ctx.save();ctx.setTransform(1,0,0,1,0,0);
+        ctx.globalAlpha=Math.max(0,(0.3-burstProg)/0.3)*0.5;
+        ctx.fillStyle="white";ctx.fillRect(0,0,W,H);
+        ctx.restore();
+      }
+    }
   }
   // Stack indicator for the Hỏa Chủng innate: 10 small flame pips + counter,
   // floating above the fighter's head while V4 is active.
