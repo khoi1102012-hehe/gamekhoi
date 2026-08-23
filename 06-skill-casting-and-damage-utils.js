@@ -1019,11 +1019,31 @@ function drawEarthMinions(p){
 function castSkill(attacker,target,skillNum){
   if(!["GAMEPLAY","CHALLENGE","ROAD"].includes(gameState))return;
   if(attacker.hp<=0||attacker.stunTimer>0||attacker.isShielding)return;
+  if(attacker.transformWindupTimer>0)return; // mid wind-up (currently only SHADOW's V4): lock out all skills, including a second transform, until the sequence finishes
   const sKey=`s${skillNum}`;
   if(attacker.cds[sKey]>0)return;
   if(skillNum===5){
-    // V4 TRANSFORM: transforms instantly on cast — no more fly-up-and-wait
-    // windup delay. The 20-ray spark explosion + V4 skin fire off immediately.
+    if(attacker.charType==="shadow"){
+      // SHADOW V4 — "Bóng Tối Thức Tỉnh": 3.5s (210-frame) wind-up before the
+      // transform actually lands. Reuses the shared transformWindupTimer /
+      // transformLandingTimer state machine (see applyGravity() and
+      // _drawShadowTransformWindup() in 03-fire-status-and-fighter-class.js)
+      // instead of a parallel system — _finalizeTransform() is only invoked
+      // once, from applyGravity(), when the timer reaches 0.
+      attacker.isAttacking=false;attacker.activeSkill=null;
+      attacker.cds.s5=1200;
+      attacker.transformWindupTimer=210; // 3.5s @ 60fps
+      attacker._transformWindupTotal=210;
+      attacker._windupCrackled=false;
+      attacker._shadowRiftCracked=false;
+      attacker._shadowWhispered=false;
+      attacker._shadowWindupBurstDone=false;
+      sfxEnergyCharge(); // rising charge whoosh — kicks off the "Kích hoạt" phase
+      return;
+    }
+    // V4 TRANSFORM (other elements): transforms instantly on cast — no more
+    // fly-up-and-wait windup delay. The 20-ray spark explosion + V4 skin
+    // fire off immediately.
     attacker.isAttacking=false;attacker.activeSkill=null;
     attacker.cds.s5=1200;
     screenShake=Math.max(screenShake,10);
