@@ -1,4 +1,46 @@
 // ================================================================
+//  SHADOW V4 — CINEMATIC CAMERA PUNCH-IN (pre-windup)
+//  Drives the camera during the Shadow "Bóng Tối Thức Tỉnh" wind-up
+//  (see castSkill skillNum===5 in 06, and _drawShadowTransformWindup in 03):
+//   age  0-15 (0.00-0.25s): nothing — camera stays exactly where it is
+//   age 15-45 (0.25-0.75s): camera snaps to center on the caster and zooms
+//                            in hard, up to SHADOW_CAM_ZOOM_MAX (character
+//                            reads roughly boss-sized on screen)
+//   age  45+ (0.75s+)     : holds at max zoom while the 3.5s VFX wind-up
+//                            (_drawShadowTransformWindup) plays out and the
+//                            fighter finally transforms
+//   landing (0.5s)        : eases back down to 1.0 while transformLandingTimer
+//                            runs out, so the zoom doesn't just snap off
+//  Used by updateGameplay / updateChallenge / updateRoad below — each reads
+//  this once per frame and folds it into its own existing camera-follow +
+//  (for CHALLENGE) boss-intro-zoom logic, rather than adding a parallel
+//  camera system.
+// ================================================================
+const SHADOW_CAM_ZOOM_MAX=2.5;
+const SHADOW_CAM_DELAY=15;      // 0.25s: absolutely nothing happens yet
+const SHADOW_CAM_ZOOMIN_END=45; // 0.75s elapsed: punch-in finished, VFX wind-up begins exactly here
+function shadowCamZoomState(p){
+  if(!p||p.charType!=="shadow")return{zoom:1.0,active:false};
+  if(p.transformWindupTimer>0){
+    const total=p._transformWindupTotal||255;
+    const age=total-p.transformWindupTimer;
+    if(age<SHADOW_CAM_DELAY)return{zoom:1.0,active:false};
+    if(age<SHADOW_CAM_ZOOMIN_END){
+      const t=(age-SHADOW_CAM_DELAY)/(SHADOW_CAM_ZOOMIN_END-SHADOW_CAM_DELAY);
+      const eased=1-Math.pow(1-t,3); // ease-out cubic: fast punch, settles into place
+      return{zoom:1.0+(SHADOW_CAM_ZOOM_MAX-1.0)*eased,active:true};
+    }
+    return{zoom:SHADOW_CAM_ZOOM_MAX,active:true};
+  }
+  if(p.transformLandingTimer>0&&p.transformActive&&p.charType==="shadow"){
+    const t=1-(p.transformLandingTimer/30);
+    const eased=t*t;
+    return{zoom:SHADOW_CAM_ZOOM_MAX+(1.0-SHADOW_CAM_ZOOM_MAX)*eased,active:true};
+  }
+  return{zoom:1.0,active:false};
+}
+
+// ================================================================
 //  FROST WORLD-SPACE FX — drawn in absolute coordinates (not the per-fighter scaled transform)
 // ================================================================
 // THUNDER DASH TRAIL: the electric line left behind by Thunder Dash. Each
@@ -1076,13 +1118,25 @@ function updateGameplay(floorY){
   }
   for(const p of[p1,p2]){p.x=clamp(p.x,40,worldW-40);if(p.attackCooldown>0){p.attackCooldown--;if(p.attackCooldown===0&&p.ultiTimer===0){p.isAttacking=false;p.activeSkill=null;}}}
 
-  // Camera follows p1 across the expanded (2.5x) arena
+  // Camera follows p1 across the expanded (2.5x) arena — except while a
+  // Shadow V4 wind-up is punching the camera in on the caster (see
+  // shadowCamZoomState() above).
+  const _scz=shadowCamZoomState(p1);
   const CAM_L=W*0.35, CAM_R=W*0.55;
-  if(p1.x-campX>CAM_R) campX=p1.x-CAM_R;
-  else if(p1.x-campX<CAM_L) campX=p1.x-CAM_L;
+  if(_scz.active){
+    const targetCam=clamp(p1.x-W*0.5,0,Math.max(0,worldW-W));
+    campX+=(targetCam-campX)*0.16;
+  }else{
+    if(p1.x-campX>CAM_R) campX=p1.x-CAM_R;
+    else if(p1.x-campX<CAM_L) campX=p1.x-CAM_L;
+  }
   campX=clamp(campX,0,Math.max(0,worldW-W));
 
   ctx.save();ctx.translate(-campX,0);
+  if(_scz.zoom!==1.0){
+    const pivotX=p1.x,pivotY=floorY-80;
+    ctx.translate(pivotX,pivotY);ctx.scale(_scz.zoom,_scz.zoom);ctx.translate(-pivotX,-pivotY);
+  }
   drawFloor(floorY,false,campX);
   updateProjectiles(floorY,p2);
   _compact(puppets,pu=>pu.hp>0&&pu.life>0);
@@ -1268,10 +1322,16 @@ function updateChallenge(w,h){
   if(allDead&&challengeBossSpawned&&challengeEnemies.length===0&&challengeState!=="DONE"){challengeResult="WIN";challengeState="DONE";}
 
   // Camera follows p1 across the expanded (2.5x) arena — except during the
-  // boss cinematic, where it slowly pans toward the unfolding scene instead.
+  // boss cinematic (pans toward the unfolding scene) or a Shadow V4
+  // wind-up (punches in on the caster — see shadowCamZoomState() above).
+  const _scz=shadowCamZoomState(p1);
   if(challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager){
     const targetCam=clamp(bossIntroManager.focusX-w*0.45,0,Math.max(0,worldW-w));
     campX+=(targetCam-campX)*0.045;
+  }else if(_scz.active){
+    const targetCam=clamp(p1.x-w*0.5,0,Math.max(0,worldW-w));
+    campX+=(targetCam-campX)*0.16;
+    campX=clamp(campX,0,Math.max(0,worldW-w));
   }else{
     const CAM_L=w*0.35, CAM_R=w*0.55;
     if(p1.x-campX>CAM_R) campX=p1.x-CAM_R;
@@ -1280,13 +1340,13 @@ function updateChallenge(w,h){
   }
 
   const introActive=challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager;
-  const camZoom=introActive?bossIntroManager.zoom:1.0;
+  const camZoom=introActive?bossIntroManager.zoom:_scz.zoom;
 
   ctx.save();ctx.translate(-campX,0);
   if(camZoom!==1.0){
     // Real camera zoom: actually scales everything drawn in this block
     // (floor, characters, effects) around the cinematic focus point.
-    const pivotX=introActive?bossIntroManager.focusX:campX+w/2, pivotY=floorY-80;
+    const pivotX=introActive?bossIntroManager.focusX:(_scz.active?p1.x:campX+w/2), pivotY=floorY-80;
     ctx.translate(pivotX,pivotY);ctx.scale(camZoom,camZoom);ctx.translate(-pivotX,-pivotY);
   }
   drawFloor(floorY,false,campX);
@@ -1738,9 +1798,17 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   // frame's knockback), otherwise a forward-only camera would keep re-pinning
   // a knocked-back player to its old edge every frame — the "văng vô map bị
   // kẹt" bug.
+  const _scz=shadowCamZoomState(p1);
   const CAM_MARGIN_LEFT=W*0.28, CAM_MARGIN_RIGHT=W*0.55;
-  if(p1.x-roadCameraX>CAM_MARGIN_RIGHT) roadCameraX=p1.x-CAM_MARGIN_RIGHT;
-  else if(p1.x-roadCameraX<CAM_MARGIN_LEFT) roadCameraX=p1.x-CAM_MARGIN_LEFT;
+  if(_scz.active){
+    // Shadow V4 wind-up punch-in: camera snaps to center on the caster
+    // instead of the normal forward/backward dead-zone follow.
+    const targetCam=Math.max(0,p1.x-W*0.5);
+    roadCameraX+=(targetCam-roadCameraX)*0.16;
+  }else{
+    if(p1.x-roadCameraX>CAM_MARGIN_RIGHT) roadCameraX=p1.x-CAM_MARGIN_RIGHT;
+    else if(p1.x-roadCameraX<CAM_MARGIN_LEFT) roadCameraX=p1.x-CAM_MARGIN_LEFT;
+  }
   roadCameraX=Math.max(0,roadCameraX);
 
   p1.x=Math.max(p1.x,roadCameraX+40);
@@ -1828,6 +1896,10 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
 
   ctx.save();
   ctx.translate(-roadCameraX,0);
+  if(_scz.zoom!==1.0){
+    const pivotX=p1.x,pivotY=floorY-80;
+    ctx.translate(pivotX,pivotY);ctx.scale(_scz.zoom,_scz.zoom);ctx.translate(-pivotX,-pivotY);
+  }
   ctx.fillStyle="#13263b";
   const stripeStart=Math.floor(roadCameraX/300)*300;
   for(let i=0;i<40;i++){ const gx=stripeStart+i*300; ctx.fillRect(gx+40,floorY-260,3,260); }
