@@ -321,16 +321,23 @@ class Fighter {
     if(isRedV4||isThunderV4||isFireV2)ctx.restore();
     if(this.transformWindupTimer>0){
       const _windupTotal=this._transformWindupTotal||360;
-      const _windupProg=1-(this.transformWindupTimer/_windupTotal);
-      const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="fire"?"🔥 CHUYỂN HÓA FLAME V2 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
-      _text(rx,ry-105,_windupText,"white","9px Arial bold");
-      // Show phase indicator. SHADOW stands its ground the whole time (no
-      // rise/descend flight), so it gets its own awaken -> drain -> burst
-      // labels instead of the generic fly-up-and-land phrasing.
-      const _phase=(this.charType==="shadow")
-        ? (_windupProg<0.4?"Thức tỉnh bóng tối":_windupProg<0.86?"Hút năng lượng":"Bùng nổ")
-        : (_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống");
-      _text(rx,ry-115,`[${_phase}]`,"#aaa","7px Arial");
+      // SHADOW reserves its first 45 frames (0.75s) for the camera
+      // delay+punch-in (see shadowCamZoomState() in 07) with NOTHING drawn —
+      // including this label — so it doesn't hang in front of the zoom.
+      const _preroll=(this.charType==="shadow")?45:0;
+      const _age=_windupTotal-this.transformWindupTimer;
+      if(_age>=_preroll){
+        const _windupProg=(_age-_preroll)/Math.max(1,_windupTotal-_preroll);
+        const _windupText=this.charType==="red"?"🔥 TRIỆU HỒI HỎA NGỤC 🔥":this.charType==="fire"?"🔥 CHUYỂN HÓA FLAME V2 🔥":this.charType==="earth"?"🗿 LUYỆN THẠCH GIÁP 🗿":this.charType==="thunder"?"⚡ GỌI THẦN SẤM ⚡":this.charType==="frost"?"❄️ HÓA RỒNG BĂNG ❄️":this.charType==="water"?"🌊 THIÊN THẦN GIÁNG THẾ 🌊":this.charType==="shadow"?"😈 MỞ CỬA ĐỊA NGỤC 😈":"🌪️ THỎ BỒNG BỘT 🌪️";
+        _text(rx,ry-105,_windupText,"white","9px Arial bold");
+        // Show phase indicator. SHADOW stands its ground the whole time (no
+        // rise/descend flight), so it gets its own awaken -> drain -> burst
+        // labels instead of the generic fly-up-and-land phrasing.
+        const _phase=(this.charType==="shadow")
+          ? (_windupProg<0.4?"Thức tỉnh bóng tối":_windupProg<0.86?"Hút năng lượng":"Bùng nổ")
+          : (_windupProg<1/3?"Bay lên":_windupProg<3/4?"Bùng phát":"Đáp xuống");
+        _text(rx,ry-115,`[${_phase}]`,"#aaa","7px Arial");
+      }
     }
     else if(this.stunTimer>0) _text(rx,ry-105,"⛓ STUNNED ⛓","orange","9px Arial bold");
     else if(this.slowTimer>0) _text(rx,ry-105,"❄️ SLOWED ❄️","deepskyblue","9px Arial bold");
@@ -1462,7 +1469,17 @@ class Fighter {
   //                            applyGravity() gọi đúng 1 lần khi age=210.
   // ================================================================
   _drawShadowTransformWindup(rx,ry,af,age,total){
-    const T1=30,T2=84,T3=144,T4=180,BURST=192; // frame marks (60fps, total=210)
+    // First 45 frames (0.75s = 0.25s nothing + 0.5s camera punch-in, handled
+    // entirely by shadowCamZoomState()/the camera code in
+    // 07-fx-ticks-ui-and-main-menu.js) are deliberately blank here — no aura,
+    // no portal, nothing. The moment the camera finishes zooming in on the
+    // caster, vAge crosses 0 and the original 3.5s (210f) VFX sequence below
+    // plays out exactly as before, just now offset by the punch-in.
+    const PREROLL=45;
+    const vAge=age-PREROLL, vTotal=total-PREROLL;
+    if(vAge<0)return;
+    const T1=30,T2=84,T3=144,T4=180,BURST=192; // frame marks relative to vAge (vTotal=210)
+    age=vAge; total=vTotal;
     const footY=ry+52;
     // ---- one-shot ambient SFX as each phase begins (sfxEnergyCharge already
     // fired once at the moment the skill was cast, in castSkill) ----
