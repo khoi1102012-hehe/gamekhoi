@@ -341,6 +341,7 @@ function drawHpBar(fighter,bx,by,label){
   _text(bx+100,by-12,`${label} (${fighter.charType.toUpperCase()}): ${getHPDisplay(fighter.hp)}/${fighter.maxHp||MAX_HP} HP`,"white","10px Arial bold");
 }
 function drawRageBar(bx,by,bw,bh,fighter){
+  if(fighter.charType==="shadow"){_drawShadowRageBar(bx,by,bw,bh,fighter);return;}
   const cdMax=1200,cd=fighter.cds.s5||0;
   const ready = cd<=0;
   const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
@@ -354,6 +355,47 @@ function drawRageBar(bx,by,bw,bh,fighter){
     if(rng()<0.6)fighter._smokeParts.push({x:bx+rng()*bw,y:by,vy:-rng()*0.8-0.3,life:30,r:rng()*4+2});
     _compact(fighter._smokeParts,s=>s.life>0);
     fighter._smokeParts.forEach(s=>{s.y+=s.vy;s.life--;ctx.beginPath();ctx.fillStyle=`rgba(180,180,180,${Math.max(0,s.life/30*0.5)})`;ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();});
+  }
+  _text(bx+bw/2,by+bh/2,ready?"NỘ (SẴN SÀNG)":"NỘ","white","9px Arial bold");
+}
+// SHADOW's own rage bar: near-black fill, small purple tentacles that wiggle
+// along the filled edge, and black smoke (instead of the generic gray) once
+// full — kept fully separate from drawRageBar() above so every other
+// character's bar is untouched.
+function _drawShadowRageBar(bx,by,bw,bh,fighter){
+  const cdMax=1200,cd=fighter.cds.s5||0;
+  const ready = cd<=0;
+  const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
+  _rect(bx,by,bw,bh,"#0a0612","#000",1);
+  const fillW=Math.max(0,bw*fillFrac);
+  const grad=ctx.createLinearGradient(bx,by,bx+fillW,by);
+  grad.addColorStop(0,"#170a26");
+  grad.addColorStop(1,ready?"#6a2fd9":"#3a1a5e");
+  ctx.fillStyle=grad;
+  ctx.fillRect(bx,by,fillW,bh);
+  _rectOutline(bx,by,bw,bh,"#bb44ff",1);
+  // wiggling tentacles poking up out of the filled portion
+  const tentCount=Math.max(2,Math.round(fillFrac*8));
+  for(let i=0;i<tentCount;i++){
+    const tx=bx+(i+0.5)*(bw/8);
+    if(tx>bx+fillW+3)continue;
+    const wig=Math.sin(frameCount*0.15+i*1.7)*3;
+    const tipLift=2+Math.abs(Math.sin(frameCount*0.08+i*0.9))*3;
+    ctx.save();
+    ctx.strokeStyle="#6654ff";ctx.lineWidth=2;ctx.lineCap="round";
+    ctx.shadowColor="#bb44ff";ctx.shadowBlur=4;
+    ctx.beginPath();
+    ctx.moveTo(tx,by+1);
+    ctx.quadraticCurveTo(tx+wig,by-bh*0.55,tx+wig*1.4,by-bh*0.9-tipLift);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // black smoke once full/ready (or while actively transformed)
+  if(ready||fighter.transformActive){
+    if(!fighter._shadowRageSmoke)fighter._shadowRageSmoke=[];
+    if(rng()<0.7)fighter._shadowRageSmoke.push({x:bx+rng()*bw,y:by,vx:(rng()-0.5)*0.4,vy:-rng()*0.9-0.3,life:34,r:rng()*5+3});
+    _compact(fighter._shadowRageSmoke,s=>s.life>0);
+    fighter._shadowRageSmoke.forEach(s=>{s.x+=s.vx;s.y+=s.vy;s.life--;ctx.beginPath();ctx.fillStyle=`rgba(8,4,14,${Math.max(0,s.life/34*0.75)})`;ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();});
   }
   _text(bx+bw/2,by+bh/2,ready?"NỘ (SẴN SÀNG)":"NỘ","white","9px Arial bold");
 }
