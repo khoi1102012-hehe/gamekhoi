@@ -1,4 +1,18 @@
 // ================================================================
+//  startTimeFreeze(frames, caster) — the generic time-stop trigger.
+//  Called by any skill wind-up that wants everything else to hold still.
+//  Decremented once per frame at the top of update() below; the actual
+//  freezing happens at each mode's own update-call-sites (updateGameplay/
+//  updateChallenge/updateRoad), which skip advancing enemies/bosses/
+//  projectiles/the other fighter while globalTimeFreeze>0 — everyone except
+//  `caster` just holds their current frame, still fully drawn.
+// ================================================================
+function startTimeFreeze(frames,caster){
+  globalTimeFreeze=Math.max(globalTimeFreeze,frames);
+  globalTimeFreezeCaster=caster;
+}
+
+// ================================================================
 //  SHADOW V4 — CINEMATIC CAMERA PUNCH-IN (pre-windup)
 //  Drives the camera during the Shadow "Bóng Tối Thức Tỉnh" wind-up
 //  (see castSkill skillNum===5 in 06, and _drawShadowTransformWindup in 03):
@@ -1064,6 +1078,7 @@ function update(){
   let dx=0,dy=0;
   if(screenShake>0){dx=rndInt(-screenShake,screenShake);dy=rndInt(-screenShake,screenShake);screenShake*=0.96;if(screenShake<0.8)screenShake=0;}
   frameCount++;
+  if(globalTimeFreeze>0){globalTimeFreeze--;if(globalTimeFreeze===0)globalTimeFreezeCaster=null;}
   if(comboTimer>0){comboTimer--;if(comboTimer===0)comboCount=0;}
   if(_hitSfxCooldown>0)_hitSfxCooldown--;
   updateBurnEffects();
@@ -1099,9 +1114,15 @@ function update(){
 // ================================================================
 function updateGameplay(floorY){
   const worldW=W*MAP_SCALE;
-  if(frameCount%60===0){for(const p of[p1,p2]){if(p.charType==="red"&&p.hp>0)p.hp=Math.min(p.maxHp||MAX_HP,p.hp+1);}}
-  for(const p of[p1,p2]){if(p.ultiTimer>0&&p.activeSkill==="water_s4"){p.tsunamiWaveXL-=8;p.tsunamiWaveXR+=8;}}
+  // GLOBAL TIME FREEZE: while active, every fighter except the caster
+  // (globalTimeFreezeCaster) skips its own ticking/movement/gravity below —
+  // see startTimeFreeze() in this file and its trigger in castSkill (06).
+  const timeFrozen=globalTimeFreeze>0;
+  const tfSkip=p=>timeFrozen&&p!==globalTimeFreezeCaster;
+  if(frameCount%60===0){for(const p of[p1,p2]){if(!tfSkip(p)&&p.charType==="red"&&p.hp>0)p.hp=Math.min(p.maxHp||MAX_HP,p.hp+1);}}
+  for(const p of[p1,p2]){if(!tfSkip(p)&&p.ultiTimer>0&&p.activeSkill==="water_s4"){p.tsunamiWaveXL-=8;p.tsunamiWaveXR+=8;}}
   for(const p of[p1,p2]){
+    if(tfSkip(p))continue;
     if(p.slowTimer>0)p.slowTimer--;if(p.stunTimer>0)p.stunTimer--;
     if(p.thunderFTimer>0){p.thunderFTimer--;if(p.thunderFTimer===0)p.thunderFCount=0;}
     for(const s in p.cds)if(p.cds[s]>0)p.cds[s]--;
@@ -1118,6 +1139,7 @@ function updateGameplay(floorY){
     updateShadow(p);
   }
   for(const[attacker,pvpTarget]of[[p1,p2],[p2,p1]]){
+    if(tfSkip(attacker))continue;
     if(attacker.ultiTimer>0){
       attacker.ultiTimer--;
       const d=dist(attacker.x,attacker.y,pvpTarget.x,pvpTarget.y);
@@ -1132,10 +1154,10 @@ function updateGameplay(floorY){
     }
 
   }
-  for(const p of[p1,p2]){if(p.charType==="wind"&&p.windBoostTimer>0)p.windBoostTimer--;}
+  for(const p of[p1,p2]){if(!tfSkip(p)&&p.charType==="wind"&&p.windBoostTimer>0)p.windBoostTimer--;}
   const msb=4.3125;
   if(p1.hp>0&&p2.hp>0){
-    const p1CanMove=(p1.ultiTimer===0||p1.activeSkill==="water_s4")&&p1.stunTimer===0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0;
+    const p1CanMove=!tfSkip(p1)&&(p1.ultiTimer===0||p1.activeSkill==="water_s4")&&p1.stunTimer===0&&p1.transformWindupTimer===0&&p1.transformLandingTimer===0;
     if(p1CanMove){
       let spd=msb*(p1.isShielding?0.35:1);
       spd*=p1.speedMult||1;
@@ -1153,12 +1175,14 @@ function updateGameplay(floorY){
       if(goUp&&!p1._upPrevInput)p1.jump();
       p1._upPrevInput=goUp;
     }
-    p1.applyGravity(floorY);
+    if(!tfSkip(p1))p1.applyGravity(floorY);
     // PVP mode has been removed — the second fighter is always bot-controlled
-    if(p2.ultiTimer===0)updateBot();
-    p2.applyGravity(floorY);
+    if(!tfSkip(p2)){
+      if(p2.ultiTimer===0)updateBot();
+      p2.applyGravity(floorY);
+    }
   }
-  for(const p of[p1,p2]){p.x=clamp(p.x,40,worldW-40);if(p.attackCooldown>0){p.attackCooldown--;if(p.attackCooldown===0&&p.ultiTimer===0){p.isAttacking=false;p.activeSkill=null;}}}
+  for(const p of[p1,p2]){if(tfSkip(p))continue;p.x=clamp(p.x,40,worldW-40);if(p.attackCooldown>0){p.attackCooldown--;if(p.attackCooldown===0&&p.ultiTimer===0){p.isAttacking=false;p.activeSkill=null;}}}
 
   // Camera follows p1 across the expanded (2.5x) arena — except while a
   // Shadow V4 wind-up is punching the camera in on the caster (see
@@ -1180,9 +1204,9 @@ function updateGameplay(floorY){
     ctx.translate(pivotX,pivotY);ctx.scale(_scz.zoom,_scz.zoom);ctx.translate(-pivotX,-pivotY);
   }
   drawFloor(floorY,false,campX);
-  updateProjectiles(floorY,p2);
+  if(!timeFrozen)updateProjectiles(floorY,p2);
   _compact(puppets,pu=>pu.hp>0&&pu.life>0);
-  puppets.forEach(pu=>pu.update(floorY,worldW));
+  if(!timeFrozen)puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);drawEarthMinions(p2);
   drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
@@ -1274,7 +1298,9 @@ function updateChallenge(w,h){
     if(p1.ultiTimer===0){if(p1.charType==="wind"&&p1.activeSkill==="wind_s4")spawnWindSideCyclones(p1);p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
   }
 
-  _compact(challengeEnemies,e=>{if(e.hp>0&&p1.hp>0)e.update(shadowSoulTarget(p1),floorY,worldW);return e.hp>0;});
+  const timeFrozen=globalTimeFreeze>0; // caster is always p1 here (only playable fighter in CHALLENGE)
+  _compact(challengeEnemies,e=>{if(!timeFrozen&&e.hp>0&&p1.hp>0)e.update(shadowSoulTarget(p1),floorY,worldW);return e.hp>0;});
+  if(!timeFrozen)
   if(challengeEnemies.length===0&&challengeState==="WAVE"){
     if(challengeWaveIdx<challengeWaveSched.length){_challengeWaveTimer++;if(_challengeWaveTimer>=120){_challengeWaveTimer=0;_spawnChallengeWave(floorY,worldW);}}
     else if(!challengeBossSpawned){
@@ -1342,7 +1368,7 @@ function updateChallenge(w,h){
         challengeState="BOSS";
       }
     }
-  }else _challengeWaveTimer=0;
+  }else if(!timeFrozen)_challengeWaveTimer=0;
   // Boss intro cinematic
   if(challengeBossIntroState==="INTRO_RUNNING"&&bossIntroManager){
     const introResult=bossIntroManager.update();
@@ -1358,7 +1384,7 @@ function updateChallenge(w,h){
     }
   }
   
-  challengeBosses.forEach(b=>{if(!b.dead&&b.hp>0&&p1.hp>0){b.update(shadowSoulTarget(p1),floorY,worldW);if(b.summonEnemies.length){challengeEnemies.push(...b.summonEnemies);b.summonEnemies=[];}}});
+  if(!timeFrozen)challengeBosses.forEach(b=>{if(!b.dead&&b.hp>0&&p1.hp>0){b.update(shadowSoulTarget(p1),floorY,worldW);if(b.summonEnemies.length){challengeEnemies.push(...b.summonEnemies);b.summonEnemies=[];}}});
   if(p1.hp<=0&&challengeState!=="DONE"){challengeResult="LOSE";challengeState="DONE";}
   const allDead=challengeBosses.length>0&&challengeBosses.every(b=>b.dead);
   if(allDead&&challengeBossSpawned&&challengeEnemies.length===0&&challengeState!=="DONE"){challengeResult="WIN";challengeState="DONE";}
@@ -1392,9 +1418,9 @@ function updateChallenge(w,h){
     ctx.translate(pivotX,pivotY);ctx.scale(camZoom,camZoom);ctx.translate(-pivotX,-pivotY);
   }
   drawFloor(floorY,false,campX);
-  updateProjectiles(floorY,null);
+  if(!timeFrozen)updateProjectiles(floorY,null);
   _compact(puppets,pu=>pu.hp>0&&pu.life>0);
-  puppets.forEach(pu=>pu.update(floorY,worldW));
+  if(!timeFrozen)puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);
   drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
@@ -1881,6 +1907,8 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     if(p1.ultiTimer===0){if(p1.charType==="wind"&&p1.activeSkill==="wind_s4")spawnWindSideCyclones(p1);p1.isAttacking=false;p1.activeSkill=null;if(p1.charType==="earth")p1.earthPillars=[];}
   }
 
+  const timeFrozen=globalTimeFreeze>0; // caster is always p1 here (only playable fighter in ROAD)
+  if(!timeFrozen)
   if(roadState==="RUN"){
     const revealX=p1.x+W*0.65;
     roadEnemyPlan.forEach(pl=>{
@@ -1926,8 +1954,8 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
     }
   }
 
-  _compact(roadEnemies,e=>{ if(e.hp>0&&p1.hp>0)e.update(pickRoadMeleeTarget(e),floorY+terrainHeightAt(e.x),projectiles); return e.hp>0 && e.x>roadCameraX-200; });
-  roadTraps.forEach(t=>{ if(p1.hp>0)t.update(shadowSoulTarget(p1),floorY+terrainHeightAt(t.x)); });
+  _compact(roadEnemies,e=>{ if(!timeFrozen&&e.hp>0&&p1.hp>0)e.update(pickRoadMeleeTarget(e),floorY+terrainHeightAt(e.x),projectiles); return e.hp>0 && e.x>roadCameraX-200; });
+  if(!timeFrozen)roadTraps.forEach(t=>{ if(p1.hp>0)t.update(shadowSoulTarget(p1),floorY+terrainHeightAt(t.x)); });
   _compact(roadWalls,w=>w.hp>0 || w.x>roadCameraX-100);
 
   if(p1.hp<=0 && roadState!=="LOST"){
@@ -1948,14 +1976,14 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   drawRoadTerrain(floorY);
   roadTraps.forEach(t=>t.draw(floorY+terrainHeightAt(t.x)));
   roadWalls.forEach(w=>w.draw(floorY+terrainHeightAt(w.x)));
-  updateProjectiles(floorY,null);
+  if(!timeFrozen)updateProjectiles(floorY,null);
   roadEnemies.forEach(e=>e.draw());
   if(roadBoss && !roadBoss.dead) roadBoss.draw();
   _compact(puppets,pu=>pu.hp>0&&pu.life>0);
   tickEarthMud(p1);
   tickEarthMeteor(p1);
   tickEarthMinions(p1,roadCameraX+W);
-  puppets.forEach(pu=>pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W));
+  puppets.forEach(pu=>{if(!timeFrozen)pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W);});
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);
   drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
