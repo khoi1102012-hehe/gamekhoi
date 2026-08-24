@@ -174,7 +174,10 @@ class Fighter {
   // actually switches on.
   _finalizeTransform(floorY){
     this.transformLandingTimer=30;
-    this.transformActive=true;this.transformTimer=600;this.attackCooldown=20;
+    // Transform duration: SHADOW gets 20s (1200f — pairs with its 30s cast
+    // cooldown above in castSkill), every other element keeps the original
+    // 10s (600f).
+    this.transformActive=true;this.transformTimer=(this.charType==="shadow"?1200:600);this.attackCooldown=20;
     const buffs=this.getTransformBuffs();
     if(this.charType==="frost"||this.charType==="red")this.isFlying=buffs.can_fly||false;
     if(this.charType==="shadow")this.v4LifestealPct=buffs.lifesteal||0;
