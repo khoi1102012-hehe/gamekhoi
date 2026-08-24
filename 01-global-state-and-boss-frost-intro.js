@@ -51,6 +51,19 @@ let puppets      = [];
 let frameCount   = 0;
 
 // ================================================================
+//  GLOBAL TIME FREEZE — generic, reusable "stop time" mechanism.
+//  Any skill can call startTimeFreeze(frames, caster) (see
+//  07-fx-ticks-ui-and-main-menu.js) to freeze everyone/everything EXCEPT
+//  `caster` for `frames` frames: enemies/bosses stop updating, projectiles
+//  stop moving, the other fighter stops moving — while the caster keeps
+//  animating normally (e.g. mid transform wind-up). Currently used by
+//  SHADOW's V4 wind-up; built generic on purpose so a future skill (e.g. a
+//  THUNDER time-stop ultimate) can call the exact same function.
+let globalTimeFreeze       = 0;    // frames remaining; >0 means time is frozen
+let globalTimeFreezeCaster = null; // the one Fighter exempt from the freeze
+
+
+// ================================================================
 //  PERF: in-place array compaction (replaces `arr = arr.filter(pred)`)
 // ----------------------------------------------------------------
 //  `.filter()` allocates and returns a brand-new array every call.
