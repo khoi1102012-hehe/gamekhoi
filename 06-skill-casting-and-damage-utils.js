@@ -140,6 +140,12 @@ function triggerHoaChungExplosion(attacker,centerTarget){
   });
 }
 function applyDamage(target,damage,attacker){
+  // TRANSFORM WIND-UP IMMUNITY: while charging a wind-up transform (currently
+  // only SHADOW's 4.25s "Bóng Tối Thức Tỉnh" — see castSkill skillNum===5 /
+  // applyGravity in 03), the fighter stands frozen and defenseless. Without
+  // this, any mob nearby just walks up and kills them mid-animation. Fully
+  // invulnerable (no damage, no CC) for the whole wind-up.
+  if(target instanceof Fighter&&target.transformWindupTimer>0)return;
   // EARTH MUD IMMUNITY: while in mud form, earth fighter is immune to all damage and CC
   if(target instanceof Fighter&&target.charType==="earth"&&target.earthMudActive)return;
   // THUNDER DASH IMMUNITY: while dashing as a bolt of lightning, the thunder
