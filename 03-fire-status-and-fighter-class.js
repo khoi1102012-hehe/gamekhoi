@@ -1483,17 +1483,27 @@ class Fighter {
     if(vAge<0)return;
     const T1=30,T2=84,T3=144,T4=180,BURST=192; // frame marks relative to vAge (vTotal=210)
     age=vAge; total=vTotal;
-    const footY=ry+52;
+    // footY lowered a bit (was ry+52) so the ground portal actually hugs
+    // Shadow's feet at the character's real height instead of reading as
+    // slightly "floating".
+    const footY=ry+64;
     // ---- one-shot ambient SFX as each phase begins (sfxEnergyCharge already
     // fired once at the moment the skill was cast, in castSkill) ----
     if(!this._shadowRiftCracked&&age>=T1){this._shadowRiftCracked=true;sfxVoidCrack?.();}
     if(!this._shadowWhispered&&age>=T2){this._shadowWhispered=true;sfxShadowWhisper?.();}
 
+    // The portal (pool + ring + tentacles) doesn't just cut off — it
+    // dissolves away in a rising-smoke sweep the instant BÙNG NỔ fires,
+    // matching the same dissolve language as Void Tentacle/Ultimate
+    // (_shadowTentacleDissolve / _shadowUltiDissolve in 06).
+    const dissolveT=age>=BURST?Math.min(1,(age-BURST)/Math.max(1,total-BURST)):0;
+    const portalAlphaMult=1-dissolveT;
+
     // ---- growing shadow pool + black-hole/portal ring under the feet ----
     const poolProg=Math.min(1,age/T4);
     const poolR=16+poolProg*95;
     ctx.save();
-    ctx.globalAlpha=0.3+0.45*poolProg;
+    ctx.globalAlpha=(0.3+0.45*poolProg)*portalAlphaMult;
     const poolGrad=ctx.createRadialGradient(rx,footY,4,rx,footY,poolR);
     poolGrad.addColorStop(0,"rgba(8,4,16,0.95)");
     poolGrad.addColorStop(0.55,"rgba(90,40,180,0.35)");
@@ -1505,10 +1515,32 @@ class Fighter {
       const ringProg=Math.min(1,(age-T1)/(T4-T1));
       const ringR=12+ringProg*(poolR-4);
       ctx.save();
-      ctx.globalAlpha=0.5+0.4*ringProg;
+      ctx.globalAlpha=(0.5+0.4*ringProg)*portalAlphaMult;
       ctx.strokeStyle="#bb44ff";ctx.shadowColor="#6654ff";ctx.shadowBlur=14;ctx.lineWidth=2.5;
       ctx.beginPath();ctx.ellipse(rx,footY,ringR,ringR*0.32,0,0,Math.PI*2);ctx.stroke();
       ctx.restore();
+      // ---- tentacles reaching up out of the portal rim (same visual
+      // language as the Void Tentacle skill / the Nộ bar's tendrils) ----
+      const tentCount=5;
+      for(let i=0;i<tentCount;i++){
+        const baseAng=(i/tentCount)*Math.PI*2+af*0.01;
+        const bx=rx+Math.cos(baseAng)*ringR*0.85,by=footY+Math.sin(baseAng)*ringR*0.85*0.32;
+        const h=(14+ringProg*44)*(1-dissolveT*0.6);
+        const sway=Math.sin(af*0.13+i*1.7)*9;
+        ctx.save();
+        ctx.globalAlpha=(0.45+0.35*ringProg)*portalAlphaMult;
+        ctx.strokeStyle="#6654ff";ctx.shadowColor="#bb44ff";ctx.shadowBlur=7;ctx.lineWidth=3;ctx.lineCap="round";
+        ctx.beginPath();
+        ctx.moveTo(bx,by);
+        ctx.quadraticCurveTo(bx+sway*0.6,by-h*0.55,bx+sway,by-h);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    // ---- dissolve: portal + tentacles sweep upward into rising smoke as
+    // they fade, instead of just vanishing the moment the burst fires ----
+    if(dissolveT>0&&rng()<0.55){
+      hitEffects.push({x:rx+rndInt(-poolR*0.6,poolR*0.6),y:footY,vx:(rng()-0.5)*0.6,vy:-rng()*1.6-0.6,life:34,maxLife:34,particle:true,size:rndInt(6,12),color:rndChoice(["#1a0a24","#3a0a55","#6654ff"])});
     }
 
     // ---- inbound dark/purple energy particles converging on the caster ----
