@@ -1037,7 +1037,7 @@ function castSkill(attacker,target,skillNum){
       // instead of a parallel system — _finalizeTransform() is only invoked
       // once, from applyGravity(), when the timer reaches 0.
       attacker.isAttacking=false;attacker.activeSkill=null;
-      attacker.cds.s5=1200;
+      attacker.cds.s5=1800; // 30s hồi chiêu (riêng cho Shadow — các charType khác vẫn 1200/20s, xem nhánh else bên dưới)
       // 45 extra frames (0.75s) up front: 15f (0.25s) of nothing, then a
       // 30f (0.5s) camera punch-in/zoom (see shadowCamZoomState() in
       // 07-fx-ticks-ui-and-main-menu.js) — the existing 3.5s (210f) VFX
@@ -1048,6 +1048,11 @@ function castSkill(attacker,target,skillNum){
       attacker._shadowRiftCracked=false;
       attacker._shadowWhispered=false;
       attacker._shadowWindupBurstDone=false;
+      // TIME FREEZE: everything except the caster (enemies/bosses,
+      // projectiles, the other fighter) holds still for the whole wind-up —
+      // otherwise a mob just walks up and gets a free kill on a fighter who
+      // can't move for 4.25s. Generic helper — see startTimeFreeze() in 07.
+      startTimeFreeze(255,attacker);
       sfxEnergyCharge(); // rising charge whoosh — kicks off the "Kích hoạt" phase
       return;
     }
