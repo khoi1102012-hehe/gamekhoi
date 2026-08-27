@@ -60,8 +60,45 @@ function shadowCamZoomState(p){
 // THUNDER DASH TRAIL: the electric line left behind by Thunder Dash. Each
 // segment arms for ~0.3s (18 frames) then detonates once, shocking/slowing/
 // knocking back anyone standing on it, before fading out visually.
+// NOTE: this function now also drives Thunder's other per-frame timers (M1
+// spear windup, Chiêu 2 self sky-strike, giáp ảo countdown) — kept under the
+// original name/call-sites so every game mode picks the new behaviour up
+// automatically without needing extra wiring.
 function tickThunderDash(p){
-  if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
+  if(!p||p.charType!=="thunder")return;
+  // M1 — LÔI THƯƠNG: 0.5s lùi tay lấy đà rồi ném giáo ngay khi timer về 0.
+  if(p.thunderM1WindupTimer>0){
+    p.thunderM1WindupTimer--;
+    if(p.thunderM1WindupTimer===0){
+      projectiles.push({x:p.x+30*p.direction,y:p.y-48,vx:19*p.direction,vy:0,owner:p,target:p.thunderM1Target,
+        damage:8,slow:0,slow_pct:0,color:"#9d4edd",type:"thunder_spear",radius:16});
+      spawnLightningArc(p.x,p.y-60,p.x+40*p.direction,p.y-40);
+    }
+  }
+  // Giáp ảo (Chiêu 2 payoff): đếm ngược hết giờ là mất hẳn, không tự hồi.
+  if(p.thunderShieldTimer>0){
+    p.thunderShieldTimer--;
+    if(p.thunderShieldTimer===0)p.thunderShieldHp=0;
+  }
+  // Chiêu 2 — LÔI ĐIỆN GIÁNG: 0.5s sét rơi xuống vị trí bản thân, chờ thêm
+  // 0.5s rồi phát nổ một lần duy nhất.
+  if(p.thunderCallTimer>0){
+    p.thunderCallTimer--;
+    if(p.thunderCallTimer===30&&!p.thunderCallStruck){
+      p.thunderCallStruck=true;
+      spawnHitEffect(p.thunderCallX,p.thunderCallY-40,"#9d4edd");
+      screenShake=Math.max(screenShake,6);
+    }
+    if(p.thunderCallTimer===0){
+      const R=150*SR;
+      getAllEnemies(p).forEach(t=>{if(t&&t.hp>0&&Math.abs(t.x-p.thunderCallX)<R&&Math.abs(t.y-p.thunderCallY)<R)addElectricDot(t,25,300,p);});
+      p.thunderShieldHp=30;p.thunderShieldTimer=180; // 30 giáp ảo trong 3 giây
+      spawnHitEffect(p.thunderCallX,p.thunderCallY-40,"#FFFFFF");
+      for(let i=0;i<16;i++){const ang=rng()*Math.PI*2,spd=rng()*5+2;hitEffects.push({x:p.thunderCallX,y:p.thunderCallY-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:26,maxLife:26,particle:true,color:rndChoice(["#9d4edd","#4cc9f0","white"])});}
+      screenShake=Math.max(screenShake,16);
+    }
+  }
+  if(!p.thunderDashTrail||!p.thunderDashTrail.length)return;
   p.thunderDashTrail.forEach(seg=>{
     if(seg.armed>0){
       seg.armed--;
