@@ -181,6 +181,10 @@ function applyDamage(target,damage,attacker){
       return;
     }
     if(target.charType==="water"&&target.waterShieldHp>0){target.waterShieldHp-=damage;if(target.waterShieldHp<0){const ov=-target.waterShieldHp;target.waterShieldHp=0;target.hp-=target.isShielding?ov*0.2:ov;target.hp=Math.max(0,target.hp);}return;}
+    // THUNDER — GIÁP ẢO (Chiêu 2 payoff): hấp thụ sát thương giữ máu nguyên
+    // vẹn trong khi còn giáp; hết giáp thì phần dư mới trừ vào máu. Giáp ảo
+    // không tự hồi lại — hết là hết, chỉ được cấp lại khi dùng chiêu lần nữa.
+    if(target.charType==="thunder"&&target.thunderShieldHp>0){target.thunderShieldHp-=damage;if(target.thunderShieldHp<0){const ov=-target.thunderShieldHp;target.thunderShieldHp=0;target.hp-=target.isShielding?ov*0.2:ov;target.hp=Math.max(0,target.hp);}return;}
     if(target.charType==="earth"&&target.activeSkill==="earth_s3"&&attacker){const ref=damage*0.8;if(attacker.hp!==undefined)attacker.hp=Math.max(0,attacker.hp-(attacker.isShielding?ref*0.2:ref));return;}
     let finalDmg=damage;
     if(target.dmgReduceTimer&&target.dmgReduceTimer>0)finalDmg*=0.3;
@@ -250,6 +254,7 @@ function spawnLightningArc(x1,y1,x2,y2){
   lightningArcs.push({pts,life:12,maxLife:12});
 }
 function updateAndDrawLightningArcs(){
+  updateElectricDots(); // tick Lôi's electric DOT list (Chiêu 2 + Chiêu 3/Ulti) — piggybacked here so it runs once/frame in every game mode
   _compact(lightningArcs,a=>a.life>0);
   lightningArcs.forEach(a=>{
     a.life--;
@@ -279,26 +284,61 @@ function addShock(target,attacker){
     for(let i=0;i<16;i++){const ang=rng()*Math.PI*2,spd=rng()*5+2;hitEffects.push({x:target.x,y:target.y-60,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:26,maxLife:26,particle:true,color:rndChoice(["#FFD700","#FFF176","white"])});}
   }
 }
+// ---- THUNDER: Electric DOT (hiệu ứng điện giật theo thời gian) ----
+// Danh sách dùng chung cho Chiêu 2 (Lôi Điện Giáng, 25 dmg/5s) và Chiêu 3/Ulti
+// (Lôi Cầu Phán Quyết, 40 dmg/7s). Mỗi mục tiêu trúng đòn được thêm một entry
+// độc lập, chia đều tổng damage ra các tick cách nhau 15 khung hình (0.25s).
+let electricDots=[];
+function addElectricDot(target,totalDmg,durationFrames,attacker){
+  if(!target||target.hp<=0)return;
+  const interval=15;
+  const ticks=Math.max(1,Math.round(durationFrames/interval));
+  electricDots.push({target,attacker,dmgPerTick:totalDmg/ticks,ticksLeft:ticks,tickTimer:interval,tickInterval:interval});
+}
+function updateElectricDots(){
+  _compact(electricDots,d=>d.ticksLeft>0&&d.target&&d.target.hp>0);
+  electricDots.forEach(d=>{
+    d.tickTimer--;
+    if(d.tickTimer<=0){
+      d.tickTimer=d.tickInterval;
+      applyDamage(d.target,d.dmgPerTick,d.attacker);
+      spawnHitEffect(d.target.x,d.target.y-40,"#9d4edd");
+      d.ticksLeft--;
+    }
+  });
+}
 function aoeHit(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const tr=radius*(tgt.sizeMult||1);if(Math.abs(tgt.x-attacker.x)<tr&&Math.abs(tgt.y-attacker.y)<tr*0.8)applyDamage(tgt,damage,attacker);});}
 function aoeHitAt(attacker,damage,cx,cy,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const tr=radius*(tgt.sizeMult||1);if(Math.abs(tgt.x-cx)<tr&&Math.abs(tgt.y-cy)<tr*0.9)applyDamage(tgt,damage,attacker);});}
-// THUNDER GOD JUDGMENT (ultimate): instead of one flat continuous tick, the
-// map goes dark and ~30-50 individual lightning strikes crash down at random
-// spots for the duration; any enemy caught under a strike takes a real burst
-// of damage, gets knocked up, and leaves a brief lingering shock zone.
+// CHIÊU 3 / CHIÊU CUỐI — LÔI CẦU PHÁN QUYẾT: tụ lực 0.75s -> bắn năng lượng
+// lên trời 0.25s -> quả cầu sét hình thành, chờ 0.25s -> quả cầu liên tục
+// phóng tia sét xuống mọi mục tiêu quanh nó. Mỗi mục tiêu bị trúng nhận 40
+// damage chia đều trong 7 giây (qua addElectricDot); tia sét luôn xuất phát
+// từ quả cầu trên trời (thunderUltiOrbX/Y, khóa vị trí lúc tạo quả cầu).
+// Toàn bộ 4 pha được tính từ attacker.ultiTimer (đếm ngược từ 195 khung hình
+// = 3.25s) nên chỉ cần một timer duy nhất, không cần state pha riêng.
 function thunderJudgmentTick(attacker){
   if(!(attacker.ultiTimer>0))return;
-  if(attacker.animFrame%4===0){
-    const rangeX=520*SR;
-    const sx=attacker.x+rndInt(-rangeX,rangeX);
+  const CHARGE=45,BEAM=15,WAIT=15; // 0.75s + 0.25s + 0.25s
+  const elapsed=195-attacker.ultiTimer;
+  if(elapsed<CHARGE){
+    // Tụ lực: hạt năng lượng bay lên quanh người
+    if(attacker.animFrame%3===0){
+      hitEffects.push({x:attacker.x+rndInt(-30,30),y:attacker.y-30+rndInt(-40,10),vx:0,vy:-2-rng()*1.5,life:16,maxLife:16,particle:true,size:4,color:rndChoice(["#9d4edd","#4cc9f0","white"])});
+    }
+    return;
+  }
+  if(elapsed<CHARGE+BEAM+WAIT)return; // bắn năng lượng lên trời + quả cầu đang hình thành (vẽ ở _drawUlti)
+  // Quả cầu đã hình thành xong — liên tục phóng tia sét xuống mục tiêu quanh nó (~mỗi 0.3s)
+  const activeElapsed=elapsed-(CHARGE+BEAM+WAIT);
+  if(activeElapsed%18===0){
+    const R=620*SR;
     getAllEnemies(attacker).forEach(t=>{
-      if(t&&t.hp>0&&Math.abs(t.x-sx)<65*SR){
-        applyDamage(t,8,attacker);
-        if(t instanceof Fighter)t.vy=-9;
-        addShock(t,attacker);
-        spawnHitEffect(t.x,t.y-60,"#FFFFFF");
+      if(t&&t.hp>0&&dist(attacker.thunderUltiOrbX,attacker.thunderUltiOrbY,t.x,t.y)<R){
+        spawnLightningArc(attacker.thunderUltiOrbX,attacker.thunderUltiOrbY,t.x,t.y-40);
+        if(!attacker.thunderUltiHitSet.has(t)){attacker.thunderUltiHitSet.add(t);addElectricDot(t,40,420,attacker);} // 420 khung = 7s
       }
     });
-    screenShake=Math.max(screenShake,10);
+    screenShake=Math.max(screenShake,6);
   }
 }
 function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(tgt instanceof Fighter&&tgt.charType==="thunder"&&tgt.thunderDashTimer>0)return;const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
@@ -1067,12 +1107,15 @@ function castSkill(attacker,target,skillNum){
     return;}
   if(!(attacker.charType==="shadow"&&skillNum===2)){if(attacker.isAttacking)return;}
   attacker.isAttacking=true;
-  if(gameState==="GAMEPLAY"&&target)attacker.direction=attacker.x<target.x?1:-1;
   const skillId=`${attacker.charType}_s${skillNum}`;
   const chTarget=gameState==="CHALLENGE"?getChallengeTarget(attacker):(gameState==="ROAD"?getRoadTarget(attacker):target);
   const combatTarget=chTarget;
   const _isRedDash=attacker.charType==="red"&&skillNum===2; // plain forward gap-closer, not a targeted teleport — must not face backward toward a trailing enemy
-  if((gameState==="CHALLENGE"||gameState==="ROAD")&&combatTarget&&!_isRedDash)attacker.direction=combatTarget.x>attacker.x?1:-1;
+  // LÔI — M1 (ném giáo) & Chiêu 1 (lướt): giữ nguyên hướng đang đứng/di
+  // chuyển, không tự động quay mặt về phía mục tiêu như các đòn khác.
+  const _noAutoFace=_isRedDash||(attacker.charType==="thunder"&&(skillNum===1||skillNum===2));
+  if(gameState==="GAMEPLAY"&&target&&!_noAutoFace)attacker.direction=attacker.x<target.x?1:-1;
+  if((gameState==="CHALLENGE"||gameState==="ROAD")&&combatTarget&&!_noAutoFace)attacker.direction=combatTarget.x>attacker.x?1:-1;
   if(attacker.charType==="wind"){
     if(skillNum===1){
       // PHONG TRẢM — a fast crescent wind-blade fired straight ahead
@@ -1267,28 +1310,30 @@ function castSkill(attacker,target,skillNum){
     return;
   }
   if(attacker.charType==="thunder"&&skillNum===3){
-    // THUNDER S3: LIGHTNING STRIKE - Lightning bolts fall from sky, damage only when they touch ground
-    attacker.attackCooldown=26;attacker.activeSkill=skillId;attacker.cds.s3=280;
-    let targets=getAllEnemies(attacker);
-    if(!targets.length)targets=combatTarget?[combatTarget]:[{x:attacker.x+200*attacker.direction,y:attacker.y}];
-    targets=targets.slice(0,3);
-    // Store target positions when skill is cast (locked position)
-    attacker.thunderS3Targets=targets.map(t=>({x:t.x,y:t.y,targetRef:t,locked:true}));
-    attacker.thunderS3DelayTick=0;
-    attacker.thunderBoltXs=targets.map(t=>({x:t.x,y:t.y}));
-    attacker.thunderBoltX=attacker.thunderBoltXs.length?attacker.thunderBoltXs[0].x:attacker.x;
-    screenShake=25;return;
+    // CHIÊU 2 — LÔI ĐIỆN GIÁNG: gọi sét từ trời đánh thẳng xuống vị trí của
+    // chính nhân vật. Sét giáng xuống trong 0.5s, chờ thêm 0.5s rồi mới phát
+    // nổ: gây hiệu ứng điện giật, tổng 25 damage chia đều trong 5 giây cho
+    // các mục tiêu quanh vị trí nổ; ngay sau đó bản thân nhận 30 giáp ảo
+    // (chặn hết sát thương, giữ nguyên máu trong lúc còn giáp, giáp không tự
+    // hồi lại như máu) trong 3 giây.
+    attacker.attackCooldown=60;attacker.activeSkill=skillId;attacker.cds.s3=280;
+    attacker.thunderCallTimer=60; // 30 khung (0.5s) sét rơi + 30 khung (0.5s) chờ trước khi nổ
+    attacker.thunderCallStruck=false;
+    attacker.thunderCallX=attacker.x;attacker.thunderCallY=attacker.y;
+    screenShake=Math.max(screenShake,10);
+    return;
   }
   if(attacker.charType==="thunder"&&skillNum===2){
-    // THUNDER DASH: becomes a bolt of lightning - immune to collisions/CC/
-    // pushback/blocking during the dash, then leaves an electric trail
-    // that detonates ~0.3s later, shocking/slowing/knocking anyone on it.
-    const d=combatTarget?Math.abs(attacker.x-combatTarget.x):400;
+    // CHIÊU 1 — LÔI TỐC: lướt thẳng theo hướng đang đứng/di chuyển (không
+    // quay theo mục tiêu), khoảng cách lướt tăng 1.5 lần so với gốc
+    // (220 -> 330). Bất tử trong lúc lướt và bất tử thêm 0.5 giây sau khi
+    // lướt xong.
     const _oldX=attacker.x,_oldY=attacker.y;
-    if(d<W/2)attacker.x-=220*attacker.direction;else attacker.x+=220*attacker.direction;
+    const dashDist=220*1.5; // tăng 1.5 lần khoảng cách lướt
+    attacker.x+=dashDist*attacker.direction;
     attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());
     _dashCapture(attacker,_oldX,_oldY);
-    attacker.thunderDashTimer=18; // ~0.3s of dash-immunity (no CC/knockback/blocking)
+    attacker.thunderDashTimer=30; // bất tử trong lúc lướt + thêm 0.5s (30 khung) sau khi lướt xong
     const dsteps=8;
     for(let i=0;i<=dsteps;i++){const t=i/dsteps;attacker.thunderDashTrail.push({x:_oldX+(attacker.x-_oldX)*t,y:attacker.y,life:18,armed:18});}
     attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;
@@ -1314,19 +1359,28 @@ function castSkill(attacker,target,skillNum){
     return;
   }
   if(attacker.charType==="thunder"&&skillNum===1){
-    // NORMAL ATTACK: the strike itself always sparks, and if there's a
-    // nearby target the electricity auto-chains to 3-5 enemies (15% falloff
-    // per jump) instead of ever hitting just one.
-    attacker.attackCooldown=8;attacker.activeSkill=skillId;attacker.cds.s1=90;
-    const firstT=combatTarget&&dist(attacker.x,attacker.y,combatTarget.x,combatTarget.y)<(180 * 1.75)*SR?combatTarget:null;
-    if(firstT){
-      spawnLightningArc(attacker.x,attacker.y-40,firstT.x,firstT.y-40);
-      applyDamage(firstT,7,attacker);
-      addShock(firstT,attacker);
-      chainLightning(attacker,firstT.x,firstT.y-40,7,rndInt(3,5),firstT,320*SR);
-    }else{
-      aoeHit(attacker,7,160);
-    }
+    // NORMAL ATTACK — LÔI THƯƠNG: không quay người, chỉ lùi tay lấy đà rồi
+    // ném cây giáo sét về đúng hướng đang đứng. Toàn bộ động tác (lùi tay +
+    // ném) mất 0.5s, xong thì hồi thêm 0.25s nữa mới đánh tiếp được.
+    attacker.attackCooldown=30;attacker.activeSkill=skillId;attacker.cds.s1=45; // 0.5s ra đòn + 0.25s hồi = 0.75s tổng
+    attacker.thunderM1WindupTimer=30; // 0.5s lùi tay lấy đà, giáo chưa bay ra tới khi timer về 0
+    attacker.thunderM1Target=combatTarget;
+    for(let i=0;i<4;i++)hitEffects.push({x:attacker.x-18*attacker.direction,y:attacker.y-46+rndInt(-6,6),vx:-attacker.direction*0.4,vy:-rng()*0.6,life:26,maxLife:26,particle:true,size:5,color:rndChoice(["#9d4edd","#4cc9f0","#c77dff"])});
+    return;
+  }
+  if(attacker.charType==="thunder"&&skillNum===4){
+    // CHIÊU 3 / CHIÊU CUỐI — LÔI CẦU PHÁN QUYẾT: tụ lực 0.75s tại chỗ, bắn
+    // một luồng năng lượng thẳng lên trời trong 0.25s theo hướng đang đứng,
+    // tạo thành quả cầu sét lơ lửng trên đầu; chờ thêm 0.25s rồi quả cầu
+    // liên tục phóng tia sét xuống mọi mục tiêu xung quanh. Mỗi mục tiêu bị
+    // trúng nhận 40 damage chia đều trong 7 giây, tia sét luôn xuất phát từ
+    // quả cầu trên trời (xem thunderJudgmentTick / _drawUlti cho phần
+    // charge -> beam -> orb -> zap).
+    attacker.attackCooldown=75;attacker.activeSkill=skillId;attacker.ultiTimer=195;attacker.cds.s4=1080; // 0.75+0.25+0.25s windup + 2s quả cầu bắn tia, hồi 18s
+    attacker.thunderUltiOrbX=attacker.x;
+    attacker.thunderUltiOrbY=attacker.y-300*SR;
+    attacker.thunderUltiHitSet=new Set();
+    screenShake=Math.max(screenShake,10);
     return;
   }
   if(attacker.charType==="shadow"&&skillNum===4&&attacker.transformActive){
@@ -1564,6 +1618,17 @@ function updateProjectiles(floorY,player2){
       _compact(proj.boulderTrail,bt=>{bt.life--;return bt.life>0;});
       proj.boulderTrail.forEach(bt=>{const ba=Math.max(0,bt.life/15)*0.5;ctx.save();ctx.globalAlpha=ba;_oval(bt.x-6,bt.y-4,12,8,"#a67c52",null);ctx.restore();});
       proj.vy=(proj.vy||0)+0.25;
+    }
+    else if(pType==="thunder_spear"){
+      // LÔI THƯƠNG — cây giáo sét tia chớp xanh tím do M1 Lôi ném ra.
+      ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=12;
+      ctx.strokeStyle="#c77dff";ctx.fillStyle="#2b0a4a";ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(px+18*pDir,py);ctx.lineTo(px-4*pDir,py-5);ctx.lineTo(px-16*pDir,py);ctx.lineTo(px-4*pDir,py+5);ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.restore();
+      if(!proj.trail)proj.trail=[];
+      proj.trail.push({x:px,y:py,life:10});
+      _compact(proj.trail,t=>{t.life--;return t.life>0;});
+      proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/10)*0.5;ctx.strokeStyle=rndChoice(["#9d4edd","#4cc9f0"]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(t.x-6,t.y-4);ctx.lineTo(t.x+6,t.y+4);ctx.stroke();ctx.restore();});
     }
     else if(pType==="shadow_slash"){
       // ĐÁNH THƯỜNG — a single black claw-slash flying forward like a bullet.
