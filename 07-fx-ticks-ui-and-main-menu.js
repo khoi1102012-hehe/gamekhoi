@@ -60,56 +60,8 @@ function shadowCamZoomState(p){
 // THUNDER DASH TRAIL: the electric line left behind by Thunder Dash. Each
 // segment arms for ~0.3s (18 frames) then detonates once, shocking/slowing/
 // knocking back anyone standing on it, before fading out visually.
-// NOTE: this function now also drives Thunder's other per-frame timers (M1
-// spear windup, Chiêu 2 self sky-strike, giáp ảo countdown) — kept under the
-// original name/call-sites so every game mode picks the new behaviour up
-// automatically without needing extra wiring.
 function tickThunderDash(p){
-  if(!p||p.charType!=="thunder")return;
-  // M1 — LÔI THƯƠNG: 0.5s lùi tay lấy đà rồi ném giáo ngay khi timer về 0,
-  // kèm một chùm tia sét trắng-vàng-tím quất ra theo hướng ném cho rõ uy lực.
-  if(p.thunderM1WindupTimer>0){
-    p.thunderM1WindupTimer--;
-    if(p.thunderM1WindupTimer===0){
-      projectiles.push({x:p.x+34*p.direction,y:p.y-48,vx:20*p.direction,vy:0,owner:p,target:p.thunderM1Target,
-        damage:8,slow:0,slow_pct:0,color:"#e0aaff",type:"thunder_spear",radius:22});
-      thunderZap(p.x-6*p.direction,p.y-62,p.x+70*p.direction,p.y-40,3,false);
-      screenShake=Math.max(screenShake,4);
-    }
-  }
-  // Giáp ảo (Chiêu 2 payoff): đếm ngược hết giờ là mất hẳn, không tự hồi.
-  if(p.thunderShieldTimer>0){
-    p.thunderShieldTimer--;
-    if(p.thunderShieldTimer===0)p.thunderShieldHp=0;
-  }
-  // Chiêu 2 — LÔI ĐIỆN GIÁNG: 0.5s sét rơi xuống vị trí bản thân, chờ thêm
-  // 0.5s rồi phát nổ một lần duy nhất — nổ to, nhiều tia sét toả ra, và cấp
-  // giáp ảo hiển thị rõ trên thanh máu trong 5 giây.
-  if(p.thunderCallTimer>0){
-    p.thunderCallTimer--;
-    if(p.thunderCallTimer===30&&!p.thunderCallStruck){
-      p.thunderCallStruck=true;
-      spawnHitEffect(p.thunderCallX,p.thunderCallY-40,"#e0aaff");
-      screenShake=Math.max(screenShake,6);
-    }
-    if(p.thunderCallTimer===0){
-      const R=220*SR; // to hơn, dễ thấy hơn
-      getAllEnemies(p).forEach(t=>{if(t&&t.hp>0&&Math.abs(t.x-p.thunderCallX)<R&&Math.abs(t.y-p.thunderCallY)<R)addElectricDot(t,25,300,p);});
-      p.thunderShieldHp=30;p.thunderShieldTimer=300; // 30 giáp ảo trong 5 giây
-      spawnHitEffect(p.thunderCallX,p.thunderCallY-40,"#FFFFFF");
-      // Nhiều tia sét toả ra từ tâm vụ nổ, đan xen trắng/vàng/tím cho hoành tráng
-      for(let i=0;i<8;i++){
-        const ang=(i/8)*Math.PI*2,rr=R*0.85;
-        const ex=p.thunderCallX+Math.cos(ang)*rr,ey=p.thunderCallY-30+Math.sin(ang)*rr*0.35;
-        thunderZap(p.thunderCallX,p.thunderCallY-60,ex,ey,1,true);
-      }
-      // 2 tia sét lớn giáng thẳng từ trời xuống tâm nổ
-      thunderZap(p.thunderCallX,p.thunderCallY-420*SR,p.thunderCallX,p.thunderCallY-30,3,true);
-      for(let i=0;i<30;i++){const ang=rng()*Math.PI*2,spd=rng()*7+3;hitEffects.push({x:p.thunderCallX,y:p.thunderCallY-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-2,life:30,maxLife:30,particle:true,size:rndInt(3,6),color:rndChoice(["#9d4edd","#c77dff","#FFD700","white"])});}
-      screenShake=Math.max(screenShake,20);
-    }
-  }
-  if(!p.thunderDashTrail||!p.thunderDashTrail.length)return;
+  if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
   p.thunderDashTrail.forEach(seg=>{
     if(seg.armed>0){
       seg.armed--;
@@ -140,6 +92,92 @@ function drawThunderDashTrail(p){
     ctx.beginPath();ctx.moveTo(seg.x-12,seg.y+4);ctx.lineTo(seg.x+12,seg.y-2);ctx.stroke();
     ctx.restore();
   });
+}
+// CHIÊU 2 telegraph: 0-0.5s a jagged bolt visibly charges down onto the
+// caster's own locked spot; 0.5-1.0s a pulsing ground warning-ring builds
+// up right before the blast (tickThunderS3 fires the actual explosion).
+function drawThunderSelfBolt(p){
+  if(p.charType!=="thunder"||!p._thunderSelfBoltTimer||p._thunderSelfBoltExploded)return;
+  const total=p._thunderSelfBoltTotal||60,t=p._thunderSelfBoltTimer,age=total-t;
+  const bx=p._thunderSelfBoltX,groundY=p.y;
+  if(age<30){
+    const prog=age/30;
+    ctx.save();ctx.globalAlpha=0.55+0.45*Math.sin(frameCount*0.6);
+    ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=16;ctx.lineWidth=4;ctx.lineCap="round";
+    ctx.beginPath();
+    ctx.moveTo(bx+rndInt(-6,6),groundY-360);
+    ctx.lineTo(bx+rndInt(-10,10),groundY-160-200*(1-prog));
+    ctx.lineTo(bx,groundY-40);
+    ctx.stroke();
+    ctx.strokeStyle="white";ctx.lineWidth=1.5;ctx.stroke();
+    ctx.restore();
+    ctx.save();ctx.globalAlpha=0.25+0.35*prog;
+    _oval(bx-30-prog*20,groundY-14,60+prog*40,20,"#5c8cff",null);
+    ctx.restore();
+  }else{
+    const prog=(age-30)/30;
+    const pulse=0.6+0.4*Math.sin(frameCount*0.5);
+    ctx.save();ctx.globalAlpha=pulse*(0.4+0.4*prog);
+    ctx.strokeStyle="#ffffff";ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;ctx.lineWidth=3;
+    const r=40+prog*20;
+    ctx.beginPath();ctx.ellipse(bx,groundY-5,r,r*0.32,0,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+  }
+}
+// Faint pulsing electric shell around the caster while thunderShieldHp>0
+// (Chiêu 2's 3s non-regenerating shield).
+function drawThunderShield(p){
+  if(p.charType!=="thunder"||!(p.thunderShieldHp>0))return;
+  const pulse=0.5+0.5*Math.sin(frameCount*0.25);
+  ctx.save();ctx.globalAlpha=0.25+0.2*pulse;ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=12;ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.ellipse(p.x,p.y-60,46,86,0,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+// ULTIMATE — "quả cầu sét": charge sparks (0-0.75s) -> beam shoots up
+// (0.75-1.0s) -> the orb itself sits in the sky (1.0s onward through the
+// whole 7s channel), with jagged crackling spikes for a distinctive shape.
+// The actual bolts-to-targets are drawn as ordinary lightningArcs, spawned
+// from thunderJudgmentTick() in 06.
+function drawThunderOrb(p){
+  if(p.charType!=="thunder"||!(p.ultiTimer>0)||p.activeSkill!=="thunder_s4")return;
+  const total=p._thunderOrbPhaseTotal||495,age=total-p.ultiTimer;
+  const CHARGE_END=45,FIRE_END=60;
+  if(age<CHARGE_END){
+    const prog=age/CHARGE_END;
+    ctx.save();ctx.globalAlpha=0.3+0.5*prog;ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;
+    for(let i=0;i<6;i++){
+      const ang=(p.animFrame*8+i*60)*Math.PI/180;
+      const rad=60*(1-prog)+10;
+      _oval(p.x+Math.cos(ang)*rad-3,p.y-60+Math.sin(ang)*rad*0.6-3,6,6,i%2===0?"#5c8cff":"#8a5cff",null);
+    }
+    ctx.restore();
+    return;
+  }
+  const skyX=p._thunderOrbSkyX||p.x,skyY=p._thunderOrbSkyY||(p.y-320);
+  if(age<FIRE_END){
+    const prog=(age-CHARGE_END)/(FIRE_END-CHARGE_END);
+    ctx.save();ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=16;ctx.lineWidth=6;ctx.lineCap="round";
+    ctx.globalAlpha=0.85;
+    ctx.beginPath();ctx.moveTo(p.x,p.y-60);ctx.lineTo(p.x+(p._thunderOrbDir||1)*10,p.y-60-(p.y-60-skyY)*prog);ctx.stroke();
+    ctx.strokeStyle="white";ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  const orbPulse=0.7+0.3*Math.sin(p.animFrame*0.3);
+  const orbR=26*orbPulse;
+  ctx.save();ctx.shadowColor="#8a5cff";ctx.shadowBlur=24;
+  const grad=ctx.createRadialGradient(skyX,skyY,2,skyX,skyY,orbR);
+  grad.addColorStop(0,"#ffffff");grad.addColorStop(0.4,"#8a5cff");grad.addColorStop(1,"rgba(90,60,255,0)");
+  ctx.fillStyle=grad;
+  ctx.beginPath();ctx.arc(skyX,skyY,orbR,0,Math.PI*2);ctx.fill();
+  for(let i=0;i<5;i++){
+    const ang=(p.animFrame*6+i*72)*Math.PI/180;
+    ctx.strokeStyle=i%2===0?"#c9a6ff":"#5c8cff";ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(skyX+Math.cos(ang)*orbR*0.6,skyY+Math.sin(ang)*orbR*0.6);
+    ctx.lineTo(skyX+Math.cos(ang)*orbR*1.6,skyY+Math.sin(ang)*orbR*1.6);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 function drawFrostSlideTrail(p){
   if(p.charType!=="frost"||!p.frostSlideTrail.length)return;
@@ -400,7 +438,6 @@ function drawHpBar(fighter,bx,by,label){
   const bw=(fighter.hp/(fighter.maxHp||MAX_HP))*200;
   _rect(bx,by,200,20,"#333",null,0);_rect(bx,by,Math.max(0,bw),20,fighter===p1?"#ff1a1a":"#b300b3",null,0);
   if(fighter.charType==="water"&&fighter.waterShieldHp>0){const sw=(fighter.waterShieldHp/15)*200;ctx.fillStyle="rgba(0,255,255,0.5)";ctx.fillRect(bx,by,Math.max(0,sw),20);_text(bx+100,by-12,`🛡️ ${Math.floor(fighter.waterShieldHp)} shield`,"aqua","8px Arial bold");}
-  if(fighter.charType==="thunder"&&fighter.thunderShieldHp>0){const sw=(fighter.thunderShieldHp/30)*200;ctx.fillStyle="rgba(199,125,255,0.6)";ctx.fillRect(bx,by,Math.max(0,sw),20);ctx.save();ctx.strokeStyle="#e0aaff";ctx.lineWidth=1.5;ctx.strokeRect(bx,by,Math.max(0,sw),20);ctx.restore();_text(bx+100,by-12,`🛡️ ${Math.ceil(fighter.thunderShieldHp)} giáp ảo`,"#e0aaff","8px Arial bold");}
   _text(bx+100,by-12,`${label} (${fighter.charType.toUpperCase()}): ${getHPDisplay(fighter.hp)}/${fighter.maxHp||MAX_HP} HP`,"white","10px Arial bold");
 }
 function drawRageBar(bx,by,bw,bh,fighter){
@@ -1177,12 +1214,15 @@ function updateGameplay(floorY){
     for(const s in p.cds)if(p.cds[s]>0)p.cds[s]--;
     tickV4(p);
     tickThunderDash(p);
+    tickThunderS3(p);
+    tickThunderShield(p);
+    tickThunderSpear(p);
+    tickThunderDots(p);
     tickWaterCloud(p);
     tickFrost(p);
     tickWind(p);
     tickEarthMud(p);
     tickEarthMeteor(p);
-    tickThunderS3(p);
     tickEarthMinions(p,worldW);
     updateFire(p);
     updateShadow(p);
@@ -1258,8 +1298,8 @@ function updateGameplay(floorY){
   if(!timeFrozen)puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);drawEarthMinions(p2);
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
-  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p2);drawWindDashTrail(p2);drawWindCyclone(p2);drawWindSideCyclones(p2);drawEarthMud(p2);drawFire(p2);drawShadow(p2);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawThunderSelfBolt(p1);drawThunderShield(p1);drawThunderOrb(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
+  drawFrostSlideTrail(p2);drawFrostDomain(p2);if(p2._icePrisonedTargets)p2._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p2);drawThunderSelfBolt(p2);drawThunderShield(p2);drawThunderOrb(p2);drawWindDashTrail(p2);drawWindCyclone(p2);drawWindSideCyclones(p2);drawEarthMud(p2);drawFire(p2);drawShadow(p2);
   p1.draw();p2.draw();
   updateAndDrawHitEffects();
   updateAndDrawLightningArcs();
@@ -1299,6 +1339,10 @@ function updateChallenge(w,h){
   for(const s in p1.cds)if(p1.cds[s]>0)p1.cds[s]--;
   tickV4(p1);
   tickThunderDash(p1);
+  tickThunderS3(p1);
+  tickThunderShield(p1);
+  tickThunderSpear(p1);
+  tickThunderDots(p1);
   tickWaterCloud(p1);
   tickFrost(p1);
   tickWind(p1);
@@ -1472,7 +1516,7 @@ function updateChallenge(w,h){
   if(!timeFrozen)puppets.forEach(pu=>pu.update(floorY,worldW));
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawThunderSelfBolt(p1);drawThunderShield(p1);drawThunderOrb(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
   p1.draw();
   challengeEnemies.forEach(e=>e.draw());
   challengeBosses.forEach(b=>{if(!b.dead)b.draw();});
@@ -1884,7 +1928,7 @@ function updateRoad(){
   if(p1.poisonTimer>0){p1.poisonTimer--;if(p1.poisonTimer%60===0&&p1.hp>0)applyDamage(p1,2,null);}
   if(p1.thunderFTimer>0){p1.thunderFTimer--; if(p1.thunderFTimer===0)p1.thunderFCount=0;}
   for(const s in p1.cds) if(p1.cds[s]>0)p1.cds[s]--;
-  tickV4(p1); tickWaterCloud(p1); tickFrost(p1); tickThunderDash(p1); tickWind(p1); updateFire(p1); updateShadow(p1);
+  tickV4(p1); tickWaterCloud(p1); tickFrost(p1); tickThunderDash(p1); tickThunderS3(p1); tickThunderShield(p1); tickThunderSpear(p1); tickThunderDots(p1); tickWind(p1); updateFire(p1); updateShadow(p1);
   if(frameCount%60===0 && p1.charType==="red" && p1.hp>0) p1.hp=Math.min(p1.maxHp||MAX_HP,p1.hp+1);
   if(p1.ultiTimer>0 && p1.activeSkill==="water_s4"){p1.tsunamiWaveXL-=8;p1.tsunamiWaveXR+=8;}
 
@@ -2035,7 +2079,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   puppets.forEach(pu=>{if(!timeFrozen)pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W);});
   puppets.forEach(pu=>pu.draw());
   drawEarthMinions(p1);
-  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
+  drawFrostSlideTrail(p1);drawFrostDomain(p1);if(p1._icePrisonedTargets)p1._icePrisonedTargets.forEach(drawFrostIcePrison);drawThunderDashTrail(p1);drawThunderSelfBolt(p1);drawThunderShield(p1);drawThunderOrb(p1);drawWindDashTrail(p1);drawWindCyclone(p1);drawWindSideCyclones(p1);drawEarthMud(p1);drawFire(p1);drawShadow(p1);
   p1.draw();
   if(p1.poisonTimer>0){
     for(let i=0;i<3;i++){
