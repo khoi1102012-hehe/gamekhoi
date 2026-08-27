@@ -56,6 +56,14 @@ class Fighter {
     this._meteorWindup=0;this._meteorExploded=false;this._meteorExplodeFrame=0;this._meteorTargetX=0;this._meteorTargetY=0;this._meteorCracks=null;
     this.targetSpikeX=0;this.thunderBoltX=0;this.thunderBoltXs=[];
     this.thunderFCount=0;this.thunderFTimer=0;
+    // THUNDER rework state: shield from Chiêu 2 (self lightning nova),
+    // DOT tracking (used by both Chiêu 2 and the Ultimate orb), self-bolt
+    // telegraph, spear-throw windup, and the ultimate orb.
+    this.thunderShieldHp=0;this.thunderShieldTimer=0;
+    this._thunderDots=[];
+    this._thunderSelfBoltTimer=0;this._thunderSelfBoltExploded=false;
+    this._thunderSpearWindup=0;this._thunderSpearLaunched=false;
+    this._thunderOrbTargets=[];this._thunderOrbHitApplied=false;
     this.waterShieldHp=0;this.tsunamiActive=false;
     this.tsunamiWaveXL=0;this.tsunamiWaveXR=0;
     this.windBoostTimer=0;this.windDashTrail=[];this.windDashTimer=0;
@@ -67,11 +75,6 @@ class Fighter {
     this.transformInvisTimer=0;this.transformInvisActive=false;
     this.ghostHp=0;this.thunderAuraTick=0;this.shockStack=0;
     this.thunderDashTimer=0;this.thunderDashTrail=[];this.thunderPrisonTimer=0;this.thunderPrisonBreakCd=0;
-    // M1 (Lôi Thương ném giáo), Chiêu 2 (Lôi Điện Giáng) & giáp ảo, Chiêu 3/Ulti (Lôi Cầu Phán Quyết)
-    this.thunderM1WindupTimer=0;this.thunderM1Target=null;
-    this.thunderShieldHp=0;this.thunderShieldTimer=0;
-    this.thunderCallTimer=0;this.thunderCallStruck=false;this.thunderCallX=0;this.thunderCallY=0;
-    this.thunderUltiOrbX=0;this.thunderUltiOrbY=0;this.thunderUltiHitSet=new Set();
     this.waterRegenTick=0;this.windMiniTornadoTick=0;
     this.crowAngle=0;this.isFlying=false;
     this.v4InvisScheduled=false;this.v4LifestealPct=0;
@@ -370,15 +373,6 @@ class Fighter {
       ctx.strokeStyle="aqua";ctx.lineWidth=3;ctx.setLineDash([6,3]);
       ctx.beginPath();ctx.ellipse(rx,ry-18,50+pulse,78+pulse,0,0,Math.PI*2);ctx.stroke();
       ctx.setLineDash([]);
-    }
-    if(this.charType==="thunder"&&this.thunderShieldHp>0){
-      // GIÁP ẢO (Chiêu 2 payoff): vòng tím-xanh lung linh quanh người, hiện
-      // độc lập với activeSkill để còn thấy trong suốt 3 giây hiệu lực.
-      const pulse=Math.sin(this.animFrame*0.2)*4;
-      ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=10;
-      ctx.strokeStyle="#c77dff";ctx.lineWidth=3;ctx.setLineDash([5,4]);
-      ctx.beginPath();ctx.ellipse(rx,ry-18,46+pulse,74+pulse,0,0,Math.PI*2);ctx.stroke();
-      ctx.setLineDash([]);ctx.restore();
     }
     if(this._dashSmoke&&this._dashSmoke.length){
       _compact(this._dashSmoke,s=>s.life>0);
@@ -1916,56 +1910,43 @@ class Fighter {
       ctx.restore();
     }
     else if(sk==="thunder_s1"){
-      // M1 — LÔI THƯƠNG: không quay người, chỉ lùi tay lấy đà 0.5s rồi ném
-      // giáo sét tia chớp xanh tím (giáo bay thật do updateProjectiles vẽ,
-      // ở đây chỉ vẽ cây giáo đang lăm lăm trong tay lúc lùi tay lấy đà).
-      const windingUp=this.thunderM1WindupTimer>0;
-      if(windingUp){
-        _text(rx,ry-110,"⚡ LÔI THƯƠNG ⚡","#c77dff","10px Arial bold");
-        const pullBack=(30-this.thunderM1WindupTimer)/30; // 0 -> 1 trong lúc lùi tay
-        const hx=rx-(10+pullBack*18)*this.direction,hy=ry-46;
-        ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=12;
-        ctx.strokeStyle="#c77dff";ctx.lineWidth=3;ctx.lineCap="round";
-        ctx.beginPath();ctx.moveTo(hx-14*this.direction,hy+4);ctx.lineTo(hx+14*this.direction,hy-4);ctx.stroke();
-        ctx.restore();
-        for(let i=0;i<2;i++){const fx=hx+rndInt(-6,6),fy=hy+rndInt(-6,6),s2=rndInt(2,4);_oval(fx-s2,fy-s2,s2*2,s2*2,rndChoice(["#9d4edd","#4cc9f0","white"]),null);}
-      }
+      _text(rx,ry-110,"⚡ LÔI CHƯỞNG ⚡","yellow","10px Arial bold");
+      const tx2=rx+(120*this.direction),ty2=ry+rndInt(-10,10);
+      ctx.save();ctx.shadowColor="yellow";ctx.shadowBlur=14;
+      ctx.strokeStyle="#FFF9B0";ctx.lineWidth=4;ctx.lineCap="round";
+      ctx.beginPath();ctx.moveTo(rx,ry);
+      const segs=5;for(let i=1;i<=segs;i++){const px2=rx+(tx2-rx)*(i/segs)+rndInt(-10,10),py2=ry+(ty2-ry)*(i/segs)+rndInt(-14,14);ctx.lineTo(px2,py2);}
+      ctx.stroke();
+      ctx.strokeStyle="yellow";ctx.lineWidth=2;ctx.stroke();
+      ctx.restore();
+      for(let i=0;i<6;i++){const fx=rx+(tx2-rx)*rng(),fy=ry+(ty2-ry)*rng(),s2=rndInt(3,7);_oval(fx-s2,fy-s2,s2*2,s2*2,rndChoice(["yellow","#FFF9B0","white"]),null);}
     }
     else if(sk==="thunder_s2"){
-      _text(rx,ry-110,"⚡ LÔI TỐC ⚡","#c77dff","11px Arial bold");
-      ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=12;
-      for(let i=0;i<10;i++){const tx3=rx-(i+1)*12*this.direction,ty3=ry+rndInt(-20,20),s3=rndInt(4,10);_oval(tx3-s3,ty3-s3,s3*2,s3*2,rndChoice(["#9d4edd","#c77dff","white","#4cc9f0"]),null);}
-      for(let i=0;i<5;i++){const bx2=rx-(i+1)*20*this.direction,by2=ry+rndInt(-25,25);_line(bx2,by2,bx2+rndInt(-14,14)*this.direction,by2+rndInt(-14,14),"#c77dff",2);}
+      _text(rx,ry-110,"⚡ LÔI TỐC ⚡","yellow","11px Arial bold");
+      ctx.save();ctx.shadowColor="yellow";ctx.shadowBlur=12;
+      for(let i=0;i<10;i++){const tx3=rx-(i+1)*12*this.direction,ty3=ry+rndInt(-20,20),s3=rndInt(4,10);_oval(tx3-s3,ty3-s3,s3*2,s3*2,rndChoice(["yellow","#FFF9B0","white","gold"]),null);}
+      for(let i=0;i<5;i++){const bx2=rx-(i+1)*20*this.direction,by2=ry+rndInt(-25,25);_line(bx2,by2,bx2+rndInt(-14,14)*this.direction,by2+rndInt(-14,14),"yellow",2);}
       ctx.restore();
     }
     else if(sk==="thunder_s3"){
-      // CHIÊU 2 — LÔI ĐIỆN GIÁNG: sét đánh thẳng xuống vị trí của chính
-      // nhân vật (0.5s rơi + 0.5s chờ trước khi nổ ra hiệu ứng điện giật +
-      // giáp ảo — phần tick/damage nằm ở tickThunderDash trong 07).
-      const t=this.thunderCallTimer;
-      if(t>0){
-        _text(rx,ry-125,"⚡ LÔI ĐIỆN GIÁNG ⚡","#c77dff","11px Arial bold");
-        if(t>30){
-          // 0.5s đầu: tia sét đang rơi từ trời xuống đúng vị trí đứng
-          const prog=1-((t-30)/30);
-          const skyStart=-260;
-          ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=20;
-          ctx.strokeStyle="#e0aaff";ctx.lineWidth=5;ctx.lineCap="round";
-          ctx.beginPath();let cy2=skyStart,cx2=rx+rndInt(-10,10);ctx.moveTo(cx2,cy2);
-          const targetY=skyStart+(ry-skyStart)*prog;
-          while(cy2<targetY){const nx=rx+rndInt(-14,14),ny=cy2+rndInt(30,60);ctx.lineTo(nx,ny);cy2=ny;}
-          ctx.stroke();
-          ctx.strokeStyle="#c77dff";ctx.lineWidth=2;ctx.stroke();
-          ctx.restore();
-        }else{
-          // 0.5s sau: sét đã chạm đất, đang tích tụ chờ nổ
-          const pulse=Math.sin(this.animFrame*0.4)*4;
-          ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=18;ctx.strokeStyle="#e0aaff";ctx.lineWidth=3;
-          ctx.beginPath();ctx.arc(rx,ry,20+pulse,0,Math.PI*2);ctx.stroke();
-          ctx.restore();
-          for(let i=0;i<2;i++){const fx=rx+rndInt(-22,22),fy=ry-30+rndInt(-20,20),s2=rndInt(2,5);_oval(fx-s2,fy-s2,s2*2,s2*2,rndChoice(["#9d4edd","#c77dff","white"]),null);}
-        }
-      }
+      const boltPts=(this.thunderBoltXs&&this.thunderBoltXs.length)?this.thunderBoltXs:[{x:this.thunderBoltX,y:ry}];
+      _text(rx,ry-125,"⚡ THIÊN LÔI TRUY KÍCH ⚡","yellow","11px Arial bold");
+      boltPts.forEach(pt=>{
+        const tx4=pt.x,ty4=pt.y!==undefined?pt.y:ry;
+        // Lightning starts from very high above sky
+        const skyStart=-200;
+        ctx.save();ctx.shadowColor="yellow";ctx.shadowBlur=20;
+        ctx.strokeStyle="#FFFFCC";ctx.lineWidth=6;ctx.lineCap="round";
+        ctx.beginPath();let cy2=skyStart,cx2=tx4+rndInt(-15,15);ctx.moveTo(cx2,cy2);
+        while(cy2<ty4+40){const nx=tx4+rndInt(-18,18),ny=cy2+rndInt(30,60);ctx.lineTo(nx,ny);cy2=ny;}
+        ctx.stroke();
+        ctx.strokeStyle="yellow";ctx.lineWidth=3;ctx.stroke();
+        ctx.restore();
+        // Impact effects on ground
+        _oval(tx4-18,ty4+18,36,12,"yellow",null);
+        _text(tx4,ty4-42,"⚡","yellow","20px Arial bold");
+        for(let i=0;i<4;i++){const sx=tx4+rndInt(-24,24),sy=ty4-52+rndInt(0,60),ss=rndInt(2,5);_oval(sx-ss,sy-ss,ss*2,ss*2,"#FFF9B0",null);}
+      });
     }
     else if(sk==="frost_s1"){
       _text(rx,ry-110,"❄️ ICE SPEARS ❄️","deepskyblue","10px Arial bold");
@@ -2121,42 +2102,29 @@ class Fighter {
   _drawUlti(rx,ry){
     const af=this.animFrame;
     if(this.activeSkill==="thunder_s4"){
-      // CHIÊU 3 / CHIÊU CUỐI — LÔI CẦU PHÁN QUYẾT: tụ lực (0.75s) -> bắn
-      // năng lượng lên trời (0.25s) -> quả cầu sét hình thành & chờ (0.25s)
-      // -> quả cầu liên tục phóng tia sét xuống mục tiêu quanh nó (phần gây
-      // damage/DOT nằm ở thunderJudgmentTick trong 06). rx,ry là toạ độ màn
-      // hình của nhân vật; quả cầu neo tại thunderUltiOrbX/Y (toạ độ thế
-      // giới, khoá lúc tạo) — quy đổi sang màn hình theo lệch rx-this.x.
-      const CHARGE=45,BEAM=15,WAIT=15;
-      const elapsed=195-this.ultiTimer;
-      const orbSx=rx+(this.thunderUltiOrbX-this.x),orbSy=ry+(this.thunderUltiOrbY-this.y);
-      if(elapsed<CHARGE){
-        _text(rx,ry-150,"⚡ TỤ LỰC SẤM SÉT ⚡","#c77dff","12px Arial bold");
-        for(let i=0;i<3;i++){
-          const ang=(af*6+i*120)*Math.PI/180,r2=34+Math.sin(af*0.25+i)*8;
-          const sx=rx+r2*Math.cos(ang),sy=ry-40+r2*Math.sin(ang)*0.7;
-          _oval(sx-4,sy-4,8,8,rndChoice(["#9d4edd","#4cc9f0","white"]),null);
-        }
-      }else if(elapsed<CHARGE+BEAM){
-        _text(rx,ry-150,"⚡ LÔI CẦU PHÁN QUYẾT ⚡","#c77dff","12px Arial bold");
-        ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=22;
-        ctx.strokeStyle="#e0aaff";ctx.lineWidth=7;ctx.lineCap="round";
-        ctx.beginPath();ctx.moveTo(rx,ry-40);ctx.lineTo(orbSx,orbSy);ctx.stroke();
-        ctx.strokeStyle="#c77dff";ctx.lineWidth=3;ctx.stroke();
-        ctx.restore();
-      }else{
-        // Quả cầu đã (hoặc đang) hình thành: vòng xoáy độc đáo lơ lửng trên trời
-        _text(rx,ry-150,"⚡ LÔI CẦU PHÁN QUYẾT ⚡","#c77dff","12px Arial bold");
-        ctx.save();ctx.shadowColor="#9d4edd";ctx.shadowBlur=24;
-        for(let i=0;i<3;i++){
-          const rr=22+i*9+Math.sin(af*0.15+i)*3;
-          ctx.strokeStyle=["#9d4edd","#4cc9f0","#c77dff"][i];ctx.lineWidth=2;
-          ctx.beginPath();ctx.ellipse(orbSx,orbSy,rr,rr*0.75,af*0.05+i,0,Math.PI*2);ctx.stroke();
-        }
-        ctx.fillStyle="#e0aaff";ctx.beginPath();ctx.arc(orbSx,orbSy,11,0,Math.PI*2);ctx.fill();
-        ctx.restore();
-        for(let i=0;i<2;i++){const fx=orbSx+rndInt(-16,16),fy=orbSy+rndInt(-16,16),s2=rndInt(2,4);_oval(fx-s2,fy-s2,s2*2,s2*2,rndChoice(["#9d4edd","white"]),null);}
+      // THUNDER GOD JUDGMENT: sky darkens, ~30-50 white-gold bolts crash down
+      // across the whole arena for the duration of the ulti.
+      ctx.save();
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.globalAlpha=0.30;ctx.fillStyle="#050508";ctx.fillRect(0,0,W,H);
+      ctx.restore();
+      _text(rx,ry-150,"⚡ THUNDER GOD JUDGMENT ⚡","white","12px Arial bold");
+      // Bolts used to start at a hardcoded local y=0, which — after the body's
+      // per-pivot CHAR_VISUAL_SCALE shrink — lands well below the real top of
+      // the screen (too short) instead of actually crashing down from the sky.
+      // Solved the same way as Water's beam / Thunder's V4 windup bolts.
+      if(af%4===0){
+        const _fy=ry+52,_skyY=_fy+(-60-_fy)/CHAR_VISUAL_SCALE;
+        this.lightningBolts=[];for(let b=0;b<5;b++){let sx=rx+rndInt(-520,520),pts=[sx,_skyY],cx=sx,cy=_skyY;while(cy<ry+100){cy+=rndInt(50,100);cx+=rndInt(-40,40);pts.push(cx,cy);}this.lightningBolts.push(pts);}
       }
+      this.lightningBolts.forEach(bolt=>{
+        ctx.save();ctx.shadowColor="#FFD700";ctx.shadowBlur=22;
+        ctx.strokeStyle="#FFFFFF";ctx.lineWidth=5;ctx.beginPath();for(let i=0;i<bolt.length;i+=2){i===0?ctx.moveTo(bolt[i],bolt[i+1]):ctx.lineTo(bolt[i],bolt[i+1]);}ctx.stroke();
+        ctx.strokeStyle="#FFD700";ctx.lineWidth=2;ctx.stroke();
+        ctx.restore();
+        const bx=bolt[bolt.length-2],by=bolt[bolt.length-1];
+        _oval(bx-30,by-14,60,28,"rgba(255,215,0,0.35)",null);
+      });
     }
     else if(this.activeSkill==="frost_s4"){
       ctx.strokeStyle="deepskyblue";ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(rx,ry,450,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
