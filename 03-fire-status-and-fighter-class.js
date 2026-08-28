@@ -74,7 +74,7 @@ class Fighter {
     this.transformTimer=0;this.transformActive=false;
     this.transformInvisTimer=0;this.transformInvisActive=false;
     this.ghostHp=0;this.thunderAuraTick=0;this.shockStack=0;
-    this.thunderDashTimer=0;this.thunderDashTrail=[];this.thunderPrisonTimer=0;this.thunderPrisonBreakCd=0;
+    this.thunderDashTimer=0;this.thunderDashTrail=[];
     this.waterRegenTick=0;this.windMiniTornadoTick=0;
     this.crowAngle=0;this.isFlying=false;
     this.v4InvisScheduled=false;this.v4LifestealPct=0;
@@ -134,18 +134,6 @@ class Fighter {
     if(this.stunTimer>0)this.stunTimer--;
     if(this.thunderDashTimer>0)this.thunderDashTimer--;
     if(this.fireDashTimer>0)this.fireDashTimer--;
-    // Thunder Prison: while caged, periodically zap + snap the victim back
-    // toward the cage center the instant they try to drift away.
-    if(this.thunderPrisonTimer>0){
-      this.thunderPrisonTimer--;
-      const dxp=this.x-(this.thunderPrisonCenterX||this.x);
-      if(Math.abs(dxp)>70*SR){
-        this.x=(this.thunderPrisonCenterX||this.x)+Math.sign(dxp)*70*SR;
-        spawnHitEffect(this.x,this.y-60,"#FFFFFF");
-        screenShake=Math.max(screenShake,6);
-      }
-      if(this.thunderPrisonTimer%20===0)applyDamage(this,3,this._thunderPrisonCaster);
-    }
     // TRANSFORM WIND-UP: freezes the fighter in place (no gravity drift) while
     // the charge-up sequence plays out in _drawTransformWindup(). When the
     // timer reaches 0 we hand off to _finalizeTransform() exactly once —
