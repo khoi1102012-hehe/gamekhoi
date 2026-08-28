@@ -162,6 +162,7 @@ function applyDamage(target,damage,attacker){
   if(attacker instanceof Fighter && rng()<CRIT_CHANCE){ damage*=CRIT_MULT; isCrit=true; }
   if(attacker&&attacker.charType==="red")damage*=1.2;
   if(attacker&&attacker.charType==="frost"&&attacker.frostComboBonusPct>0){damage*=1+attacker.frostComboBonusPct;attacker.frostComboBonusPct=0;}
+  if(attacker&&attacker.charType==="thunder"&&attacker._thunderBuffTimer>0)damage*=1.2; // buff sau Chiêu 3
   if(attacker&&attacker.transformActive){const buffs=attacker.getTransformBuffs();damage*=buffs.dmg_mult||1;const ls=buffs.lifesteal||0;if(ls>0&&attacker.hp!==undefined)attacker.hp=Math.min(attacker.maxHp||MAX_HP,attacker.hp+damage*ls);}
   if(target instanceof Fighter){
     if(target.hp<=0)return;
@@ -240,29 +241,6 @@ function updateAndDrawLightningArcs(){
     ctx.restore();
   });
 }
-// ---- THUNDER: generic Shock-DOT (used by both Chiêu 2's self-nova and the
-// Ultimate orb) — splits a flat total damage into small ticks over a
-// duration, applied to any target type (Fighter/RoadEnemy/ChallengeEnemy/Boss/...). ----
-function applyShockDot(caster,target,totalDmg,durationFrames){
-  if(!target||target.hp<=0)return;
-  if(!caster._thunderDots)caster._thunderDots=[];
-  const interval=6; // one tick every 6 frames (~0.1s) for a smooth drain
-  const ticks=Math.max(1,Math.round(durationFrames/interval));
-  caster._thunderDots.push({target,dmgPerTick:totalDmg/ticks,ticksLeft:ticks,tickInterval:interval,tickTimer:0});
-}
-function tickThunderDots(p){
-  if(p.charType!=="thunder"||!p._thunderDots||!p._thunderDots.length)return;
-  p._thunderDots.forEach(d=>{
-    if(!d.target||d.target.hp<=0){d.ticksLeft=0;return;}
-    d.tickTimer++;
-    if(d.tickTimer>=d.tickInterval){
-      d.tickTimer=0;d.ticksLeft--;
-      applyDamage(d.target,d.dmgPerTick,p);
-      if(rng()<0.7)spawnLightningArc(d.target.x,d.target.y-100,d.target.x,d.target.y-40);
-    }
-  });
-  _compact(p._thunderDots,d=>d.ticksLeft>0);
-}
 
 // Every hit from a thunder-type attacker builds a stack on the target; at 5
 // stacks it detonates (stun + launch + burst damage) and resets to 0.
@@ -283,27 +261,25 @@ function addShock(target,attacker){
 }
 function aoeHit(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const tr=radius*(tgt.sizeMult||1);if(Math.abs(tgt.x-attacker.x)<tr&&Math.abs(tgt.y-attacker.y)<tr*0.8)applyDamage(tgt,damage,attacker);});}
 function aoeHitAt(attacker,damage,cx,cy,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{const tr=radius*(tgt.sizeMult||1);if(Math.abs(tgt.x-cx)<tr&&Math.abs(tgt.y-cy)<tr*0.9)applyDamage(tgt,damage,attacker);});}
-// THUNDER GOD JUDGMENT (ultimate): instead of one flat continuous tick, the
-// map goes dark and ~30-50 individual lightning strikes crash down at random
-// spots for the duration; any enemy caught under a strike takes a real burst
-// of damage, gets knocked up, and leaves a brief lingering shock zone.
 // ================================================================
 //  THUNDER ULTIMATE (skillNum 4, phím G) — QUẢ CẦU SÉT
 //  0.00-0.75s (0-45f):  Tụ lực — charge-up, sparks gathering on the caster.
 //  0.75-1.00s (45-60f): Bắn năng lượng lên trời theo hướng đang đứng — a
 //                       beam shoots up and forms the orb.
 //  1.00-1.25s (60-75f): Orb sits in the sky, charging before it fires.
-//  1.25-8.25s (75-495f): CHANNEL (7s) — the orb continuously fires lightning
-//                       down onto every enemy present at the moment the
-//                       channel starts ("quét mọi quái và kẻ địch"). Each
-//                       target takes 40 total damage split evenly across
-//                       the 7s (applyShockDot), with bolts visibly
-//                       originating from the orb (drawThunderOrb, 07).
+//  1.25-1.50s (75-90f): STRIKE (instant) — every enemy present the moment
+//                       the orb fires gets hit by exactly ONE bolt straight
+//                       to the body, dealing the full 40 damage in one shot
+//                       (not a channel of small repeated ticks/arcs, which
+//                       used to tank the framerate with many targets on
+//                       screen). Orb + bolts visuals in drawThunderOrb (07).
+//  Ulti ends right after (age 90f) — no more standing frozen for 7s doing
+//  nothing once the strike already landed.
 //  All drawing lives in drawThunderOrb() (07) — this function is state-only.
 // ================================================================
 function thunderJudgmentTick(attacker){
   if(!(attacker.ultiTimer>0))return;
-  const total=attacker._thunderOrbPhaseTotal||495;
+  const total=attacker._thunderOrbPhaseTotal||90;
   const age=total-attacker.ultiTimer;
   const CHARGE_END=45,FIRE_END=60,WAIT_END=75;
   attacker._thunderOrbSkyX=attacker._thunderOrbX+(attacker._thunderOrbDir||1)*40;
@@ -392,15 +368,16 @@ function tickEarthMeteor(p){
 }
 
 // ================================================================
-//  THUNDER CHIÊU 2 (skillNum 3, phím T) — GỌI SÉT TỰ GIÁNG
-//  0.0-0.5s: telegraph — a bolt visibly charges down onto the caster's own
-//            locked position (drawn in drawThunderSelfBolt, 07).
-//  0.5-1.0s: "nổ sau 0,5 giây" — brief pre-detonation warning, then the
-//            blast fires: any enemy within range gets a 25-total-damage
-//            electric-shock DOT spread over 5s (applyShockDot), and the
-//            caster is wrapped in 30 non-regenerating shield for 3s
-//            (thunderShieldHp/thunderShieldTimer — see tickThunderShield
-//            and the shield-absorb check in applyDamage).
+//  THUNDER CHIÊU 3 (skillNum 3, phím T) — GỌI SÉT TỰ GIÁNG
+//  0.0-0.9s (0-55f): 1 pha liên tục duy nhất — tia sét bám đúng vị trí
+//            nhân vật, sáng/dày dần lên khi sắp chạm (drawThunderSelfBolt, 07).
+//  Khi chạm (55f): nổ tại chỗ — địch trong bán kính 220 ăn NGAY 25 sát
+//            thương (1 lần, không rải theo tick nữa), và bản thân nhân vật
+//            được buff: khiên 30 không hồi trong 3s (thunderShieldHp/
+//            thunderShieldTimer, xem tickThunderShield + applyDamage) CỘNG
+//            THÊM +20% sát thương trong 4s (_thunderBuffTimer, hook trong
+//            applyDamage) với hào quang "⚡ CƯỜNG HÓA ⚡" quanh người
+//            (drawThunderBuffAura, 07).
 // ================================================================
 function tickThunderS3(p){
   if(p.charType!=="thunder"||!p._thunderSelfBoltTimer||p._thunderSelfBoltExploded)return;
@@ -409,30 +386,36 @@ function tickThunderS3(p){
     p._thunderSelfBoltExploded=true;
     const bx=p._thunderSelfBoltX,by=p.y;
     screenShake=Math.max(screenShake,22);
-    // Chớp trắng chớp mắt trước, rồi tới 3 vòng sóng nổ to giãn nở so le
-    // (vàng -> tím -> trắng) để mắt kịp thấy rõ cả hình dạng lẫn kích cỡ vụ nổ.
+    // Chớp trắng chớp mắt trước, rồi 3 vòng sóng nổ to giãn nở so le
+    // (vàng -> tím -> trắng) ngay tại vị trí nhân vật vừa bị sét đánh trúng.
     hitEffects.push({x:bx,y:by-50,life:12,maxLife:12,color:"#ffffff",ring:true,big:true});
     hitEffects.push({x:bx,y:by-50,life:34,maxLife:34,color:"#FFD700",shockwave:true,maxR:230,lw:9});
     hitEffects.push({x:bx,y:by-50,life:44,maxLife:44,color:"#8a5cff",shockwave:true,maxR:280,lw:7});
     hitEffects.push({x:bx,y:by-50,life:54,maxLife:54,color:"#ffffff",shockwave:true,maxR:320,lw:4});
-    // Các nhánh tia sét tỏa ra từ tâm nổ theo 6 hướng — cho cảm giác "nổ điện" thật sự
     for(let i=0;i<6;i++){const ang=(i/6)*Math.PI*2;spawnLightningArc(bx,by-50,bx+Math.cos(ang)*90,by-50+Math.sin(ang)*60);}
     for(let i=0;i<40;i++){const ang=rng()*Math.PI*2,spd=rng()*7+2,big=rng()<0.35;hitEffects.push({x:bx,y:by-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:big?34:26,maxLife:big?34:26,particle:true,size:big?9:6,color:rndChoice(["#FFD700","#FFF176","#8a5cff","white","#c9a6ff"])});}
+    // Sát thương tức thời (không rải theo tick nữa) cho địch trong vùng nổ
     getAllEnemies(p).forEach(tgt=>{
       if(tgt&&tgt.hp>0&&Math.abs(tgt.x-bx)<220*SR){
-        applyShockDot(p,tgt,25,300); // 25 dmg total, evenly split over 5s
+        applyDamage(tgt,25,p);
         addShock(tgt,p);
       }
     });
+    // BUFF cho bản thân: khiên hấp thụ + tăng nhẹ sát thương trong 4s, có
+    // hào quang điện quanh người để người chơi thấy rõ mình đang được buff.
     p.thunderShieldHp=30;
-    p.thunderShieldTimer=180; // 3s of non-regenerating shield
+    p.thunderShieldTimer=180; // 3s khiên không hồi
+    p._thunderBuffTimer=240; // 4s tăng dmg (xem applyDamage: charType thunder + _thunderBuffTimer>0 -> +20% dmg)
   }
 }
-// Shield from Chiêu 2 expires after 3s — any unused shield is simply lost.
+// Shield từ Chiêu 3 hết hạn sau 3s — khiên chưa dùng hết coi như mất.
 function tickThunderShield(p){
-  if(p.charType!=="thunder"||!(p.thunderShieldTimer>0))return;
-  p.thunderShieldTimer--;
-  if(p.thunderShieldTimer===0)p.thunderShieldHp=0;
+  if(p.charType!=="thunder")return;
+  if(p.thunderShieldTimer>0){
+    p.thunderShieldTimer--;
+    if(p.thunderShieldTimer===0)p.thunderShieldHp=0;
+  }
+  if(p._thunderBuffTimer>0)p._thunderBuffTimer--;
 }
 // M1 — spear-throw windup: the actual "ném giáo" launch (spawns the
 // thunder_spear projectile) fires partway through the 0.5s throw animation,
@@ -1324,14 +1307,15 @@ function castSkill(attacker,target,skillNum){
     return;
   }
   if(attacker.charType==="thunder"&&skillNum===3){
-    // CHIÊU 2 — GỌI SÉT TỰ GIÁNG: calls lightning down onto the caster's OWN
-    // locked position — 0.5s telegraph, explodes 0.5s later. See
-    // tickThunderS3() for the full timeline/effects.
-    attacker.attackCooldown=90;attacker.activeSkill=skillId;attacker.cds.s3=280;
-    attacker._thunderSelfBoltTimer=90; // 45f (0.75s) telegraph + 45f (0.75s) pre-blast warning ring — slowed down so both phases are actually readable
-    attacker._thunderSelfBoltTotal=90;
+    // CHIÊU 2 — GỌI SÉT TỰ GIÁNG (làm lại theo đúng yêu cầu): 1 tia sét từ
+    // trên trời đánh THẲNG xuống ngay người nhân vật -> vùng đó phát nổ ->
+    // nhân vật được buff (khiên + tăng dmg tạm thời). 1 pha liên tục duy
+    // nhất (không tách 2 giai đoạn rời rạc như bản trước) cho dễ đọc.
+    attacker.attackCooldown=55;attacker.activeSkill=skillId;attacker.cds.s3=280;
+    attacker._thunderSelfBoltTimer=55; // 0.9s sét giáng xuống liên tục rồi nổ ngay khi chạm đất
+    attacker._thunderSelfBoltTotal=55;
     attacker._thunderSelfBoltExploded=false;
-    attacker._thunderSelfBoltX=attacker.x; // locked at cast time
+    attacker._thunderSelfBoltX=attacker.x; // khóa tại vị trí lúc bắt đầu, sét luôn rơi trúng đúng chỗ này
     screenShake=Math.max(screenShake,4);
     return;
   }
@@ -1440,7 +1424,11 @@ function castSkill(attacker,target,skillNum){
     // timeline + damage nằm trong thunderJudgmentTick(), gọi mỗi frame khi
     // ultiTimer>0 (đã có sẵn ở 07, không cần sửa call site).
     attacker.attackCooldown=45;attacker.activeSkill=skillId;attacker.cds.s4=900;
-    const total=45+15+15+420; // 0.75s charge + 0.25s fire-up + 0.25s wait + 7s channel = 495f (8.25s)
+    // Trước đây là kênh (channel) 7s nên khóa nhân vật đứng im rất lâu — giờ
+    // sát thương đã ra ngay 1 lần lúc quả cầu bắn (xem thunderJudgmentTick),
+    // nên rút ulti xuống còn đúng phần tụ lực + bắn + giữ hình ngắn rồi thả
+    // nhân vật ra ngay, không còn đứng im chờ hết giờ vô nghĩa nữa.
+    const total=45+15+15+15; // 0.75s tụ lực + 0.25s bắn lên trời + 0.25s chờ + 0.25s giữ hình quả cầu/đòn đánh
     attacker.ultiTimer=total;
     attacker._thunderOrbPhaseTotal=total;
     attacker._thunderOrbX=attacker.x;
@@ -1643,37 +1631,34 @@ function updateProjectiles(floorY,player2){
       proj.vy=(proj.vy||0)+0.25;
     }
     else if(pType==="thunder_spear"){
-      // M1 — NÉM GIÁO: a large crackling lightning spear — a jagged electric
-      // shaft (gold core, white flash, purple outer glow) with a bright
-      // spearhead and small forking branches, not just a thin straight line.
-      const L=40*pDir,segY=[-4,3,-3,2]; // jagged body offsets, back to front
-      ctx.save();ctx.shadowColor="#7a5cff";ctx.shadowBlur=18;
-      ctx.lineCap="round";ctx.lineJoin="round";
-      const bodyPts=[[px-34*pDir,py+segY[0]],[px-20*pDir,py+segY[1]],[px-6*pDir,py+segY[2]],[px+8*pDir,py+segY[3]],[px+18*pDir,py]];
-      // outer purple glow pass
-      ctx.strokeStyle="#8a5cff";ctx.lineWidth=7;
-      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
-      // mid gold pass
-      ctx.strokeStyle="#FFD700";ctx.lineWidth=4;ctx.shadowColor="#FFD700";ctx.shadowBlur=14;
-      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
-      // bright white core
-      ctx.strokeStyle="#ffffff";ctx.lineWidth=2;ctx.shadowBlur=6;
-      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
-      // small forking branch sparks off the shaft
-      ctx.strokeStyle="#c9a6ff";ctx.lineWidth=1.5;ctx.shadowBlur=8;
-      ctx.beginPath();ctx.moveTo(px-20*pDir,py+segY[1]);ctx.lineTo(px-24*pDir,py+segY[1]-10);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(px-6*pDir,py+segY[2]);ctx.lineTo(px-2*pDir,py+segY[2]+11);ctx.stroke();
-      // spearhead — bigger, bright gold/white arrowhead
-      ctx.fillStyle="#fff6cc";ctx.strokeStyle="#FFD700";ctx.lineWidth=1.5;ctx.shadowColor="#FFD700";ctx.shadowBlur=14;
-      ctx.beginPath();ctx.moveTo(px+30*pDir,py);ctx.lineTo(px+12*pDir,py-9);ctx.lineTo(px+16*pDir,py);ctx.lineTo(px+12*pDir,py+9);ctx.closePath();ctx.fill();ctx.stroke();
+      // M1 — NÉM GIÁO: vẫn là 1 CÂY GIÁO thẳng, to và rõ ràng — điện chỉ là
+      // hào quang/tia lóe đi kèm chứ không biến thân giáo thành đường ngoằn
+      // ngoèo (lần trước làm mất luôn hình dáng cây giáo, nhìn không ra vũ khí gì).
+      const backX=px-34*pDir,tipX=px+30*pDir;
+      ctx.save();ctx.lineCap="round";
+      // hào quang điện bao quanh thân giáo (không đổi hình dạng thân giáo)
+      ctx.strokeStyle="#8a5cff";ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;ctx.lineWidth=8;ctx.globalAlpha=0.55;
+      ctx.beginPath();ctx.moveTo(backX,py);ctx.lineTo(tipX-10*pDir,py);ctx.stroke();
+      ctx.globalAlpha=1;
+      // thân giáo thật — thẳng, chắc chắn nhận ra ngay là cây giáo
+      ctx.strokeStyle="#5a4a7a";ctx.shadowBlur=0;ctx.lineWidth=4;
+      ctx.beginPath();ctx.moveTo(backX,py);ctx.lineTo(tipX-10*pDir,py);ctx.stroke();
+      ctx.strokeStyle="#FFD700";ctx.shadowColor="#FFD700";ctx.shadowBlur=8;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(backX,py);ctx.lineTo(tipX-10*pDir,py);ctx.stroke();
+      // mũi giáo — tam giác rõ ràng, to hơn bản cũ
+      ctx.fillStyle="#fff6cc";ctx.strokeStyle="#FFD700";ctx.lineWidth=1.5;ctx.shadowColor="#FFD700";ctx.shadowBlur=12;
+      ctx.beginPath();ctx.moveTo(tipX,py);ctx.lineTo(tipX-16*pDir,py-7);ctx.lineTo(tipX-10*pDir,py);ctx.lineTo(tipX-16*pDir,py+7);ctx.closePath();ctx.fill();ctx.stroke();
+      // 1 nhánh sét nhỏ tách khỏi thân — chỉ là điểm nhấn, không thay thân giáo
+      ctx.strokeStyle="#c9a6ff";ctx.lineWidth=1.5;ctx.shadowBlur=6;
+      ctx.beginPath();ctx.moveTo(px-6*pDir,py);ctx.lineTo(px-2*pDir,py-9);ctx.stroke();
       ctx.restore();
       if(!proj.trail)proj.trail=[];
-      proj.trail.push({x:px,y:py,life:14});
+      proj.trail.push({x:px,y:py,life:12});
       _compact(proj.trail,t=>{t.life--;return t.life>0;});
       proj.trail.forEach(t=>{
-        ctx.save();ctx.globalAlpha=Math.max(0,t.life/14)*0.6;
-        ctx.strokeStyle=rndChoice(["#FFD700","#8a5cff","#ffffff"]);ctx.lineWidth=2.5;ctx.shadowColor="#FFD700";ctx.shadowBlur=8;
-        ctx.beginPath();ctx.moveTo(t.x-9,t.y+rndInt(-4,4));ctx.lineTo(t.x+9,t.y+rndInt(-4,4));ctx.stroke();
+        ctx.save();ctx.globalAlpha=Math.max(0,t.life/12)*0.5;
+        ctx.strokeStyle="#FFD700";ctx.lineWidth=2;ctx.shadowColor="#FFD700";ctx.shadowBlur=6;
+        ctx.beginPath();ctx.moveTo(t.x-7,t.y);ctx.lineTo(t.x+7,t.y);ctx.stroke();
         ctx.restore();
       });
     }
