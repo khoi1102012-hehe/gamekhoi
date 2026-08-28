@@ -76,6 +76,8 @@ function tickThunderDash(p){
           }
         });
         spawnHitEffect(seg.x,seg.y-20,"#FFD700");
+        spawnLightningArc(seg.x,seg.y-46,seg.x,seg.y-6);
+        for(let i=0;i<8;i++){const ang=rng()*Math.PI*2,spd=rng()*4+1.5;hitEffects.push({x:seg.x,y:seg.y-20,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1,life:20,maxLife:20,particle:true,color:rndChoice(["#FFD700","#FFF176","white"])});}
         screenShake=Math.max(screenShake,8);
       }
     }
@@ -87,9 +89,18 @@ function drawThunderDashTrail(p){
   if(p.charType!=="thunder"||!p.thunderDashTrail||!p.thunderDashTrail.length)return;
   p.thunderDashTrail.forEach(seg=>{
     const a=Math.max(0,seg.life/18);
-    ctx.save();ctx.globalAlpha=a*(seg.exploded?0.3:0.75);
-    ctx.strokeStyle=seg.exploded?"#FFF176":"#FFFFFF";ctx.shadowColor="#FFD700";ctx.shadowBlur=10;ctx.lineWidth=3;
-    ctx.beginPath();ctx.moveTo(seg.x-12,seg.y+4);ctx.lineTo(seg.x+12,seg.y-2);ctx.stroke();
+    ctx.save();ctx.globalAlpha=a*(seg.exploded?0.35:0.85);
+    ctx.lineCap="round";ctx.lineJoin="round";
+    // jagged mini-bolt instead of a plain straight line, layered gold+white
+    const pts=[[seg.x-16,seg.y+5],[seg.x-6,seg.y-4],[seg.x+4,seg.y+3],[seg.x+16,seg.y-5]];
+    ctx.strokeStyle="#FFD700";ctx.shadowColor="#FFD700";ctx.shadowBlur=12;ctx.lineWidth=4;
+    ctx.beginPath();pts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+    ctx.strokeStyle=seg.exploded?"#FFF176":"#FFFFFF";ctx.lineWidth=1.8;ctx.shadowBlur=6;
+    ctx.beginPath();pts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+    if(!seg.exploded){
+      // small standing sparks along the still-armed segment, so it reads as "live"
+      for(let i=0;i<2;i++){ctx.save();ctx.globalAlpha=a*0.6;_oval(seg.x+rndInt(-14,14)-2,seg.y+rndInt(-6,6)-2,4,4,"#fff6b0",null);ctx.restore();}
+    }
     ctx.restore();
   });
 }
@@ -98,29 +109,38 @@ function drawThunderDashTrail(p){
 // up right before the blast (tickThunderS3 fires the actual explosion).
 function drawThunderSelfBolt(p){
   if(p.charType!=="thunder"||!p._thunderSelfBoltTimer||p._thunderSelfBoltExploded)return;
-  const total=p._thunderSelfBoltTotal||60,t=p._thunderSelfBoltTimer,age=total-t;
+  const total=p._thunderSelfBoltTotal||90,t=p._thunderSelfBoltTimer,age=total-t;
+  const HALF=total/2;
   const bx=p._thunderSelfBoltX,groundY=p.y;
-  if(age<30){
-    const prog=age/30;
-    ctx.save();ctx.globalAlpha=0.55+0.45*Math.sin(frameCount*0.6);
-    ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=16;ctx.lineWidth=4;ctx.lineCap="round";
-    ctx.beginPath();
-    ctx.moveTo(bx+rndInt(-6,6),groundY-360);
-    ctx.lineTo(bx+rndInt(-10,10),groundY-160-200*(1-prog));
-    ctx.lineTo(bx,groundY-40);
-    ctx.stroke();
-    ctx.strokeStyle="white";ctx.lineWidth=1.5;ctx.stroke();
+  if(age<HALF){
+    // GIAI ĐOẠN 1 — sét giáng xuống: kéo dài hẳn ra (0.75s) và vẽ dày/rõ hơn
+    // hẳn (3 lớp: viền tím ngoài, lõi vàng, lõi trắng) để mắt kịp bắt trọn.
+    const prog=age/HALF;
+    ctx.save();ctx.globalAlpha=0.6+0.4*Math.sin(frameCount*0.6);
+    ctx.lineCap="round";ctx.lineJoin="round";
+    const midY=groundY-160-200*(1-prog);
+    const pts=[[bx+rndInt(-8,8),groundY-380],[bx+rndInt(-14,14),midY],[bx+rndInt(-6,6),groundY-140],[bx,groundY-40]];
+    ctx.strokeStyle="#8a5cff";ctx.shadowColor="#8a5cff";ctx.shadowBlur=22;ctx.lineWidth=7;
+    ctx.beginPath();pts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+    ctx.strokeStyle="#FFD700";ctx.shadowColor="#FFD700";ctx.shadowBlur=16;ctx.lineWidth=4;
+    ctx.beginPath();pts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+    ctx.strokeStyle="white";ctx.lineWidth=2;ctx.shadowBlur=8;
+    ctx.beginPath();pts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
     ctx.restore();
-    ctx.save();ctx.globalAlpha=0.25+0.35*prog;
-    _oval(bx-30-prog*20,groundY-14,60+prog*40,20,"#5c8cff",null);
+    ctx.save();ctx.globalAlpha=0.3+0.4*prog;
+    _oval(bx-34-prog*22,groundY-16,68+prog*44,24,"#FFD700",null);
     ctx.restore();
   }else{
-    const prog=(age-30)/30;
+    // GIAI ĐOẠN 2 — vòng cảnh báo dưới đất trước khi nổ: to hơn, có 2 vòng
+    // (vàng ngoài + trắng trong) đập nhịp rõ để người chơi thấy sắp nổ ở đâu.
+    const prog=(age-HALF)/HALF;
     const pulse=0.6+0.4*Math.sin(frameCount*0.5);
-    ctx.save();ctx.globalAlpha=pulse*(0.4+0.4*prog);
-    ctx.strokeStyle="#ffffff";ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;ctx.lineWidth=3;
-    const r=40+prog*20;
-    ctx.beginPath();ctx.ellipse(bx,groundY-5,r,r*0.32,0,0,Math.PI*2);ctx.stroke();
+    const r=46+prog*30;
+    ctx.save();ctx.globalAlpha=pulse*(0.5+0.4*prog);
+    ctx.strokeStyle="#FFD700";ctx.shadowColor="#FFD700";ctx.shadowBlur=18;ctx.lineWidth=4;
+    ctx.beginPath();ctx.ellipse(bx,groundY-5,r,r*0.34,0,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle="#ffffff";ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(bx,groundY-5,r*0.7,r*0.24,0,0,Math.PI*2);ctx.stroke();
     ctx.restore();
   }
 }
@@ -143,12 +163,13 @@ function drawThunderOrb(p){
   const total=p._thunderOrbPhaseTotal||495,age=total-p.ultiTimer;
   const CHARGE_END=45,FIRE_END=60;
   if(age<CHARGE_END){
+    // Tụ lực — vòng tia chớp vàng/tím/trắng xoay tròn siết dần vào tay, to và rõ hơn hẳn bản cũ
     const prog=age/CHARGE_END;
-    ctx.save();ctx.globalAlpha=0.3+0.5*prog;ctx.shadowColor="#8a5cff";ctx.shadowBlur=14;
-    for(let i=0;i<6;i++){
-      const ang=(p.animFrame*8+i*60)*Math.PI/180;
-      const rad=60*(1-prog)+10;
-      _oval(p.x+Math.cos(ang)*rad-3,p.y-60+Math.sin(ang)*rad*0.6-3,6,6,i%2===0?"#5c8cff":"#8a5cff",null);
+    ctx.save();ctx.globalAlpha=0.35+0.55*prog;ctx.shadowColor="#FFD700";ctx.shadowBlur=16;
+    for(let i=0;i<10;i++){
+      const ang=(p.animFrame*10+i*36)*Math.PI/180;
+      const rad=80*(1-prog)+14;
+      _oval(p.x+Math.cos(ang)*rad-4,p.y-60+Math.sin(ang)*rad*0.6-4,8,8,["#FFD700","#8a5cff","white"][i%3],null);
     }
     ctx.restore();
     return;
@@ -156,25 +177,31 @@ function drawThunderOrb(p){
   const skyX=p._thunderOrbSkyX||p.x,skyY=p._thunderOrbSkyY||(p.y-320);
   if(age<FIRE_END){
     const prog=(age-CHARGE_END)/(FIRE_END-CHARGE_END);
-    ctx.save();ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=16;ctx.lineWidth=6;ctx.lineCap="round";
-    ctx.globalAlpha=0.85;
+    ctx.save();ctx.lineCap="round";
+    ctx.strokeStyle="#8a5cff";ctx.shadowColor="#5c8cff";ctx.shadowBlur=20;ctx.lineWidth=9;
+    ctx.globalAlpha=0.9;
     ctx.beginPath();ctx.moveTo(p.x,p.y-60);ctx.lineTo(p.x+(p._thunderOrbDir||1)*10,p.y-60-(p.y-60-skyY)*prog);ctx.stroke();
-    ctx.strokeStyle="white";ctx.lineWidth=2;ctx.stroke();
+    ctx.strokeStyle="#FFD700";ctx.shadowColor="#FFD700";ctx.shadowBlur=16;ctx.lineWidth=5;ctx.stroke();
+    ctx.strokeStyle="white";ctx.lineWidth=2.5;ctx.shadowBlur=10;ctx.stroke();
     ctx.restore();
     return;
   }
-  const orbPulse=0.7+0.3*Math.sin(p.animFrame*0.3);
-  const orbR=26*orbPulse;
-  ctx.save();ctx.shadowColor="#8a5cff";ctx.shadowBlur=24;
+  // QUẢ CẦU SÉT — to hơn hẳn (26 -> 42), lõi trắng/vàng rực, viền tím ngoài,
+  // các gai sét tỏa ra xen kẽ vàng/trắng/tím cho cảm giác "quả cầu điện" đúng nghĩa.
+  const orbPulse=0.75+0.25*Math.sin(p.animFrame*0.3);
+  const orbR=42*orbPulse;
+  ctx.save();ctx.shadowColor="#FFD700";ctx.shadowBlur=30;
   const grad=ctx.createRadialGradient(skyX,skyY,2,skyX,skyY,orbR);
-  grad.addColorStop(0,"#ffffff");grad.addColorStop(0.4,"#8a5cff");grad.addColorStop(1,"rgba(90,60,255,0)");
+  grad.addColorStop(0,"#ffffff");grad.addColorStop(0.35,"#FFD700");grad.addColorStop(0.7,"#8a5cff");grad.addColorStop(1,"rgba(90,60,255,0)");
   ctx.fillStyle=grad;
   ctx.beginPath();ctx.arc(skyX,skyY,orbR,0,Math.PI*2);ctx.fill();
-  for(let i=0;i<5;i++){
-    const ang=(p.animFrame*6+i*72)*Math.PI/180;
-    ctx.strokeStyle=i%2===0?"#c9a6ff":"#5c8cff";ctx.lineWidth=2;
+  ctx.lineCap="round";
+  for(let i=0;i<8;i++){
+    const ang=(p.animFrame*6+i*45)*Math.PI/180;
+    const spikeLen=1.5+ (i%3===0?0.5:0);
+    ctx.strokeStyle=["#FFD700","white","#c9a6ff"][i%3];ctx.lineWidth=i%3===0?3:2;
     ctx.beginPath();ctx.moveTo(skyX+Math.cos(ang)*orbR*0.6,skyY+Math.sin(ang)*orbR*0.6);
-    ctx.lineTo(skyX+Math.cos(ang)*orbR*1.6,skyY+Math.sin(ang)*orbR*1.6);
+    ctx.lineTo(skyX+Math.cos(ang)*orbR*spikeLen,skyY+Math.sin(ang)*orbR*spikeLen);
     ctx.stroke();
   }
   ctx.restore();
@@ -994,7 +1021,7 @@ function drawMenu(){
 // ================================================================
 const CHARS=[
   {id:"shadow",name:"SHADOW (Tối)", desc:"Hố đen xúc tua & Thoát xác",color:"#551a8b"},
-  {id:"thunder",name:"THUNDER (Lôi)",desc:"Chain Lightning, Thunder Prison & Thunder God Judgment",color:"gold"},
+  {id:"thunder",name:"THUNDER (Lôi)",desc:"Ném Giáo Sét, Cường Kích & Quả Cầu Sét",color:"gold"},
   {id:"frost", name:"FROST (Băng)", desc:"Tiễn băng & Hồi máu khiên",color:"deepskyblue"},
   {id:"earth", name:"TERRA (Thổ)",  desc:"Giáp đá sống & Tảng đá thần tốc",color:"sienna"},
   {id:"water", name:"WATER (Thủy)", desc:"Khiên xanh & Sóng thần",color:"dodgerblue"},
