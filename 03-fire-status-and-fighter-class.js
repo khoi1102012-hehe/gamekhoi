@@ -59,8 +59,7 @@ class Fighter {
     // THUNDER rework state: shield from Chiêu 2 (self lightning nova),
     // DOT tracking (used by both Chiêu 2 and the Ultimate orb), self-bolt
     // telegraph, spear-throw windup, and the ultimate orb.
-    this.thunderShieldHp=0;this.thunderShieldTimer=0;
-    this._thunderDots=[];
+    this.thunderShieldHp=0;this.thunderShieldTimer=0;this._thunderBuffTimer=0;
     this._thunderSelfBoltTimer=0;this._thunderSelfBoltExploded=false;
     this._thunderSpearWindup=0;this._thunderSpearLaunched=false;
     this._thunderOrbTargets=[];this._thunderOrbHitApplied=false;
@@ -2090,29 +2089,8 @@ class Fighter {
   _drawUlti(rx,ry){
     const af=this.animFrame;
     if(this.activeSkill==="thunder_s4"){
-      // THUNDER GOD JUDGMENT: sky darkens, ~30-50 white-gold bolts crash down
-      // across the whole arena for the duration of the ulti.
-      ctx.save();
-      ctx.setTransform(1,0,0,1,0,0);
-      ctx.globalAlpha=0.30;ctx.fillStyle="#050508";ctx.fillRect(0,0,W,H);
-      ctx.restore();
-      _text(rx,ry-150,"⚡ THUNDER GOD JUDGMENT ⚡","white","12px Arial bold");
-      // Bolts used to start at a hardcoded local y=0, which — after the body's
-      // per-pivot CHAR_VISUAL_SCALE shrink — lands well below the real top of
-      // the screen (too short) instead of actually crashing down from the sky.
-      // Solved the same way as Water's beam / Thunder's V4 windup bolts.
-      if(af%4===0){
-        const _fy=ry+52,_skyY=_fy+(-60-_fy)/CHAR_VISUAL_SCALE;
-        this.lightningBolts=[];for(let b=0;b<5;b++){let sx=rx+rndInt(-520,520),pts=[sx,_skyY],cx=sx,cy=_skyY;while(cy<ry+100){cy+=rndInt(50,100);cx+=rndInt(-40,40);pts.push(cx,cy);}this.lightningBolts.push(pts);}
-      }
-      this.lightningBolts.forEach(bolt=>{
-        ctx.save();ctx.shadowColor="#FFD700";ctx.shadowBlur=22;
-        ctx.strokeStyle="#FFFFFF";ctx.lineWidth=5;ctx.beginPath();for(let i=0;i<bolt.length;i+=2){i===0?ctx.moveTo(bolt[i],bolt[i+1]):ctx.lineTo(bolt[i],bolt[i+1]);}ctx.stroke();
-        ctx.strokeStyle="#FFD700";ctx.lineWidth=2;ctx.stroke();
-        ctx.restore();
-        const bx=bolt[bolt.length-2],by=bolt[bolt.length-1];
-        _oval(bx-30,by-14,60,28,"rgba(255,215,0,0.35)",null);
-      });
+      // QUẢ CẦU SÉT — vẽ ở drawThunderOrb() (file 07), gọi theo world-space
+      // tọa độ nên không cần vẽ gì thêm ở đây nữa.
     }
     else if(this.activeSkill==="frost_s4"){
       ctx.strokeStyle="deepskyblue";ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(rx,ry,450,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
