@@ -215,31 +215,6 @@ function applyDamage(target,damage,attacker){
     }
   }
 }
-// ---- THUNDER: Chain Lightning ----
-// Fires a bolt from (x,y) to the nearest un-chained enemy, then keeps jumping
-// to the next nearest enemy (within CHAIN_RANGE) up to maxTargets total,
-// losing ~15% damage per jump. Draws a jagged bolt effect for each jump and
-// stops the moment no valid target remains in range.
-const CHAIN_RANGE=380;
-function chainLightning(attacker,fromX,fromY,damage,maxTargets=5,excludeFirst=null,customRange=null){
-  const hitSet=new Set();
-  let cx=fromX,cy=fromY,curDmg=damage,jumps=0;
-  if(excludeFirst)hitSet.add(excludeFirst);
-  const range = customRange || CHAIN_RANGE * SR;
-  while(jumps<maxTargets){
-    const cands=getAllEnemies(attacker).filter(t=>t&&t.hp>0&&!hitSet.has(t)&&dist(cx,cy,t.x,t.y)<range);
-    if(!cands.length)break;
-    const nextT=cands.reduce((a,b)=>dist(cx,cy,a.x,a.y)<dist(cx,cy,b.x,b.y)?a:b);
-    spawnLightningArc(cx,cy,nextT.x,nextT.y-40);
-    applyDamage(nextT,curDmg,attacker);
-    addShock(nextT,attacker);
-    hitSet.add(nextT);
-    cx=nextT.x;cy=nextT.y-40;
-    curDmg*=0.85; // 15% falloff per jump
-    jumps++;
-  }
-  return jumps;
-}
 let lightningArcs=[];
 function spawnLightningArc(x1,y1,x2,y2){
   const pts=[x1,y1];let cx=x1,cy=y1;
@@ -336,14 +311,19 @@ function thunderJudgmentTick(attacker){
   if(age<WAIT_END)return; // charge / fire-up / pre-fire wait — visual only
   if(!attacker._thunderOrbHitApplied){
     attacker._thunderOrbHitApplied=true;
-    attacker._thunderOrbTargets=getAllEnemies(attacker).filter(t=>t&&t.hp>0);
-    attacker._thunderOrbTargets.forEach(tgt=>applyShockDot(attacker,tgt,40,420)); // 40 dmg over 7s
-    screenShake=Math.max(screenShake,12);
-  }
-  if(attacker.animFrame%5===0&&attacker._thunderOrbTargets){
-    attacker._thunderOrbTargets.forEach(tgt=>{
-      if(tgt&&tgt.hp>0)spawnLightningArc(attacker._thunderOrbSkyX,attacker._thunderOrbSkyY,tgt.x,tgt.y-40);
+    // TỐI ƯU: thay vì mỗi mục tiêu tự chạy 1 DOT riêng (applyShockDot) rồi
+    // cứ mỗi 5 frame lại spawn thêm 1 tia sét MỚI cho từng mục tiêu suốt 7s
+    // (rất nhiều tia sét sống cùng lúc -> lag nặng khi đông quái), giờ mỗi
+    // mục tiêu chỉ ăn ĐÚNG 1 tia sét bắn thẳng 1 lần duy nhất, gây đủ luôn
+    // 40 dmg ngay lúc trúng — không rải nhỏ giọt theo thời gian nữa.
+    const targets=getAllEnemies(attacker).filter(t=>t&&t.hp>0);
+    targets.forEach(tgt=>{
+      spawnLightningArc(attacker._thunderOrbSkyX,attacker._thunderOrbSkyY,tgt.x,tgt.y-40);
+      applyDamage(tgt,40,attacker);
+      addShock(tgt,attacker);
+      spawnHitEffect(tgt.x,tgt.y-50,"#FFD700");
     });
+    screenShake=Math.max(screenShake,16);
   }
 }
 function aoePush(attacker,damage,radius){radius*=SR;getAllEnemies(attacker).forEach(tgt=>{if(tgt instanceof Fighter&&tgt.charType==="thunder"&&tgt.thunderDashTimer>0)return;const dx=tgt.x-attacker.x;if(Math.abs(dx)<radius&&Math.abs(tgt.y-attacker.y)<120*SR){if(isPushable(tgt)){const pd=dx>=0?1:-1;tgt.x=clamp(tgt.x+pd*Math.floor(radius*0.5),moveBoundLo(),moveBoundHi());if(tgt instanceof Fighter)tgt.vy=-5;}applyDamage(tgt,damage,attacker);}});}
@@ -428,11 +408,16 @@ function tickThunderS3(p){
   if(p._thunderSelfBoltTimer<=0){
     p._thunderSelfBoltExploded=true;
     const bx=p._thunderSelfBoltX,by=p.y;
-    screenShake=Math.max(screenShake,16);
-    spawnHitEffect(bx,by-60,"#8a5cff");
-    hitEffects.push({x:bx,y:by-50,life:14,maxLife:14,color:"#ffffff",ring:true});
-    hitEffects.push({x:bx,y:by-50,life:30,maxLife:30,color:"#6a8cff",shockwave:true,maxR:200,lw:6});
-    for(let i=0;i<24;i++){const ang=rng()*Math.PI*2,spd=rng()*6+2;hitEffects.push({x:bx,y:by-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:26,maxLife:26,particle:true,color:rndChoice(["#8a5cff","#5c8cff","white","#c9a6ff"])});}
+    screenShake=Math.max(screenShake,22);
+    // Chớp trắng chớp mắt trước, rồi tới 3 vòng sóng nổ to giãn nở so le
+    // (vàng -> tím -> trắng) để mắt kịp thấy rõ cả hình dạng lẫn kích cỡ vụ nổ.
+    hitEffects.push({x:bx,y:by-50,life:12,maxLife:12,color:"#ffffff",ring:true,big:true});
+    hitEffects.push({x:bx,y:by-50,life:34,maxLife:34,color:"#FFD700",shockwave:true,maxR:230,lw:9});
+    hitEffects.push({x:bx,y:by-50,life:44,maxLife:44,color:"#8a5cff",shockwave:true,maxR:280,lw:7});
+    hitEffects.push({x:bx,y:by-50,life:54,maxLife:54,color:"#ffffff",shockwave:true,maxR:320,lw:4});
+    // Các nhánh tia sét tỏa ra từ tâm nổ theo 6 hướng — cho cảm giác "nổ điện" thật sự
+    for(let i=0;i<6;i++){const ang=(i/6)*Math.PI*2;spawnLightningArc(bx,by-50,bx+Math.cos(ang)*90,by-50+Math.sin(ang)*60);}
+    for(let i=0;i<40;i++){const ang=rng()*Math.PI*2,spd=rng()*7+2,big=rng()<0.35;hitEffects.push({x:bx,y:by-50,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-3,life:big?34:26,maxLife:big?34:26,particle:true,size:big?9:6,color:rndChoice(["#FFD700","#FFF176","#8a5cff","white","#c9a6ff"])});}
     getAllEnemies(p).forEach(tgt=>{
       if(tgt&&tgt.hp>0&&Math.abs(tgt.x-bx)<220*SR){
         applyShockDot(p,tgt,25,300); // 25 dmg total, evenly split over 5s
@@ -458,10 +443,12 @@ function tickThunderSpear(p){
   if(p._thunderSpearWindup<=0){
     p._thunderSpearLaunched=true;
     const dir=p.direction;
-    projectiles.push({x:p.x+30*dir,y:p.y-46,vx:22*dir,vy:0,owner:p,target:p._thunderSpearTarget||null,
-      damage:9,slow:0,slow_pct:0,color:"#7a5cff",type:"thunder_spear",radius:14});
-    spawnLightningArc(p.x+10*dir,p.y-60,p.x+40*dir,p.y-40);
-    screenShake=Math.max(screenShake,3);
+    projectiles.push({x:p.x+30*dir,y:p.y-46,vx:24*dir,vy:0,owner:p,target:p._thunderSpearTarget||null,
+      damage:9,slow:0,slow_pct:0,color:"#7a5cff",type:"thunder_spear",radius:20});
+    // Phóng kèm 1 tia sét thật (zigzag) bắn ra từ tay ngay lúc giáo rời khỏi tay
+    spawnLightningArc(p.x+6*dir,p.y-64,p.x+50*dir,p.y-40);
+    spawnHitEffect(p.x+30*dir,p.y-46,"#FFD700");
+    screenShake=Math.max(screenShake,5);
   }
 }
 
@@ -1340,9 +1327,9 @@ function castSkill(attacker,target,skillNum){
     // CHIÊU 2 — GỌI SÉT TỰ GIÁNG: calls lightning down onto the caster's OWN
     // locked position — 0.5s telegraph, explodes 0.5s later. See
     // tickThunderS3() for the full timeline/effects.
-    attacker.attackCooldown=60;attacker.activeSkill=skillId;attacker.cds.s3=280;
-    attacker._thunderSelfBoltTimer=60; // 30f (0.5s) telegraph + 30f (0.5s) pre-blast delay
-    attacker._thunderSelfBoltTotal=60;
+    attacker.attackCooldown=90;attacker.activeSkill=skillId;attacker.cds.s3=280;
+    attacker._thunderSelfBoltTimer=90; // 45f (0.75s) telegraph + 45f (0.75s) pre-blast warning ring — slowed down so both phases are actually readable
+    attacker._thunderSelfBoltTotal=90;
     attacker._thunderSelfBoltExploded=false;
     attacker._thunderSelfBoltX=attacker.x; // locked at cast time
     screenShake=Math.max(screenShake,4);
@@ -1367,7 +1354,7 @@ function castSkill(attacker,target,skillNum){
     attacker.thunderDashTimer=30; // 0.5s of immunity, covering the dash + the extra post-dash grace period
     const dsteps=8;
     for(let i=0;i<=dsteps;i++){const t=i/dsteps;attacker.thunderDashTrail.push({x:_oldX+(attacker.x-_oldX)*t,y:attacker.y,life:18,armed:18});}
-    attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=165;
+    attacker.attackCooldown=15;attacker.activeSkill=skillId;attacker.cds.s2=105; // giảm 1s hồi chiêu (165 -> 105)
     return;
   }
   if(attacker.charType==="red"&&skillNum===3){attacker.attackCooldown=120;attacker.activeSkill=skillId;attacker.cds.s3=360;return;}
@@ -1656,18 +1643,39 @@ function updateProjectiles(floorY,player2){
       proj.vy=(proj.vy||0)+0.25;
     }
     else if(pType==="thunder_spear"){
-      // M1 — NÉM GIÁO: a thrown lightning spear, blue-purple electric trail.
-      ctx.save();ctx.shadowColor="#7a5cff";ctx.shadowBlur=12;
-      ctx.strokeStyle="#5c8cff";ctx.lineWidth=3;ctx.lineCap="round";
-      ctx.beginPath();ctx.moveTo(px-22*pDir,py);ctx.lineTo(px+16*pDir,py);ctx.stroke();
-      ctx.strokeStyle="#c9a6ff";ctx.lineWidth=1.5;ctx.stroke();
-      ctx.fillStyle="#e6dcff";
-      ctx.beginPath();ctx.moveTo(px+16*pDir,py);ctx.lineTo(px+6*pDir,py-5);ctx.lineTo(px+6*pDir,py+5);ctx.closePath();ctx.fill();
+      // M1 — NÉM GIÁO: a large crackling lightning spear — a jagged electric
+      // shaft (gold core, white flash, purple outer glow) with a bright
+      // spearhead and small forking branches, not just a thin straight line.
+      const L=40*pDir,segY=[-4,3,-3,2]; // jagged body offsets, back to front
+      ctx.save();ctx.shadowColor="#7a5cff";ctx.shadowBlur=18;
+      ctx.lineCap="round";ctx.lineJoin="round";
+      const bodyPts=[[px-34*pDir,py+segY[0]],[px-20*pDir,py+segY[1]],[px-6*pDir,py+segY[2]],[px+8*pDir,py+segY[3]],[px+18*pDir,py]];
+      // outer purple glow pass
+      ctx.strokeStyle="#8a5cff";ctx.lineWidth=7;
+      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+      // mid gold pass
+      ctx.strokeStyle="#FFD700";ctx.lineWidth=4;ctx.shadowColor="#FFD700";ctx.shadowBlur=14;
+      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+      // bright white core
+      ctx.strokeStyle="#ffffff";ctx.lineWidth=2;ctx.shadowBlur=6;
+      ctx.beginPath();bodyPts.forEach((pt,i)=>i===0?ctx.moveTo(pt[0],pt[1]):ctx.lineTo(pt[0],pt[1]));ctx.stroke();
+      // small forking branch sparks off the shaft
+      ctx.strokeStyle="#c9a6ff";ctx.lineWidth=1.5;ctx.shadowBlur=8;
+      ctx.beginPath();ctx.moveTo(px-20*pDir,py+segY[1]);ctx.lineTo(px-24*pDir,py+segY[1]-10);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(px-6*pDir,py+segY[2]);ctx.lineTo(px-2*pDir,py+segY[2]+11);ctx.stroke();
+      // spearhead — bigger, bright gold/white arrowhead
+      ctx.fillStyle="#fff6cc";ctx.strokeStyle="#FFD700";ctx.lineWidth=1.5;ctx.shadowColor="#FFD700";ctx.shadowBlur=14;
+      ctx.beginPath();ctx.moveTo(px+30*pDir,py);ctx.lineTo(px+12*pDir,py-9);ctx.lineTo(px+16*pDir,py);ctx.lineTo(px+12*pDir,py+9);ctx.closePath();ctx.fill();ctx.stroke();
       ctx.restore();
       if(!proj.trail)proj.trail=[];
-      proj.trail.push({x:px,y:py,life:10});
+      proj.trail.push({x:px,y:py,life:14});
       _compact(proj.trail,t=>{t.life--;return t.life>0;});
-      proj.trail.forEach(t=>{ctx.save();ctx.globalAlpha=Math.max(0,t.life/10)*0.5;ctx.strokeStyle=rndChoice(["#5c8cff","#8a5cff"]);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(t.x-6,t.y+rndInt(-3,3));ctx.lineTo(t.x+6,t.y+rndInt(-3,3));ctx.stroke();ctx.restore();});
+      proj.trail.forEach(t=>{
+        ctx.save();ctx.globalAlpha=Math.max(0,t.life/14)*0.6;
+        ctx.strokeStyle=rndChoice(["#FFD700","#8a5cff","#ffffff"]);ctx.lineWidth=2.5;ctx.shadowColor="#FFD700";ctx.shadowBlur=8;
+        ctx.beginPath();ctx.moveTo(t.x-9,t.y+rndInt(-4,4));ctx.lineTo(t.x+9,t.y+rndInt(-4,4));ctx.stroke();
+        ctx.restore();
+      });
     }
     else if(pType==="shadow_slash"){
       // ĐÁNH THƯỜNG — a single black claw-slash flying forward like a bullet.
