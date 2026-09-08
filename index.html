@@ -3017,8 +3017,11 @@ function drawMobileControls() {
   if (vBtns1.s4) drawSkillBtn(vBtns1.s4, touch1, "s4", p1.cds.s4, 240);
   if (vBtns1.shield) drawSkillBtn(vBtns1.shield, touch1, "shield", 0, 0);
   
-  // Ultimate
-  if (vBtns1.v4) drawUltiBtn(vBtns1.v4, touch1.v4, p1.cds.s5, 1200, p1.transformActive);
+  // Ultimate — while transforming, show the remaining transform time counting
+  // down (transformTimer); once it ends, switch to the 30s regen cooldown
+  // (cds.s5). Both share the same 30s scale (TRANSFORM_ACTIVE_FRAMES ==
+  // TRANSFORM_REGEN_FRAMES), matching the Nộ bar's drain-then-refill cycle.
+  if (vBtns1.v4) drawUltiBtn(vBtns1.v4, touch1.v4, p1.transformActive ? p1.transformTimer : p1.cds.s5, TRANSFORM_ACTIVE_FRAMES, p1.transformActive);
   
   ctx.restore();
 }
@@ -4046,6 +4049,8 @@ class Fighter {
     // (tránh lỗi hết đạn là tắc chiêu) — chỉ đổi bên mỗi lần cast để tay
     // phải (10 dmg) và tay trái (7 dmg + đẩy lùi) ra đòn xen kẽ nhau.
     this._earthAtkSide="R";
+    // THẦN THỔ V4 — bộ kỹ năng riêng hoàn toàn, không dùng lại S1-S4 thường.
+    this._earthV4Fx=[];this._earthV4ArmorTimer=0;this._earthV4ArmorTick=0;this._earthV4S4Hit=false;
     // --- Thunder-only skill state ---
     this.thunderS3Targets=[];this.thunderS3DelayTick=0;this.thunderS3MaxTick=20;
     // --- FIRE-only skill state (namespaced so no other character is affected) ---
@@ -4138,17 +4143,19 @@ class Fighter {
     // (TRANSFORM_BURST_FRAMES ~1.5s), sau đó mới zoom-out từ từ trong
     // TRANSFORM_CAM_EASE_FRAMES kế tiếp — xem shadowCamZoomState().
     this.camHoldTimer=TRANSFORM_BURST_FRAMES+TRANSFORM_CAM_EASE_FRAMES;
-    // Transform duration: SHADOW gets 20s (1200f — pairs with its 30s cast
-    // cooldown above in castSkill), every other element keeps the original
-    // 10s (600f).
-    this.transformActive=true;this.transformTimer=(this.charType==="shadow"?1200:600);this.attackCooldown=20;
+    // Transform duration: every element now gets 30s (TRANSFORM_ACTIVE_FRAMES).
+    // The Nộ (rage) bar drains gradually alongside this timer (see
+    // drawRageBar()'s family of functions) instead of emptying instantly on
+    // cast — it only starts refilling once transformTimer hits 0, in
+    // tickV4() below, over another 30s (cds.s5=TRANSFORM_REGEN_FRAMES there).
+    this.transformActive=true;this.transformTimer=TRANSFORM_ACTIVE_FRAMES;this.attackCooldown=20;
     const buffs=this.getTransformBuffs();
     if(this.charType==="frost"||this.charType==="red")this.isFlying=buffs.can_fly||false;
     if(this.charType==="shadow")this.v4LifestealPct=buffs.lifesteal||0;
     // RED no longer gets a scripted "bất tử" invulnerability window — replaced by the
     // Hỏa Chủng (Fire Seed) stack mechanic below (see _afterHit / triggerHoaChungExplosion).
     if(this.charType==="red"){this.v4InvisScheduled=false;this.transformInvisActive=false;this.transformInvisTimer=0;this.hoaChungStacks=0;this.hoaChungFlashTimer=0;this._fireFlyTrail=[];this._fireFootprints=[];}
-    if(this.charType==="earth"){this.ghostHp=130;this._earthRockArmor=true;this._earthRockTimer=0;this._earthRockAngle=0;}
+    if(this.charType==="earth"){this.ghostHp=130;this._earthRockArmor=true;this._earthRockTimer=0;this._earthRockAngle=0;this._earthV4ArmorTimer=0;this._earthV4ArmorTick=0;this._earthV4Fx=[];this._earthV4S4Hit=false;}
     if(this.charType==="fire"){this.fireDashTimer=0;this.fireDashTrail=[];this.firePillarTargets=[];this._fireEmbers=[];this._fireV2Particles=[];sfxFireCrackle();}
     this.transformBurstTimer=25;
     screenShake=Math.max(screenShake,12);
@@ -5095,6 +5102,9 @@ class Fighter {
     const af=this.animFrame;
     const rx=this.x+ox, ry=this.y+oy-52;
     const dir=this.direction;
+
+    // THẦN THỔ — Thạch Giáp làm golem phồng thêm các mảng đá khi buff còn hiệu lực.
+    if(this._earthV4ArmorTimer>0){const p=1+Math.sin(af*0.18)*0.04;ctx.save();ctx.globalAlpha=0.65;ctx.strokeStyle="#d8b07a";ctx.shadowColor="#c68a4a";ctx.shadowBlur=22;ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(rx,ry-38,88*p,102*p,0,0,Math.PI*2);ctx.stroke();ctx.restore();}
 
     // ================================================================
     // MOTION RIG — a lightweight walk/idle cycle so the golem isn't just a
@@ -6809,6 +6819,57 @@ class Fighter {
     else if(sk==="fire_s4"){
       const v2=this.transformActive;
       _text(rx,ry-130,v2?"🔵 BLUE INFERNO DESTROYER 🔵":"🔥 FLAME DESTROYER 🔥",v2?"#00E5FF":"orangered","12px Arial bold");
+    }
+    else if(sk==="earth_s1"&&this.transformActive){
+      _text(rx,ry-210,"👊 THẠCH QUYỀN — ĐẤM XUYÊN ĐỊA MẠCH 👊","#e4c18a","13px Arial bold");
+      const f=this._earthV4Fx&&this._earthV4Fx.find(x=>x.type==="fist");
+      if(f){
+        const age=f.maxLife-f.life;
+        const charge=Math.min(1,age/12);
+        const punch=age<12?0:(age<20?(age-12)/8:1);
+        const recoil=age<8?0:Math.min(1,(age-8)/5);
+        // vai + thân dồn lực
+        ctx.save();ctx.translate(rx-f.dir*12*recoil,ry-45+Math.sin(age*0.5)*2);ctx.globalAlpha=0.35+charge*0.55;ctx.strokeStyle="#c68a4a";ctx.lineWidth=12+22*charge;ctx.beginPath();ctx.arc(0,0,38+26*charge,-1.35,1.2);ctx.stroke();ctx.restore();
+        // cánh tay thực sự kéo về rồi phóng ra phía trước
+        const reach=22+8*(1-charge)+215*Math.sin(punch*Math.PI/2);
+        const fx=rx+f.dir*reach,fy=ry-53-(punch*6);
+        ctx.save();ctx.lineCap="round";ctx.strokeStyle="#4a3524";ctx.lineWidth=38+18*punch;ctx.shadowColor="#c68a4a";ctx.shadowBlur=22;ctx.beginPath();ctx.moveTo(rx-f.dir*8+(-f.dir*16*recoil),ry-47+8*recoil);ctx.lineTo(fx,fy);ctx.stroke();ctx.restore();
+        ctx.save();ctx.translate(fx,fy);ctx.rotate((-0.18+0.28*punch)*f.dir);ctx.fillStyle="#8a6a4a";ctx.strokeStyle="#e0bd80";ctx.lineWidth=3.5;ctx.shadowColor="#c68a4a";ctx.shadowBlur=20;ctx.beginPath();ctx.moveTo(-28,-22);ctx.lineTo(14,-26);ctx.lineTo(31,-5);ctx.lineTo(20,25);ctx.lineTo(-18,22);ctx.lineTo(-34,2);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+        if(age>=17&&age<28){ctx.save();ctx.globalAlpha=Math.max(0,1-(age-17)/11);ctx.strokeStyle="#e0bd80";ctx.lineWidth=5;for(let j=0;j<7;j++){ctx.beginPath();ctx.moveTo(rx+f.dir*(80+j*14),ry-55+j*2);ctx.lineTo(rx+f.dir*(155+j*22),ry-55+j*3+(j-3)*6);ctx.stroke();}ctx.restore();}
+        if(age>=18){ctx.save();ctx.globalAlpha=Math.max(0,1-(age-18)/16);ctx.strokeStyle="#d8b07a";ctx.lineWidth=5;for(let j=0;j<4;j++){ctx.beginPath();ctx.arc(fx,fy,35+j*22,0,Math.PI*2);ctx.stroke();}ctx.restore();}
+      }
+    }
+    else if(sk==="earth_s2"&&this.transformActive){
+      _text(rx,ry-210,"💨 ĐẠI ĐỊA XUNG — PHÁ THIÊN 💨","#d8b07a","13px Arial bold");
+      const f=this._earthV4Fx&&this._earthV4Fx.find(x=>x.type==="dash");
+      if(f){
+        const age=f.maxLife-f.life;
+        const t=Math.min(1,(age+1)/f.maxLife);
+        // đường năng lượng dưới đất chạy theo cả đoạn dash
+        ctx.save();ctx.globalAlpha=0.6;ctx.strokeStyle="#c68a4a";ctx.shadowColor="#d8b07a";ctx.shadowBlur=14;ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(f.startX,ry+5);ctx.lineTo(f.startX+(f.targetX-f.startX)*t,ry+5);ctx.stroke();ctx.restore();
+        // afterimage theo 4 vị trí phía sau
+        for(let j=1;j<=4;j++){const tx=rx-f.dir*j*32;ctx.save();ctx.globalAlpha=(0.3-j*0.05)*Math.max(0,1-t);ctx.translate(tx,ry-45);ctx.scale(f.dir,1);ctx.fillStyle="#8a6a4a";ctx.beginPath();ctx.moveTo(-18,-35);ctx.lineTo(25,-30);ctx.lineTo(32,20);ctx.lineTo(-10,28);ctx.closePath();ctx.fill();ctx.restore();}
+        // bụi/hòn đá bị hất tung dọc đường
+        for(let j=0;j<8;j++){const frac=Math.min(1,t+j*0.08);const tx=f.startX+(f.targetX-f.startX)*frac;ctx.save();ctx.globalAlpha=0.45;ctx.strokeStyle="#c68a4a";ctx.lineWidth=3;ctx.beginPath();ctx.arc(tx,ry+8,18+j*4+Math.sin(age*0.25+j)*4,0,Math.PI*2);ctx.stroke();ctx.restore();}
+      }
+    }
+    else if(sk==="earth_s3"&&this.transformActive){
+      _text(rx,ry-145,"🛡️ THẠCH GIÁP 🛡️","#d8b07a","13px Arial bold");
+      const pulse=1+Math.sin(af*0.25)*0.05;ctx.save();ctx.globalAlpha=0.55;ctx.strokeStyle="#c9a06a";ctx.shadowColor="#c68a4a";ctx.shadowBlur=18;ctx.lineWidth=5;ctx.beginPath();ctx.ellipse(rx,ry-40,58*pulse,78*pulse,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+    }
+    else if(sk==="earth_v4_s4"){
+      const total=this._earthV4S4Total||170,elapsed=total-this.ultiTimer;
+      _text(rx,ry-220,"💥 THẦN THỔ — ĐẠI ĐỊA BẠO PHÁ 💥","#e0bd80","15px Arial bold");
+      const charge=Math.min(1,elapsed/(total-35));
+      // Tụ lực chậm: lõi sáng co lại/giãn ra, mặt đất rung, bụi hút vào tâm.
+      ctx.save();ctx.globalAlpha=0.12+charge*0.28;ctx.fillStyle="#4a3524";ctx.beginPath();ctx.arc(rx,ry-45,75+charge*145,0,Math.PI*2);ctx.fill();ctx.restore();
+      ctx.save();ctx.globalAlpha=0.6+charge*0.35;ctx.strokeStyle="#e0bd80";ctx.lineWidth=4+charge*7;ctx.shadowColor="#c68a4a";ctx.shadowBlur=18;ctx.beginPath();ctx.arc(rx,ry-48,28+charge*55+Math.sin(elapsed*0.35)*5,0,Math.PI*2);ctx.stroke();ctx.restore();
+      for(let i=0;i<10;i++){const a=i*Math.PI*2/10+elapsed*0.035,r=48+charge*95;const x=rx+Math.cos(a)*r,y=ry-48+Math.sin(a)*r*0.45;ctx.save();ctx.globalAlpha=0.25+charge*0.6;ctx.fillStyle="#c68a4a";ctx.beginPath();ctx.arc(x,y,4+charge*4,0,Math.PI*2);ctx.fill();ctx.restore();}
+      if(elapsed>=total-20){
+        const ex=Math.min(1,(elapsed-(total-20))/20);const ease=1-Math.pow(1-ex,3);
+        for(let i=0;i<3;i++){ctx.save();ctx.globalAlpha=Math.max(0,0.85-ease*0.65-i*0.12);ctx.strokeStyle=i===0?"white":(i===1?"#e0bd80":"#8a6a4a");ctx.lineWidth=10-i*2;ctx.beginPath();ctx.arc(rx,ry-48,40+ease*(180+i*170),0,Math.PI*2);ctx.stroke();ctx.restore();}
+        ctx.save();ctx.globalAlpha=0.18*ease;ctx.fillStyle="#fff2cf";ctx.beginPath();ctx.arc(rx,ry-48,180+ease*420,0,Math.PI*2);ctx.fill();ctx.restore();
+      }
     }
     else if(sk==="earth_s1"){
       // KHỐI THẠCH KIÊN — bản thân khối đất là một projectile riêng (vẽ
@@ -11938,6 +11999,10 @@ function applyDamage(target,damage,attacker){
   // 4.25s của chuỗi hiệu ứng (mắt đỏ -> nhảy -> rơi -> chấn động), để
   // tránh trường hợp bị "sốc chết" (chết) giữa lúc không thể di chuyển.
   if(target instanceof Fighter&&target.charType==="earth"&&target.activeSkill==="earth_s4"&&target.ultiTimer>0)return;
+  // THẦN THỔ S3 — Thạch Giáp giảm sát thương trong thời gian buff.
+  if(target instanceof Fighter&&target.charType==="earth"&&target._earthV4ArmorTimer>0&&damage>0){
+    damage*=0.45;
+  }
   // THUNDER DASH IMMUNITY: while dashing as a bolt of lightning, the thunder
   // fighter is immune to collisions/CC/pushback/damage for the ~0.3s dash.
   if(target instanceof Fighter&&target.charType==="thunder"&&target.thunderDashTimer>0)return;
@@ -12231,6 +12296,95 @@ function tickEarthShield(p){
 //  rung màn hình LIÊN TỤC (ghi đè lại mỗi frame, chống bị tự tắt dần do
 //  screenShake*=0.96 trong update()) cho tới khi hết hẳn.
 // ================================================================
+function tickEarthV4(p){
+  if(!p||p.charType!=="earth")return;
+  if(!p._earthV4Fx)p._earthV4Fx=[];
+  p._earthV4Fx=p._earthV4Fx.filter(f=>{f.life=(f.life||0)-1;return f.life>0;});
+
+  // S3 — phản chấn khi giáp đang hoạt động.
+  if(p._earthV4ArmorTimer>0){
+    p._earthV4ArmorTimer--;p._earthV4ArmorTick++;
+    if(p._earthV4ArmorTick%24===0){
+      getAllEnemies(p).forEach(en=>{if(en&&en.hp>0&&dist(en.x,en.y,p.x,p.y)<125*SR)applyDamage(en,5,p);});
+      for(let i=0;i<12;i++){const a=rng()*Math.PI*2,sp=rng()*5+1;hitEffects.push({x:p.x,y:p.y-35,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.8,life:22,maxLife:22,particle:true,size:rndInt(4,8),color:rndChoice(["#8a6a4a","#c68a4a","#d8b07a"])});}
+      screenShake=Math.max(screenShake,5);
+    }
+  }
+
+  // S1 — actual punch impact. This is deliberately resolved HERE so the
+  // visual arm motion and gameplay hit use the same frame.
+  const fist=p._earthV4Fx.find(f=>f.type==="fist");
+  if(fist){
+    const elapsed=fist.maxLife-fist.life;
+    if(elapsed===8){
+      fist.phase=1;
+      for(let i=0;i<10;i++){const a=rng()*Math.PI*2,sp=rng()*5+2;hitEffects.push({x:p.x+p.direction*45,y:p.y-55,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.5,life:26,maxLife:26,particle:true,size:rndInt(4,8),color:rndChoice(["#8a6a4a","#c68a4a","#e0bd80"])});}
+    }
+    if(elapsed===18&&!fist.hit){
+      fist.hit=true;fist.phase=2;
+      const hitX=p.x+p.direction*175;
+      getAllEnemies(p).forEach(en=>{
+        if(Math.abs(en.x-hitX)<115*SR&&Math.abs(en.y-p.y)<120*SR){
+          applyDamage(en,28,p);
+          if(isPushable(en)){en.x=clamp(en.x+p.direction*170,moveBoundLo(),moveBoundHi());if(en instanceof Fighter)en.vy=-11;}
+        }
+      });
+      screenShake=Math.max(screenShake,24);sfxExplosion();
+      hitEffects.push({x:hitX,y:p.y-52,life:35,maxLife:35,color:"#e0bd80",shockwave:true,maxR:155,lw:10});
+      hitEffects.push({x:hitX,y:p.y-52,life:50,maxLife:50,color:"#8a6a4a",shockwave:true,maxR:235,lw:5});
+      for(let i=0;i<34;i++){const a=rng()*Math.PI*2,sp=rng()*10+3;hitEffects.push({x:hitX,y:p.y-52,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-3,life:42,maxLife:42,particle:true,size:rng()<0.25?12:6,color:rndChoice(["#5a4030","#8a6a4a","#c68a4a","#d8b07a"])});}
+    }
+  }
+
+  // F / S2 — long dash. Move the fighter every frame so it is visibly a dash,
+  // not an instant teleport. Damage is swept across the traveled segment.
+  const dash=p._earthV4Fx.find(f=>f.type==="dash");
+  if(dash){
+    const elapsed=dash.maxLife-dash.life;
+    const t=Math.min(1,(elapsed+1)/dash.maxLife);
+    const prevX=p.x;
+    p.x=dash.startX+(dash.targetX-dash.startX)*t;
+    if(elapsed%2===0){
+      hitEffects.push({x:p.x,y:p.y+4,vx:-dash.dir*(rng()*1.2+0.5),vy:-rng()*0.5,life:20,maxLife:20,smoke:true,r0:rndInt(5,10),color:rndChoice(["#8a6a4a","#6a4a2a","#c68a4a"])});
+      hitEffects.push({x:p.x-dash.dir*rndInt(20,45),y:p.y-22+rndInt(-18,10),life:12,maxLife:12,color:"#c68a4a",ring:true});
+    }
+    getAllEnemies(p).forEach(en=>{
+      if(!en||en.hp<=0||dash.hitSet.includes(en))return;
+      const lo=Math.min(prevX,p.x)-40*SR,hi=Math.max(prevX,p.x)+40*SR;
+      if(en.x>=lo&&en.x<=hi&&Math.abs(en.y-p.y)<105*SR){
+        dash.hitSet.push(en);applyDamage(en,16,p);
+        if(isPushable(en)){en.x=clamp(en.x+dash.dir*90,moveBoundLo(),moveBoundHi());if(en instanceof Fighter)en.vy=-8;}
+        spawnHitEffect(en.x,(en.y||p.y)-45,"#c68a4a");
+      }
+    });
+  }
+
+  // G / S4 — one large final explosion. No spikes.
+  if(p.activeSkill!=="earth_v4_s4"||p.ultiTimer<=0)return;
+  const total=p._earthV4S4Total||170,elapsed=total-p.ultiTimer;
+  if(elapsed<total-20&&elapsed%10===0){
+    const charge=Math.min(1,elapsed/(total-35));
+    for(let i=0;i<3;i++){const a=rng()*Math.PI*2,r=55+charge*180+rng()*40;hitEffects.push({x:p.x+Math.cos(a)*r,y:p.y-35+Math.sin(a)*r*0.35,life:38,maxLife:38,color:"#8a6a4a",crack:true});}
+    screenShake=Math.max(screenShake,3+Math.floor(charge*9));
+  }
+  if(elapsed>=total-20&&!p._earthV4S4Hit){
+    p._earthV4S4Hit=true;
+    const cx=p.x,cy=p.y-48;
+    getAllEnemies(p).forEach(en=>{
+      if(Math.abs(en.x-cx)<680*SR&&Math.abs(en.y-p.y)<250*SR){
+        applyDamage(en,60,p);
+        if(isPushable(en)){en.x=clamp(en.x+(en.x>=p.x?1:-1)*260,moveBoundLo(),moveBoundHi());if(en instanceof Fighter)en.vy=-17;}
+      }
+    });
+    screenShake=Math.max(screenShake,52);sfxExplosion();
+    hitEffects.push({x:cx,y:cy,life:18,maxLife:18,color:"white",ring:true,big:true});
+    hitEffects.push({x:cx,y:cy,life:70,maxLife:70,color:"#e0bd80",shockwave:true,maxR:240,lw:12});
+    hitEffects.push({x:cx,y:cy,life:82,maxLife:82,color:"#c68a4a",shockwave:true,maxR:430,lw:9});
+    hitEffects.push({x:cx,y:cy,life:96,maxLife:96,color:"#8a6a4a",shockwave:true,maxR:680,lw:6});
+    for(let i=0;i<80;i++){const a=rng()*Math.PI*2,sp=rng()*17+4;hitEffects.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-8,life:rndInt(45,80),maxLife:rndInt(45,80),particle:true,size:rng()<0.25?14:rndInt(5,9),color:rndChoice(["#4a3524","#6a4a2a","#8a6a4a","#c68a4a","#e0bd80"])});}
+  }
+}
+
 function tickEarthGroundSlam(p){
   if(p.activeSkill!=="earth_s4"||p.ultiTimer<=0)return;
   const total=p._groundSlamTotal||255;
@@ -12990,6 +13144,10 @@ function castSkill(attacker,target,skillNum){
   const sKey=`s${skillNum}`;
   if(attacker.cds[sKey]>0)return;
   if(skillNum===5){
+    // Đang biến hình rồi thì không cho bấm lại (thanh Nộ giờ đang tự tụt dần
+    // theo transformTimer chứ không còn khóa bằng cds.s5 nữa — xem
+    // _finalizeTransform()/tickV4()/drawRageBar()).
+    if(attacker.transformActive)return;
     if(attacker.charType==="shadow"){
       // SHADOW V4 — "Bóng Tối Thức Tỉnh": 3.5s (210-frame) wind-up before the
       // transform actually lands. Reuses the shared transformWindupTimer /
@@ -12998,7 +13156,8 @@ function castSkill(attacker,target,skillNum){
       // instead of a parallel system — _finalizeTransform() is only invoked
       // once, from applyGravity(), when the timer reaches 0.
       attacker.isAttacking=false;attacker.activeSkill=null;
-      attacker.cds.s5=1800; // 30s hồi chiêu (riêng cho Shadow — các charType khác vẫn 1200/20s, xem nhánh else bên dưới)
+      // cds.s5 (30s hồi Nộ) không set ở đây nữa — nó chỉ bắt đầu đếm khi
+      // biến hình KẾT THÚC, xem tickV4().
       // 45 extra frames (0.75s) up front: 15f (0.25s) of nothing, then a
       // 30f (0.5s) camera punch-in/zoom (see shadowCamZoomState() in
       // 07-fx-ticks-ui-and-main-menu.js) — the existing 3.5s (210f) VFX
@@ -13025,7 +13184,7 @@ function castSkill(attacker,target,skillNum){
     // Shadow, just shorter, reusing the same shared timer/finalize plumbing.
     if(attacker.charType==="thunder"){
       attacker.isAttacking=false;attacker.activeSkill=null;
-      attacker.cds.s5=1200; // vẫn 20s hồi chiêu như trước (không đổi so với bản biến hình tức thì)
+      // cds.s5 chỉ bắt đầu đếm 30s hồi Nộ khi biến hình KẾT THÚC, xem tickV4().
       attacker.transformWindupTimer=150; // 2.5s @60fps
       attacker._transformWindupTotal=150;
       attacker._windupBolts=null; // để _drawTransformWindup tự sinh lại tia sét ngay frame đầu
@@ -13044,7 +13203,7 @@ function castSkill(attacker,target,skillNum){
     // transform (with its ice-nova finalize effects) fire.
     if(attacker.charType==="frost"){
       attacker.isAttacking=false;attacker.activeSkill=null;
-      attacker.cds.s5=1200;
+      // cds.s5 chỉ bắt đầu đếm 30s hồi Nộ khi biến hình KẾT THÚC, xem tickV4().
       attacker.transformWindupTimer=210; // 0.5s cam punch-in + 3.0s VFX = 3.5s @ 60fps
       attacker._transformWindupTotal=210;
       attacker._frostWindupBurstDone=false;
@@ -13063,7 +13222,7 @@ function castSkill(attacker,target,skillNum){
     // _finalizeTransform().
     if(attacker.charType==="earth"){
       attacker.isAttacking=false;attacker.activeSkill=null;
-      attacker.cds.s5=1200;
+      // cds.s5 chỉ bắt đầu đếm 30s hồi Nộ khi biến hình KẾT THÚC, xem tickV4().
       attacker.transformWindupTimer=270; // 4.5s @60fps
       attacker._transformWindupTotal=270;
       startTimeFreeze(270,attacker);
@@ -13074,7 +13233,7 @@ function castSkill(attacker,target,skillNum){
     // fly-up-and-wait windup delay. The 20-ray spark explosion + V4 skin
     // fire off immediately.
     attacker.isAttacking=false;attacker.activeSkill=null;
-    attacker.cds.s5=1200;
+    // cds.s5 chỉ bắt đầu đếm 30s hồi Nộ khi biến hình KẾT THÚC, xem tickV4().
     screenShake=Math.max(screenShake,10);
     sfxEnergyCharge();
     attacker._finalizeTransform(attacker.y);
@@ -13489,6 +13648,39 @@ function castSkill(attacker,target,skillNum){
     hitEffects.push({x:attacker.x,y:attacker.y-60,life:22,maxLife:22,color:"white",ring:true,big:true});
     return;
   }
+  // ================================================================
+  // THẦN THỔ V4 — S1-S4 là một bộ kỹ năng MỚI, độc lập hoàn toàn với
+  // bộ Earth thường. Chỉ chạy khi transformActive=true.
+  // ================================================================
+  if(attacker.charType==="earth"&&attacker.transformActive&&skillNum>=1&&skillNum<=4){
+    const dir=attacker.direction;
+    if(skillNum===1){
+      // S1 — THẠCH QUYỀN: giữ người chơi đứng lại trong một nhịp wind-up
+      // đủ dài để nhìn thấy cả vai + cánh tay thu về trước khi đấm xuyên.
+      attacker.attackCooldown=38;attacker.activeSkill=skillId;attacker.cds.s1=55;
+      attacker._earthV4Fx.push({type:"fist",life:38,maxLife:38,dir,phase:0,hit:false});
+    }else if(skillNum===2){
+      // F / S2 — ĐẠI ĐỊA XUNG: lướt một đoạn RẤT DÀI theo đúng hướng đang nhìn,
+      // quét damage trên toàn đoạn đường và để lại vệt đá + afterimage.
+      const startX=attacker.x;
+      const dashDist=380;
+      attacker.attackCooldown=34;attacker.activeSkill=skillId;attacker.cds.s2=210;
+      attacker._earthV4Fx.push({type:"dash",life:34,maxLife:34,dir,startX,targetX:clamp(startX+dashDist*dir,moveBoundLo(),moveBoundHi()),hitSet:[]});
+      screenShake=Math.max(screenShake,8);
+    }else if(skillNum===3){
+      // S3 — THẠCH GIÁP: hóa giáp đá, giảm 55% sát thương + phản chấn.
+      attacker.attackCooldown=18;attacker.activeSkill=skillId;attacker.cds.s3=360;
+      attacker._earthV4ArmorTimer=240;attacker._earthV4ArmorTick=0;
+      attacker._earthV4Fx.push({type:"armor",life:240,maxLife:240});
+      screenShake=Math.max(screenShake,9);
+      for(let i=0;i<18;i++){const a=rng()*Math.PI*2,sp=rng()*5+1;hitEffects.push({x:attacker.x,y:attacker.y-40,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,life:30,maxLife:30,particle:true,color:rndChoice(["#a67c52","#8a6a4a","#c68a4a"])});}
+    }else{
+      // G / S4 — ĐẠI NỔ THẦN THỔ: không mọc gai/cột đá. Tụ lực thật lâu rồi
+      // nổ một vụ nổ địa chấn cực lớn; damage xử lý đúng ở tick cuối.
+      const total=170;attacker.attackCooldown=total;attacker.activeSkill="earth_v4_s4";attacker.ultiTimer=total;attacker._earthV4S4Total=total;attacker._earthV4S4Hit=false;attacker.cds.s4=900;sfxEnergyCharge();screenShake=Math.max(screenShake,6);
+    }
+    return;
+  }
   if(attacker.charType!=="earth"){
     if(skillNum===1){attacker.attackCooldown=8;attacker.activeSkill=skillId;attacker.cds.s1=90;aoeHit(attacker,7,160);}
     else if(skillNum===2){attacker.attackCooldown=12;attacker.activeSkill=skillId;attacker.cds.s2=180;const _oldX2=attacker.x,_oldY2=attacker.y;attacker.x+=160*attacker.direction;attacker.x=clamp(attacker.x,moveBoundLo(),moveBoundHi());_dashCapture(attacker,_oldX2,_oldY2);aoeHit(attacker,12,100);}
@@ -13575,6 +13767,16 @@ function updateBot(){
   if(botLevel>=1&&absD<140&&rng()<0.03)castSkill(p2,p1t,1);
   if(botLevel>=2){p2.x+=3.0*(p2.speedMult||1)*(p1t.x>p2.x?1:-1);if(rng()<0.01)p2.jump();if(absD>100&&absD<320&&rng()<0.02)castSkill(p2,p1t,3);}
   if(botLevel>=3){p2.isShielding=p1.isAttacking;if(absD<250&&rng()<0.03)castSkill(p2,p1t,4);if(absD<140)castSkill(p2,p1t,1);}
+  // EARTH BOT AI — khi đã hóa Thần Thổ, ưu tiên dùng bộ S1-S4 V4 mới.
+  if(p2.charType==="earth"&&botLevel>=1&&p2.hp>0&&p2.stunTimer<=0&&p2.transformWindupTimer===0&&p2.transformLandingTimer===0){
+    if(p2.cds.s5<=0&&!p2.transformActive&&rng()<0.05)castSkill(p2,p1t,5);
+    else if(p2.transformActive){
+      if(p2.cds.s4<=0&&absD<600&&rng()<0.07)castSkill(p2,p1t,4);
+      else if(p2.cds.s3<=0&&rng()<0.04)castSkill(p2,p1t,3);
+      else if(p2.cds.s2<=0&&absD<500&&rng()<0.05)castSkill(p2,p1t,2);
+      else if(p2.cds.s1<=0&&absD<260&&rng()<0.06)castSkill(p2,p1t,1);
+    }
+  }
   // FIRE BOT AI — presses Y (skill 5) to transform once the Rage/Ultimate
   // bar is full, then leans hard on the Flame Destroyer ultimate afterward.
   if(p2.charType==="fire"&&botLevel>=1&&p2.hp>0&&p2.stunTimer<=0&&p2.transformWindupTimer===0&&p2.transformLandingTimer===0){
@@ -14226,6 +14428,14 @@ const EARTH_CAM_ZOOMIN_END=140;
 // shadowCamZoomState().
 const TRANSFORM_BURST_FRAMES=90;
 const TRANSFORM_CAM_EASE_FRAMES=45;
+// V4 rage-bar timing: how long the transform stays active, and how long the
+// Nộ (rage) bar takes to refill afterwards — both 30s (1800f @60fps) for
+// every character now. See _finalizeTransform() (sets transformTimer),
+// tickV4() (starts the cds.s5 regen countdown once transformTimer hits 0),
+// and drawRageBar()'s family of functions (drains during transformActive,
+// then refills during the cds.s5 countdown).
+const TRANSFORM_ACTIVE_FRAMES=1800;
+const TRANSFORM_REGEN_FRAMES=1800;
 function shadowCamZoomState(p){
   if(!p||(p.charType!=="shadow"&&p.charType!=="thunder"&&p.charType!=="frost"&&p.charType!=="earth"))return{zoom:1.0,active:false};
   // THUNDER, FROST và EARTH dùng chung cơ chế zoom camera này với Shadow
@@ -14622,6 +14832,12 @@ function tickV4(p){
   if(!p.transformActive)return;
   if(p.transformTimer>0)p.transformTimer--;
   else{
+    // Biến hình vừa kết thúc — đây là lúc thanh Nộ bắt đầu hồi lại (30s,
+    // TRANSFORM_REGEN_FRAMES), thay vì hồi song song với lúc đang biến hình
+    // như bản cũ. Trong lúc transformActive vừa rồi, drawRageBar() đã tự vẽ
+    // thanh Nộ tụt dần theo transformTimer — giờ mới bắt đầu tụt cds.s5 để
+    // thanh từ từ đầy trở lại.
+    p.cds.s5=TRANSFORM_REGEN_FRAMES;
     p.transformActive=false;p.isFlying=false;p.v4LifestealPct=0;p.ghostHp=0;p.transformInvisActive=false;p.transformInvisTimer=0;p._shadowRedGlow=false;
     if(p.charType==="red"){
       // Small closing burst + distinct sound as the Hỏa Ma Thần fire dies down to embers.
@@ -14747,9 +14963,11 @@ function drawRageBar(bx,by,bw,bh,fighter){
   if(fighter.charType==="thunder"){_drawThunderRageBar(bx,by,bw,bh,fighter);return;}
   if(fighter.charType==="frost"){_drawFrostRageBar(bx,by,bw,bh,fighter);return;}
   if(fighter.charType==="earth"){_drawEarthRageBar(bx,by,bw,bh,fighter);return;}
-  const cdMax=1200,cd=fighter.cds.s5||0;
-  const ready = cd<=0;
-  const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
+  const cdMax=TRANSFORM_REGEN_FRAMES,cd=fighter.cds.s5||0;
+  const ready = !fighter.transformActive && cd<=0;
+  const fillFrac = fighter.transformActive
+    ? clamp((fighter.transformTimer||0)/TRANSFORM_ACTIVE_FRAMES,0,1)
+    : (ready ? 1 : clamp(1-(cd/cdMax),0,1));
   _rect(bx,by,bw,bh,"#330000","#111",1);
   const fillW=Math.max(0,bw*fillFrac);
   ctx.fillStyle = ready ? "#ff2a2a" : "#cc3333";
@@ -14769,9 +14987,11 @@ function drawRageBar(bx,by,bw,bh,fighter){
 // dùng chung — kept fully separate so every other character's bar is
 // untouched.
 function _drawEarthRageBar(bx,by,bw,bh,fighter){
-  const cdMax=1200,cd=fighter.cds.s5||0;
-  const ready=cd<=0;
-  const fillFrac=ready?1:clamp(1-(cd/cdMax),0,1);
+  const cdMax=TRANSFORM_REGEN_FRAMES,cd=fighter.cds.s5||0;
+  const ready=!fighter.transformActive && cd<=0;
+  const fillFrac=fighter.transformActive
+    ? clamp((fighter.transformTimer||0)/TRANSFORM_ACTIVE_FRAMES,0,1)
+    : (ready?1:clamp(1-(cd/cdMax),0,1));
   _rect(bx,by,bw,bh,"#2a1e14","#111",1);
   const fillW=Math.max(0,bw*fillFrac);
   const grad=ctx.createLinearGradient(bx,by,bx+fillW,by);
@@ -14807,9 +15027,11 @@ function _drawEarthRageBar(bx,by,bw,bh,fighter){
 // full — kept fully separate from drawRageBar() above so every other
 // character's bar is untouched.
 function _drawShadowRageBar(bx,by,bw,bh,fighter){
-  const cdMax=1200,cd=fighter.cds.s5||0;
-  const ready = cd<=0;
-  const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
+  const cdMax=TRANSFORM_REGEN_FRAMES,cd=fighter.cds.s5||0;
+  const ready = !fighter.transformActive && cd<=0;
+  const fillFrac = fighter.transformActive
+    ? clamp((fighter.transformTimer||0)/TRANSFORM_ACTIVE_FRAMES,0,1)
+    : (ready ? 1 : clamp(1-(cd/cdMax),0,1));
   _rect(bx,by,bw,bh,"#0a0612","#000",1);
   const fillW=Math.max(0,bw*fillFrac);
   const grad=ctx.createLinearGradient(bx,by,bx+fillW,by);
@@ -14877,9 +15099,11 @@ function _strokeBoltPath(pts,coreColor,glowColor,coreW,glowW,glowBlur,alpha){
   ctx.restore();
 }
 function _drawThunderRageBar(bx,by,bw,bh,fighter){
-  const cdMax=1200,cd=fighter.cds.s5||0;
-  const ready = cd<=0;
-  const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
+  const cdMax=TRANSFORM_REGEN_FRAMES,cd=fighter.cds.s5||0;
+  const ready = !fighter.transformActive && cd<=0;
+  const fillFrac = fighter.transformActive
+    ? clamp((fighter.transformTimer||0)/TRANSFORM_ACTIVE_FRAMES,0,1)
+    : (ready ? 1 : clamp(1-(cd/cdMax),0,1));
   _rect(bx,by,bw,bh,"#332b00","#000",1);
   const fillW=Math.max(0,bw*fillFrac);
   // chớp sáng nền ngắn khi vừa có tia sét lớn đánh ra (bên dưới phần fill)
@@ -14949,9 +15173,11 @@ function _drawThunderRageBar(bx,by,bw,bh,fighter){
 // _drawShadowRageBar()/_drawThunderRageBar() đã làm, để không đụng tới các
 // nhân vật khác.
 function _drawFrostRageBar(bx,by,bw,bh,fighter){
-  const cdMax=1200,cd=fighter.cds.s5||0;
-  const ready = cd<=0;
-  const fillFrac = ready ? 1 : clamp(1-(cd/cdMax),0,1);
+  const cdMax=TRANSFORM_REGEN_FRAMES,cd=fighter.cds.s5||0;
+  const ready = !fighter.transformActive && cd<=0;
+  const fillFrac = fighter.transformActive
+    ? clamp((fighter.transformTimer||0)/TRANSFORM_ACTIVE_FRAMES,0,1)
+    : (ready ? 1 : clamp(1-(cd/cdMax),0,1));
   _rect(bx,by,bw,bh,"#031824","#000",1);
   const fillW=Math.max(0,bw*fillFrac);
   const grad=ctx.createLinearGradient(bx,by,bx+fillW,by);
@@ -16100,6 +16326,7 @@ function updateGameplay(floorY){
     tickEarthMud(p);
     tickEarthShield(p);
     tickEarthGroundSlam(p);
+    tickEarthV4(p);
     tickEarthMinions(p,worldW);
     updateFire(p);
     updateShadow(p);
@@ -16116,7 +16343,7 @@ function updateGameplay(floorY){
         attacker.windStormTick++;
         if(attacker.windStormTick%25===0&&isPushable(pvpTarget)){if(pvpTarget instanceof Fighter)pvpTarget.vy=-10;}
       }
-      if(attacker.ultiTimer===0){if(attacker.charType==="wind"&&attacker.activeSkill==="wind_s4")spawnWindSideCyclones(attacker);if(attacker.charType==="thunder"&&attacker.activeSkill==="thunder_s3")triggerThunderS3Strike(attacker);attacker.isAttacking=false;attacker.activeSkill=null;if(attacker.charType==="earth"){attacker.earthPillars=[];attacker._groundSlamImpacted=false;attacker._groundSlamImpact2=false;attacker._groundSlamCracks=null;attacker._groundSlamFlash1=undefined;attacker._groundSlamFlash2=undefined;}}
+      if(attacker.ultiTimer===0){if(attacker.charType==="wind"&&attacker.activeSkill==="wind_s4")spawnWindSideCyclones(attacker);if(attacker.charType==="thunder"&&attacker.activeSkill==="thunder_s3")triggerThunderS3Strike(attacker);attacker.isAttacking=false;attacker.activeSkill=null;if(attacker.charType==="earth"){attacker.earthPillars=[];attacker._groundSlamImpacted=false;attacker._groundSlamImpact2=false;attacker._groundSlamCracks=null;attacker._groundSlamFlash1=undefined;attacker._groundSlamFlash2=undefined;}if(attacker.charType==="earth"){attacker._earthV4Fx=[];attacker._earthV4S4Hit=false;}}
     }
 
   }
@@ -16240,6 +16467,7 @@ function updateChallenge(w,h){
   tickEarthMud(p1);
   tickEarthShield(p1);
   tickEarthGroundSlam(p1);
+  tickEarthV4(p1);
   tickEarthMinions(p1,worldW);
   updateFire(p1);
   updateShadow(p1);
@@ -17081,6 +17309,7 @@ if(running && p1.hp>0 && p1.stunTimer<=0 && p1.transformWindupTimer===0 && p1.tr
   tickEarthMud(p1);
   tickEarthShield(p1);
   tickEarthGroundSlam(p1);
+  tickEarthV4(p1);
   tickEarthMinions(p1,roadCameraX+W);
   puppets.forEach(pu=>{if(!timeFrozen)pu.update(floorY+terrainHeightAt(pu.x),roadCameraX+W);});
   puppets.forEach(pu=>pu.draw());
