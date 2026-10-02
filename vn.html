@@ -97,6 +97,155 @@ p{margin:6px 0;font-size:clamp(1rem,2.6vw,1.25rem)}
 .gl{animation:glow 2s infinite;filter:drop-shadow(0 0 8px currentColor)}
 .isl circle{fill:#ff4d4d;filter:drop-shadow(0 0 6px #ff4d4d) drop-shadow(0 0 12px #ff4d4d);animation:glow 1.6s infinite}
 .lb{fill:#fff;font-size:13px;font-weight:700;text-anchor:middle}
+
+.stage{position:relative;height:min(46vh,300px);max-width:640px;margin:10px auto;border-radius:18px;overflow:hidden;border:1px solid var(--acc);background:#06284a}
+.sc{position:absolute;inset:0;opacity:0;transition:opacity .5s;pointer-events:none}
+.sc *{position:absolute}
+[data-sc="1"] #sc1,[data-sc="2"] #sc2,[data-sc="3"] #sc3,[data-sc="4"] #sc4{opacity:1}
+.cap{min-height:1.6em;font-size:1.1rem;margin:4px 0}.cap b{color:var(--hot)}
+.chips span.a{background:var(--acc);color:#000;box-shadow:0 0 14px var(--acc)}
+#sc1{background:linear-gradient(#0b4a7a,#12385a 55%)}
+#sc1 .bank{left:0;bottom:0;width:38%;height:36%;background:#1f6b44;border-radius:0 60% 0 0}
+#sc1 .water{left:26%;right:3%;bottom:5%;height:42%;border-radius:50%;background:radial-gradient(#1b8fcb,#0a4f80)}
+#sc1 .pf{font-size:1.3rem;opacity:.4;animation:pfs 3s ease-in-out infinite alternate}#sc1 .p2{animation-delay:-1.4s}
+@keyframes pfs{to{transform:translateX(26px)}}
+#sc1 .man{left:12%;bottom:30%;font-size:3.4rem;transform-origin:50% 100%}
+[data-sc="1"] #sc1 .man{animation:man 7s forwards}
+@keyframes man{0%,28%{transform:none}34%{transform:rotate(16deg) translateX(8px)}48%{transform:rotate(8deg)}58%{transform:rotate(-12deg)}66%{transform:rotate(-3deg)}76%{transform:rotate(-12deg)}100%{transform:none}}
+#sc1 .netw{width:100px;height:70px;left:20%;bottom:48%;opacity:0}
+[data-sc="1"] #sc1 .netw{animation:net 7s forwards}
+@keyframes net{0%,27%{opacity:0;left:20%;bottom:48%;transform:scale(.3)}30%{opacity:1;left:22%;bottom:50%;transform:scale(.3)}38%{left:42%;bottom:76%;transform:scale(.9)}46%{left:55%;bottom:24%;transform:scale(1.25)}56%{left:55%;bottom:18%;transform:scale(1.2);opacity:.75}64%{opacity:1;left:50%;bottom:30%;transform:scale(1)}90%,100%{opacity:1;left:30%;bottom:56%;transform:scale(.85)}}
+#sc1 .netw svg{left:0;top:0;width:100%;height:100%}
+#sc1 .cf{font-size:1.3rem;opacity:0}
+[data-sc="1"] #sc1 .cf{animation:cf 7s forwards}
+@keyframes cf{0%,60%{opacity:0}66%{opacity:1;transform:rotate(-20deg)}74%{transform:rotate(20deg)}82%{transform:rotate(-20deg)}90%,100%{opacity:1;transform:rotate(15deg)}}
+#sc1 .spl{left:56%;bottom:30%;font-size:1.8rem;opacity:0}
+[data-sc="1"] #sc1 .spl{animation:spl 7s forwards}
+@keyframes spl{0%,42%{opacity:0;transform:scale(.4)}48%{opacity:1;transform:scale(1.2)}58%,100%{opacity:0;transform:scale(1.6)}}
+#sc2{background:linear-gradient(#0b4a7a,#1d2f4a 60%)}
+#sc2 .bld{bottom:30%;background:#173a5e;border-radius:4px 4px 0 0}
+#sc2 .world{right:5%;top:6%;font-size:2.6rem}
+#sc2 .road{left:0;right:0;bottom:0;height:30%;background:#2b2f3a}
+#sc2 .ln{left:0;right:0;bottom:13%;height:4px;background:repeating-linear-gradient(90deg,#fff 0 24px,transparent 24px 48px)}
+[data-sc="2"] #sc2 .ln{animation:ln .4s linear infinite}
+@keyframes ln{to{background-position:-48px 0}}
+#sc2 .truck{width:210px;bottom:14%;left:-40%}
+[data-sc="2"] #sc2 .truck{animation:tr 5.2s forwards}
+@keyframes tr{0%{left:-40%;animation-timing-function:ease-out}38%{left:38%}80%{left:38%;animation-timing-function:cubic-bezier(.7,0,1,.5)}100%{left:130%}}
+#sc2 .truck svg{position:relative;display:block}
+#sc2 .spd{left:0;top:0;width:0;height:0;opacity:0}
+#sc2 .spd i{left:-70px;width:60px;height:3px;background:#fff;border-radius:2px}
+[data-sc="2"] #sc2 .spd{animation:spd 5.2s forwards}
+@keyframes spd{0%,78%{opacity:0}86%,100%{opacity:1}}
+#sc3{background:linear-gradient(#3a2a22,#1b1410)}
+#sc3 .stl span{left:10px;top:8px;background:rgba(0,0,0,.55);padding:2px 10px;border-radius:8px;font-weight:700;color:var(--hot);opacity:0}
+[data-sc="3"] #sc3 .l1{animation:l1 9s forwards}[data-sc="3"] #sc3 .l2{animation:l2 9s forwards}[data-sc="3"] #sc3 .l3{animation:l3 9s forwards}[data-sc="3"] #sc3 .l4{animation:l4 9s forwards}
+@keyframes l1{0%,21%{opacity:1}24%,100%{opacity:0}}
+@keyframes l2{0%,22%{opacity:0}25%,43%{opacity:1}46%,100%{opacity:0}}
+@keyframes l3{0%,46%{opacity:0}49%,67%{opacity:1}70%,100%{opacity:0}}
+@keyframes l4{0%,70%{opacity:0}73%,100%{opacity:1}}
+#sc3 .board{left:20%;width:60%;bottom:10%;height:18%;background:linear-gradient(#c8935a,#a06a36);border-radius:10px}
+[data-sc="3"] #sc3 .board{animation:bo 9s forwards}
+@keyframes bo{0%,44%{opacity:1}48%,100%{opacity:0}}
+#sc3 .fish{left:41%;bottom:24%;font-size:4.6rem}
+[data-sc="3"] #sc3 .fish{animation:fi 9s forwards}
+@keyframes fi{0%,20%{opacity:1;transform:scale(1)}24%,100%{opacity:0;transform:scale(.6)}}
+#sc3 .bub{inset:0;opacity:0}
+[data-sc="3"] #sc3 .bub{animation:bu 9s forwards}
+@keyframes bu{0%,20%{opacity:1}24%,100%{opacity:0}}
+#sc3 .bub span{font-size:1.5rem;animation:fl2 1.1s ease-in-out infinite alternate}
+@keyframes fl2{to{transform:translateY(-14px)}}
+#sc3 .knife{left:47%;bottom:36%;font-size:2.6rem;opacity:0}
+[data-sc="3"] #sc3 .knife{animation:kn 9s forwards}
+@keyframes kn{0%,22%{opacity:0;transform:translateY(-40px) rotate(20deg)}24%{opacity:1}28%{transform:translateY(8px) rotate(20deg)}31%{transform:translateY(-34px) rotate(20deg)}35%{transform:translateY(8px) rotate(20deg)}38%{transform:translateY(-34px) rotate(20deg)}42%{transform:translateY(8px) rotate(20deg)}46%,100%{opacity:0}}
+#sc3 .bp i{left:calc(50% - 23px);bottom:25%;width:46px;height:22px;border-radius:12px;background:linear-gradient(#ffe1c4,#ffa97a);opacity:0}
+[data-sc="3"] #sc3 .bp i{animation:bp 9s forwards}
+@keyframes bp{0%,22%{opacity:0;transform:translateX(0)}24%{opacity:1;transform:translateX(0)}32%,44%{opacity:1;transform:translateX(var(--x))}46%,100%{opacity:0;transform:translateX(var(--x))}}
+#sc3 .panw{left:18%;width:64%;bottom:8%;height:56%;opacity:0}
+[data-sc="3"] #sc3 .panw{animation:pw 9s forwards}
+@keyframes pw{0%,44%{opacity:0;transform:translateY(20px)}48%,100%{opacity:1;transform:none}}
+#sc3 .pan{left:4%;bottom:22%;width:70%;height:50%;border-radius:50%;background:radial-gradient(ellipse at 50% 40%,#3d434e,#15181d);border:4px solid #666}
+#sc3 .hd{left:72%;bottom:44%;width:26%;height:9%;background:#555;border-radius:6px}
+#sc3 .pp{left:18%;bottom:40%;width:110px;height:50px}
+#sc3 .pp i{width:42px;height:20px;border-radius:12px;background:#ffb8a0;animation:pcc 9s forwards,sz .25s infinite alternate}
+@keyframes pcc{0%,47%{background:#ffb8a0}70%,100%{background:#d99224}}
+@keyframes sz{to{transform:rotate(5deg) translateY(-2px)}}
+#sc3 .fl{left:30%;bottom:2%;font-size:2rem;animation:fl2 .4s infinite alternate}
+#sc3 .stm{left:36%;bottom:66%;font-size:1.7rem;opacity:0;animation:stm 1.6s 4.4s infinite}
+@keyframes stm{0%{opacity:0;transform:translateY(10px)}40%{opacity:.9}100%{opacity:0;transform:translateY(-40px)}}
+#sc3 .spk{left:50%;bottom:62%;font-size:1.8rem;opacity:0;animation:stm 1.2s 8.2s infinite}
+#sc3 .sp{bottom:50%;font-size:1.5rem;opacity:0}
+[data-sc="3"] #sc3 .sp{animation:fall 1.4s var(--d) forwards}
+@keyframes fall{0%{opacity:0;transform:translateY(-130px) rotate(0)}25%{opacity:1}100%{opacity:1;transform:translateY(0) rotate(240deg)}}
+#sc4{background:linear-gradient(#2a1a5e,#0a1030)}
+#sc4 .flag{left:4%;top:6%;font-size:2.4rem;animation:fl2 1s infinite alternate}
+#sc4 .pdm{bottom:0;width:22%;text-align:center;font-weight:900;font-size:1.6rem;color:#000;padding-top:8px;border-radius:6px 6px 0 0}
+#sc4 .b1{left:39%;height:42%;background:linear-gradient(#ffd166,#c99a2e)}#sc4 .b2{left:17%;height:28%;background:#cfd8e3}#sc4 .b3{left:61%;height:20%;background:#c98a5a}
+#sc4 .per{left:46.5%;bottom:42%;font-size:3rem;opacity:0}
+[data-sc="4"] #sc4 .per{animation:pop 1.2s forwards}
+@keyframes pop{0%{transform:translateY(120px);opacity:0}20%{opacity:1}40%{transform:translateY(-34px)}60%{transform:none}100%{opacity:1;transform:none}}
+#sc4 .med{left:48.6%;bottom:105%;font-size:1.5rem;opacity:0}
+[data-sc="4"] #sc4 .med{animation:med 2s 1.2s forwards}
+@keyframes med{0%{bottom:105%;opacity:0}10%{opacity:1}60%{bottom:48%}75%{bottom:52%}90%,100%{bottom:48.5%;opacity:1}}
+#sc4 .spk2{left:52%;bottom:62%;font-size:1.6rem;opacity:0;animation:stm 1.2s 3.3s infinite}
+#sc4 .cf2{top:-10%;font-size:1.4rem;opacity:0;animation:conf 3s var(--d) infinite}
+@keyframes conf{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(340px) rotate(360deg)}}
+
+#st8[data-sc="1"] #sd1,#st8[data-sc="2"] #sd2,#st8[data-sc="3"] #sd3{opacity:1}
+#sd1{background:linear-gradient(#141c2b,#0a1e36 60%)}
+#sd1 .rn{inset:0;background:repeating-linear-gradient(105deg,transparent 0 9px,rgba(190,225,255,.55) 9px 10px);animation:rn .3s linear infinite;opacity:.8}
+#sd1 .r2{background:repeating-linear-gradient(105deg,transparent 0 17px,rgba(190,225,255,.4) 17px 18px);animation-duration:.45s}
+@keyframes rn{to{background-position:-40px 120px}}
+#sd1 .fl8{inset:0;background:#fff;opacity:0;animation:fl 4s infinite;z-index:3}
+.cl8{top:4px;left:10%;font-size:3.4rem}.c9{left:62%;font-size:2.8rem}
+#sd1 .bt8{left:26%;bottom:20%;font-size:3.6rem;transform-origin:50% 100%;animation:rock8 1.4s ease-in-out infinite;z-index:2}
+@keyframes rock8{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(12deg) translateY(-8px)}}
+#sd1 .bti{position:static;display:block;transform-origin:50% 100%}
+#st8[data-sc="1"] #sd1 .bti{animation:hit 7s forwards}
+@keyframes hit{0%,40%{transform:none}46%{transform:rotate(-38deg) translateY(10px)}56%{transform:rotate(30deg)}66%{transform:rotate(-20deg)}80%,100%{transform:rotate(-8deg)}}
+#sd1 .bigw{left:-80%;bottom:-30%;width:70%;height:70%;border-radius:50%;background:radial-gradient(#4aa8e0,#0b5a8a);opacity:.9;z-index:2}
+#st8[data-sc="1"] #sd1 .bigw{animation:bw 7s forwards}
+@keyframes bw{0%,38%{left:-80%}52%{left:30%}70%,100%{left:120%}}
+#sd1 .cage{right:9%;bottom:22%;width:96px;height:62px;border:3px solid #ffd166;border-radius:6px;background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.35) 0 1px,transparent 1px 9px),repeating-linear-gradient(90deg,rgba(255,255,255,.35) 0 1px,transparent 1px 9px)}
+#st8[data-sc="1"] #sd1 .cage{animation:cg 7s forwards}
+@keyframes cg{0%,44%{transform:none;opacity:1}50%{transform:rotate(-10deg)}56%{transform:rotate(10deg)}64%{transform:rotate(-25deg) translateY(10px)}100%{transform:rotate(40deg) translateY(90px);opacity:0}}
+#sd1 .cg{font-size:1.3rem}
+#st8[data-sc="1"] #sd1 .cg{animation:cgo 7s forwards}
+@keyframes cgo{0%,60%{transform:none}100%{transform:translate(-130px,-24px)}}
+#sd1 .boom{right:14%;bottom:34%;font-size:2.4rem;opacity:0;z-index:2}
+#st8[data-sc="1"] #sd1 .boom{animation:bm 7s forwards}
+@keyframes bm{0%,46%{opacity:0;transform:scale(.3)}52%{opacity:1;transform:scale(1.3)}62%,100%{opacity:0;transform:scale(1.6)}}
+#sd2{background:linear-gradient(#0b4a7a,#0e7fb0)}
+#sd2 .sh{left:0;top:0;bottom:0;width:10%;background:#c9b26b}
+#sd2 .murk{inset:0;background:linear-gradient(#4a3f22,#2c3a1f);opacity:0}
+#st8[data-sc="2"] #sd2 .murk{animation:mk 7s forwards}
+@keyframes mk{to{opacity:.75}}
+#sd2 .bt2{left:14%;top:18%;font-size:2.4rem;animation:bt2 3s ease-in-out infinite alternate}
+@keyframes bt2{to{transform:translateX(70px)}}
+#sd2 .ff{font-size:1.6rem}
+#st8[data-sc="2"] #sd2 .ff{animation:ffo 4s var(--d) forwards}
+@keyframes ffo{0%{opacity:1;transform:none}100%{opacity:0;transform:translate(130px,-24px)}}
+#sd2 .oil{right:8%;top:4%;font-size:2.4rem;transform:rotate(130deg)}
+#sd2 .dr{right:13%;top:20%;font-size:.9rem;opacity:0;animation:drp 1s infinite}#sd2 .d2{right:10%;animation-delay:.5s}
+@keyframes drp{0%{opacity:0;transform:translateY(0)}30%{opacity:1}100%{opacity:0;transform:translateY(70px)}}
+#sd2 .tr{font-size:1.5rem;opacity:0}
+#st8[data-sc="2"] #sd2 .tr{animation:tri 1s var(--d) forwards,fl2 1.2s infinite alternate}
+@keyframes tri{to{opacity:1}}
+.mtl{left:10px;bottom:28px;font-size:.8rem;font-weight:700}
+.mt{left:10px;bottom:10px;width:46%;height:14px;border-radius:8px;background:rgba(255,255,255,.2)}
+.mt i{left:0;top:0;height:100%;width:100%;border-radius:8px;background:#2fd18a}
+#st8[data-sc="2"] #sd2 .mt i{animation:mt2 6s 1s forwards}
+#st8[data-sc="3"] #sd3 .mt i{animation:mt2 5s 1s forwards}
+@keyframes mt2{0%{width:100%;background:#2fd18a}100%{width:15%;background:#ff4d4d}}
+#sd3{background:linear-gradient(#10203a,#050d1a)}
+#sd3 .pr{left:8%;top:10px;font-size:1rem;background:rgba(255,209,102,.15);border:1px solid var(--hot);padding:3px 12px;border-radius:8px;color:var(--hot)}
+#sd3 .gb{right:5%;bottom:18%;width:36%;height:58%;border:2px dashed #ffd166;border-radius:12px}
+#sd3 .gh{right:9%;bottom:22%;font-size:6rem;opacity:.25;filter:grayscale(1)}
+#sd3 .q3{right:19%;top:26%;font-size:2.4rem;animation:fl2 1s infinite alternate}
+#sd3 .lb3{right:6%;bottom:6%;font-size:.8rem;color:#ffd166}
+#sd3 .wl{left:10%;bottom:34%;font-size:4rem}
+#sd3 .cn{left:20%;bottom:48%;font-size:1.6rem;opacity:0;animation:cn 2s var(--d) infinite}
+@keyframes cn{0%{opacity:0;transform:translate(0,0)}15%{opacity:1}100%{opacity:0;transform:translate(130px,-60px) rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -186,20 +335,73 @@ p{margin:6px 0;font-size:clamp(1rem,2.6vw,1.25rem)}
 <!-- 7 KT-XH -->
 <section class="s"><div class="in">
 <span class="tag">I.1 THUẬN LỢI – KINH TẾ XÃ HỘI</span>
-<div class="row rev">
-<div class="c"><div class="e">👨‍🌾</div><b>Kinh nghiệm</b><small>Truyền thống đánh bắt, nuôi trồng</small></div>
-<div class="c"><div class="e">🌍</div><b>Thị trường</b><small>Ngày càng mở rộng, nhất là xuất khẩu</small></div>
-<div class="c"><div class="e">🏭</div><b>Chế biến</b><small>Công nghiệp chế biến phát triển</small></div>
-<div class="c"><div class="e">📜</div><b>Chính sách</b><small>Nhà nước khuyến khích</small></div>
+<div class="stage" id="st7" data-sc="0">
+
+<div class="sc" id="sc1"><div class="bank"></div><div class="water"></div>
+<span class="pf" style="left:40%;bottom:14%">🐟</span><span class="pf p2" style="left:62%;bottom:24%">🐟</span><span class="pf" style="left:74%;bottom:12%">🐠</span>
+<span class="man">🧑‍🌾</span><span class="spl">💦</span>
+<div class="netw"><svg viewBox="0 0 100 70"><ellipse cx="50" cy="35" rx="46" ry="30" fill="rgba(255,255,255,.1)" stroke="#fff" stroke-width="2.5"/><path d="M20,15L80,55M35,8L90,45M10,30L65,62M80,15L20,55M65,8L10,45M90,30L35,62" stroke="#fff" stroke-width="1.2" opacity=".75"/></svg><span class="cf" style="left:18px;top:14px">🐟</span><span class="cf" style="left:44px;top:26px">🐠</span><span class="cf" style="left:60px;top:10px">🐟</span></div>
 </div>
+
+<div class="sc" id="sc2"><div class="bld" style="left:4%;width:14%;height:34%"></div><div class="bld" style="left:22%;width:10%;height:46%"></div><div class="bld" style="left:60%;width:16%;height:38%"></div><span class="world">🌍</span>
+<div class="road"></div><div class="ln"></div>
+<div class="truck"><div class="spd"><i style="top:20px"></i><i style="top:40px"></i><i style="top:60px"></i></div>
+<svg viewBox="0 0 220 100" width="210"><rect x="4" y="8" width="142" height="64" rx="7" fill="#e8f6ff"/><text x="75" y="36" text-anchor="middle" font-size="15" font-weight="800" fill="#0b4a7a">❄️ CÁ ĐÔNG</text><text x="75" y="58" text-anchor="middle" font-size="15" font-weight="800" fill="#0b4a7a">LẠNH 🐟</text><rect x="146" y="26" width="64" height="46" rx="9" fill="#ff8a3d"/><rect x="176" y="32" width="28" height="18" rx="4" fill="#bfe9ff"/><rect x="2" y="70" width="208" height="6" fill="#444"/><g fill="#111" stroke="#bbb" stroke-width="3"><circle cx="38" cy="80" r="13"/><circle cx="108" cy="80" r="13"/><circle cx="180" cy="80" r="13"/></g></svg></div>
+</div>
+
+<div class="sc" id="sc3"><div class="stl"><span class="l1">① Làm sạch</span><span class="l2">② Cắt miếng</span><span class="l3">③ Chiên vàng</span><span class="l4">④ Nêm gia vị</span></div>
+<div class="board"></div><span class="fish">🐟</span>
+<div class="bub"><span style="left:30%;bottom:46%">💧</span><span style="left:62%;bottom:50%;animation-delay:.4s">🫧</span><span style="left:48%;bottom:62%;animation-delay:.8s">✨</span></div>
+<span class="knife">🔪</span>
+<div class="bp"><i style="--x:-84px"></i><i style="--x:-28px"></i><i style="--x:28px"></i><i style="--x:84px"></i></div>
+<div class="panw"><div class="pan"></div><div class="hd"></div>
+<div class="pp"><i style="left:0;top:8px"></i><i style="left:44px;top:0"></i><i style="left:20px;top:26px"></i><i style="left:66px;top:24px"></i></div>
+<span class="fl">🔥</span><span class="stm">♨️</span><span class="spk">✨</span>
+<span class="sp" style="left:26%;--d:6.3s">🧅</span><span class="sp" style="left:36%;--d:6.65s">🌶️</span><span class="sp" style="left:46%;--d:7s">🌿</span><span class="sp" style="left:30%;--d:7.35s">🧂</span><span class="sp" style="left:41%;--d:7.7s">🧄</span><span class="sp" style="left:52%;--d:8.05s">🍋</span></div>
+</div>
+
+<div class="sc" id="sc4"><span class="flag">🇻🇳</span>
+<div class="pdm b2">2</div><div class="pdm b1">1</div><div class="pdm b3">3</div>
+<span class="per">🧑‍💼</span><span class="med">🥇</span><span class="spk2">✨</span>
+<span class="cf2" style="left:20%;--d:2s">🎉</span><span class="cf2" style="left:40%;--d:2.5s">🎊</span><span class="cf2" style="left:62%;--d:2.2s">🎉</span><span class="cf2" style="left:80%;--d:2.8s">🎊</span>
+</div>
+
+</div>
+<div class="cap" id="cap7"></div>
+<div class="chips" id="ch7"><span>👨‍🌾 Kinh nghiệm</span><span>🌍 Thị trường</span><span>🏭 Chế biến</span><span>📜 Chính sách</span></div>
 </div></section>
 
 <!-- 8 KHÓ KHĂN -->
 <section class="s"><div class="in">
 <span class="tag">I.2 KHÓ KHĂN</span>
-<h2>⚠️ <em>3</em> khó khăn</h2>
-<div class="storm"><div class="flash"></div><span class="cl">⛈️</span><span class="cl c2">🌩️</span><div id="rain"></div><span class="tb">🚢</span><svg class="wv" viewBox="0 0 400 40" preserveAspectRatio="none"><path d="M0,20 Q25,0 50,20 T100,20 T150,20 T200,20 T250,20 T300,20 T350,20 T400,20 V40 H0Z" fill="#0b5a8a"/></svg></div>
-<div class="chips"><span>🌪️ Thiên tai: bão, áp thấp, gió mùa ĐB</span><span>🐠 Ven bờ cạn kiệt, ô nhiễm</span><span>💰 Thiếu vốn tàu xa bờ</span></div>
+<div class="stage" id="st8" data-sc="0">
+
+<div class="sc" id="sd1"><div class="rn"></div><div class="rn r2"></div><div class="fl8"></div>
+<span class="cl8">⛈️</span><span class="cl8 c9">🌪️</span>
+<span class="bt8"><span class="bti">⛵</span></span>
+<div class="cage"><span class="cg" style="left:10px;top:12px">🐟</span><span class="cg" style="left:46px;top:26px">🐠</span></div><span class="boom">💥</span>
+<div class="bigw"></div>
+<svg class="wv" viewBox="0 0 400 40" preserveAspectRatio="none"><path d="M0,20 Q25,0 50,20 T100,20 T150,20 T200,20 T250,20 T300,20 T350,20 T400,20 V40 H0Z" fill="#0b5a8a"/></svg>
+</div>
+
+<div class="sc" id="sd2"><div class="sh"></div><div class="murk"></div>
+<span class="bt2">🚤🕸️</span>
+<span class="ff" style="left:30%;top:50%;--d:.5s">🐟</span><span class="ff" style="left:42%;top:62%;--d:1.2s">🐠</span><span class="ff" style="left:55%;top:48%;--d:1.8s">🐟</span><span class="ff" style="left:66%;top:66%;--d:2.4s">🐡</span><span class="ff" style="left:36%;top:74%;--d:3s">🐟</span><span class="ff" style="left:78%;top:54%;--d:3.6s">🐠</span><span class="ff" style="left:58%;top:76%;--d:4.2s">🐟</span>
+<span class="oil">🛢️</span><span class="dr">⚫</span><span class="dr d2">⚫</span>
+<span class="tr" style="left:28%;top:40%;--d:2s">🥤</span><span class="tr" style="left:52%;top:42%;--d:3s">🧴</span><span class="tr" style="left:72%;top:40%;--d:4s">🗑️</span>
+<span class="mtl">Nguồn lợi ven bờ</span><div class="mt"><i></i></div>
+</div>
+
+<div class="sc" id="sd3"><span class="pr">Cần rất nhiều vốn 💲💲💲</span>
+<div class="gb"></div><span class="gh">🚢</span><span class="q3">❓</span><span class="lb3">Tàu xa bờ hiện đại</span>
+<span class="wl">👛</span>
+<span class="cn" style="--d:0s">🪙</span><span class="cn" style="--d:.5s">💸</span><span class="cn" style="--d:1s">🪙</span><span class="cn" style="--d:1.5s">💸</span>
+<span class="mtl">Vốn hiện có</span><div class="mt"><i></i></div>
+</div>
+
+</div>
+<div class="cap" id="cap8"></div>
+<div class="chips" id="ch8"><span>🌪️ Thiên tai</span><span>🐠 Ven bờ suy giảm</span><span>💰 Thiếu vốn</span></div>
 </div></section>
 
 <!-- 9 XU HƯỚNG -->
@@ -310,9 +512,19 @@ p{margin:6px 0;font-size:clamp(1rem,2.6vw,1.25rem)}
 <script>
 var d=document.getElementById('deck'),S=d.children,dots=document.getElementById('dots'),cur=0;
 for(var i=0;i<S.length;i++){dots.appendChild(document.createElement('i'))}
+var pl=false,T7=[],CP=[['👨‍🌾','Kinh nghiệm','Truyền thống đánh bắt, nuôi trồng'],['🌍','Thị trường','Ngày càng mở rộng, nhất là xuất khẩu'],['🏭','Chế biến','Công nghiệp chế biến phát triển'],['📜','Chính sách','Nhà nước khuyến khích']];
+function sc7(n){document.getElementById('st7').setAttribute('data-sc',n);var c=CP[n-1];document.getElementById('cap7').innerHTML=c?'<b>'+c[0]+' '+c[1]+'</b> – '+c[2]:'';var h=document.getElementById('ch7').children;for(var i=0;i<h.length;i++)h[i].className=(i==n-1)?'a':''}
+function play7(){pl=true;sc7(0);T7=[setTimeout(function(){sc7(1)},80),setTimeout(function(){sc7(2)},7080),setTimeout(function(){sc7(3)},13080),setTimeout(function(){sc7(4)},22080)]}
+function stop7(){T7.forEach(clearTimeout);T7=[];pl=false;sc7(0)}
+var pl8=false,T8=[],CP8=[['🌪️','Thiên tai','Bão, áp thấp nhiệt đới, gió mùa đông bắc gây thiệt hại cho tàu thuyền và lồng bè nuôi trồng'],['🐠','Nguồn lợi ven bờ suy giảm','Môi trường biển một số nơi bị ô nhiễm'],['💰','Thiếu vốn','Vốn đầu tư cho tàu đánh bắt xa bờ và trang thiết bị hiện đại còn hạn chế']];
+function sc8(n){document.getElementById('st8').setAttribute('data-sc',n);var c=CP8[n-1];document.getElementById('cap8').innerHTML=c?'<b>'+c[0]+' '+c[1]+'</b> – '+c[2]:'';var h=document.getElementById('ch8').children;for(var i=0;i<h.length;i++)h[i].className=(i==n-1)?'a':''}
+function play8(){pl8=true;sc8(0);T8=[setTimeout(function(){sc8(1)},80),setTimeout(function(){sc8(2)},7080),setTimeout(function(){sc8(3)},14080)]}
+function stop8(){T8.forEach(clearTimeout);T8=[];pl8=false;sc8(0)}
 function go(n){n=Math.max(0,Math.min(S.length-1,n));d.scrollTo({left:n*d.clientWidth})}
 function upd(){cur=Math.round(d.scrollLeft/d.clientWidth);
-for(var i=0;i<S.length;i++){dots.children[i].className=i==cur?'a':'';if(i==cur)S[i].classList.add('on')}}
+for(var i=0;i<S.length;i++){dots.children[i].className=i==cur?'a':'';if(i==cur)S[i].classList.add('on')}
+if(cur==6){if(!pl)play7()}else if(pl)stop7();
+if(cur==7){if(!pl8)play8()}else if(pl8)stop8()}
 d.addEventListener('scroll',upd);upd();
 document.getElementById('pv').onclick=function(){go(cur-1)};
 document.getElementById('nx').onclick=function(){go(cur+1)};
