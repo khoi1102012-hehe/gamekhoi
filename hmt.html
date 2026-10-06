@@ -57,7 +57,7 @@ x.fillStyle=gr;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c)}
 
 var cv=document.getElementById("c"),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 ren.setPixelRatio(Math.min(devicePixelRatio||1,2));
-var scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(50,1,.1,4000);
+var scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(50,1,.1,8000);
 function rs(){ren.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
 addEventListener("resize",rs);rs();
 
@@ -66,10 +66,11 @@ var sp=new Float32Array(6000*3),sc=new Float32Array(6000*3);
 for(var i=0;i<6000;i++){var u=R()*2-1,t=R()*6.283,s=Math.sqrt(1-u*u);sp[i*3]=1500*s*Math.cos(t);sp[i*3+1]=1500*u;sp[i*3+2]=1500*s*Math.sin(t);
 var w=.6+R()*.4,tint=R();sc[i*3]=w*(tint<.3?1:.85);sc[i*3+1]=w*.9;sc[i*3+2]=w*(tint>.6?1:.8)}
 var sg=new THREE.BufferGeometry();sg.setAttribute("position",new THREE.BufferAttribute(sp,3));sg.setAttribute("color",new THREE.BufferAttribute(sc,3));
-scene.add(new THREE.Points(sg,new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,depthWrite:false})));
+var sky=new THREE.Group();scene.add(sky);
+sky.add(new THREE.Points(sg,new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,depthWrite:false})));
 [[120,60,200],[40,120,220],[220,70,140]].forEach(function(c,i){var m=glowTex(c[0],c[1],c[2]);
 for(var k=0;k<3;k++){var s=new THREE.Sprite(new THREE.SpriteMaterial({map:m,transparent:true,opacity:.22,blending:THREE.AdditiveBlending,depthWrite:false}));
-var a=R()*6.283,e=(R()-.5)*1.2;s.position.set(1200*Math.cos(a),1200*Math.sin(e),1200*Math.sin(a));s.scale.setScalar(900+R()*700);scene.add(s)}});
+var a=R()*6.283,e=(R()-.5)*1.2;s.position.set(1200*Math.cos(a),1200*Math.sin(e),1200*Math.sin(a));s.scale.setScalar(900+R()*700);sky.add(s)}});
 
 /* Mặt Trời */
 scene.add(new THREE.PointLight(0xfff0dc,1.7,0,0));scene.add(new THREE.AmbientLight(0x1b2740,.9));
@@ -125,7 +126,7 @@ cvs.addEventListener("pointermove",function(e){var o=ptrs[e.pointerId];if(!o)ret
 if(ids.length===1){th-=(e.clientX-o[0])*.006;ph=Math.min(3.0,Math.max(.15,ph-(e.clientY-o[1])*.006))}
 else if(ids.length===2){var q=ptrs[ids.filter(function(i){return+i!==e.pointerId})[0]],d0=Math.hypot(o[0]-q[0],o[1]-q[1]),d1=Math.hypot(e.clientX-q[0],e.clientY-q[1]);goal=clampD(goal*d0/Math.max(d1,1))}
 ptrs[e.pointerId]=[e.clientX,e.clientY]});
-function clampD(v){return Math.min(700,Math.max(3,v))}
+function clampD(v){return Math.min(3000,Math.max(3,v))}
 cvs.addEventListener("wheel",function(e){e.preventDefault();goal=clampD(goal*Math.exp(e.deltaY*.0012))},{passive:false});
 
 var spd=document.getElementById("sp");if(reduce)spd.value=.2;
@@ -136,7 +137,7 @@ P.forEach(function(p){p.ang+=dt*p.v*.05*ts;p.h.position.set(Math.cos(p.ang)*p.d,
 if(p.mo)p.mo.position.set(Math.cos(p.ang*12)*3,0,Math.sin(p.ang*12)*3)});
 if(foc>=0)tmp.copy(P[foc].h.position);else tmp.set(0,0,0);
 tgt.lerp(tmp,.1);dist+=(goal-dist)*.07;
-var s=Math.sin(ph);cam.position.set(tgt.x+dist*s*Math.cos(th),tgt.y+dist*Math.cos(ph),tgt.z+dist*s*Math.sin(th));cam.lookAt(tgt);
+var s=Math.sin(ph);cam.position.set(tgt.x+dist*s*Math.cos(th),tgt.y+dist*Math.cos(ph),tgt.z+dist*s*Math.sin(th));cam.lookAt(tgt);sky.position.copy(cam.position);
 ren.render(scene,cam);requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
 })();
