@@ -26,15 +26,15 @@ body{margin:0;background:#02030a;color:var(--ink);font-family:"Be Vietnam Pro","
 .sp{display:flex;gap:10px;align-items:center;color:var(--dim);font-size:.85rem}
 .sp input{width:150px;accent-color:#6fd0ff}
 .note{position:fixed;right:14px;top:calc(env(safe-area-inset-top,0px) + 18px);color:var(--dim);font-size:.75rem;text-align:right;max-width:170px;pointer-events:none}
-#labs span{position:fixed;left:0;top:0;margin-top:-.7em;padding-left:12px;font-size:.78rem;color:#dff2ff;text-shadow:0 1px 8px #000,0 0 3px #000;white-space:nowrap;pointer-events:none;display:none;will-change:transform}
-#labs span::before{content:"";position:absolute;left:-3px;top:50%;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:#7fe0ff;box-shadow:0 0 8px #7fe0ff}
+#labs span{position:fixed;left:0;top:0;margin-top:-.7em;padding-left:8px;font-size:.78rem;color:#dff2ff;text-shadow:0 1px 8px #000,0 0 3px #000;white-space:nowrap;pointer-events:none;display:none;will-change:transform}
+#g{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #err{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:24px}
 @media (max-width:640px){.note{display:none}}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div class="top"><h1>Hệ Mặt Trời</h1><p>Kéo để xoay. Cuộn hoặc chụm hai ngón để phóng to, cuộn ra xa để bay tới Dải Ngân Hà và xa hơn.</p></div>
+<div class="top"><h1>Hệ Mặt Trời</h1><p>Kéo để xoay. Cuộn hoặc chụm hai ngón để bay ra xa: từ mặt đất lên tầng mây, ra Trái Đất, Hệ Mặt Trời, Dải Ngân Hà và xa hơn.</p></div>
 <div class="note">Kích thước và khoảng cách đã được thu gọn, không đúng tỉ lệ thật.</div>
 <div class="bot">
 <div class="info"><b id="nm"></b><span id="ft"></span></div>
@@ -61,18 +61,18 @@ x.fillStyle=gr;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c)}
 var cv=document.getElementById("c"),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
 ren.setPixelRatio(Math.min(devicePixelRatio||1,2));
 var scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(50,1,.1,8000);
-function rs(){ren.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+function rs(){ren.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();if(gRen){gRen.setSize(innerWidth,innerHeight,false);gCam.aspect=innerWidth/innerHeight;gCam.updateProjectionMatrix()}}
 addEventListener("resize",rs);rs();
 
 /* Sao nền + tinh vân */
-var sp=new Float32Array(6000*3),sc=new Float32Array(6000*3);
-for(var i=0;i<6000;i++){var u=R()*2-1,t=R()*6.283,s=Math.sqrt(1-u*u);sp[i*3]=1500*s*Math.cos(t);sp[i*3+1]=1500*u;sp[i*3+2]=1500*s*Math.sin(t);
+var sp=new Float32Array(26000*3),sc=new Float32Array(26000*3);
+for(var i=0;i<26000;i++){var u=R()*2-1,t=R()*6.283,s=Math.sqrt(1-u*u);sp[i*3]=1500*s*Math.cos(t);sp[i*3+1]=1500*u;sp[i*3+2]=1500*s*Math.sin(t);
 var w=.6+R()*.4,tint=R();sc[i*3]=w*(tint<.3?1:.85);sc[i*3+1]=w*.9;sc[i*3+2]=w*(tint>.6?1:.8)}
 var sg=new THREE.BufferGeometry();sg.setAttribute("position",new THREE.BufferAttribute(sp,3));sg.setAttribute("color",new THREE.BufferAttribute(sc,3));
 var sky=new THREE.Group();scene.add(sky);
 sky.add(new THREE.Points(sg,new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,depthWrite:false})));
-[[120,60,200],[40,120,220],[220,70,140]].forEach(function(c,i){var m=glowTex(c[0],c[1],c[2]);
-for(var k=0;k<3;k++){var s=new THREE.Sprite(new THREE.SpriteMaterial({map:m,transparent:true,opacity:.22,blending:THREE.AdditiveBlending,depthWrite:false}));
+[[120,60,200],[40,120,220],[220,70,140],[60,200,180],[230,120,60],[100,90,240]].forEach(function(c,i){var m=glowTex(c[0],c[1],c[2]);
+for(var k=0;k<5;k++){var s=new THREE.Sprite(new THREE.SpriteMaterial({map:m,transparent:true,opacity:.22,blending:THREE.AdditiveBlending,depthWrite:false}));
 var a=R()*6.283,e=(R()-.5)*1.2;s.position.set(1200*Math.cos(a),1200*Math.sin(e),1200*Math.sin(a));s.scale.setScalar(900+R()*700);sky.add(s)}});
 
 /* Mặt Trời */
@@ -85,11 +85,14 @@ var P=[
 {n:"Sao Thủy",r:.8,d:14,v:4.1,a:[110,100,95],b:[165,155,145],f:.5,nb:60,bc:"#4a4744",t:"Một năm chỉ dài 88 ngày Trái Đất."},
 {n:"Sao Kim",r:1.5,d:20,v:1.6,a:[200,160,90],b:[238,208,145],f:.09,nb:30,bc:"#e8c27a",t:"Nóng nhất hệ, khoảng 465°C, và quay ngược chiều với phần lớn hành tinh."},
 {n:"Trái Đất",r:1.6,d:28,v:1,a:[18,55,140],b:[32,95,185],f:.02,nb:70,bc:"#3b8f45",moon:1,t:"Hành tinh duy nhất được biết đến là có sự sống."},
-{n:"Sao Hỏa",r:1.1,d:36,v:.53,a:[150,70,40],b:[205,115,62],f:.06,nb:50,bc:"#6b2f1a",t:"Có Olympus Mons, ngọn núi lửa cao khoảng 22 km."},
-{n:"Sao Mộc",r:4.5,d:66,v:.084,a:[170,120,80],b:[242,218,184],f:.35,nb:20,bc:"#c0503a",t:"Lớn nhất hệ. Vết Đỏ Lớn là cơn bão đã được quan sát hơn 150 năm."},
-{n:"Sao Thổ",r:3.8,d:88,v:.034,a:[200,175,120],b:[236,216,162],f:.25,nb:10,bc:"#d9b86a",ring:1,t:"Vành đai gồm băng và đá, trải rộng hàng trăm nghìn km."},
-{n:"Sao Thiên Vương",r:2.6,d:108,v:.012,a:[130,200,210],b:[172,232,236],f:.05,nb:6,bc:"#bfffff",t:"Trục quay nghiêng gần 98°, nên nó gần như lăn trên quỹ đạo."},
-{n:"Sao Hải Vương",r:2.5,d:126,v:.006,a:[40,70,200],b:[72,112,242],f:.12,nb:12,bc:"#8fb0ff",t:"Có gió mạnh nhất hệ, tốc độ có thể vượt 2.000 km/h."}];
+{n:"Sao Hỏa",r:1.1,d:36,v:.53,a:[150,70,40],b:[205,115,62],f:.06,nb:50,bc:"#6b2f1a",t:"Có Olympus Mons, ngọn núi lửa cao khoảng 22 km.",ms:[[.18,2.4,9,0x9a8f84],[.14,3.2,5,0x8a8076]]},
+{n:"Ceres",r:.55,d:47,v:.9,a:[90,86,82],b:[150,144,136],f:.4,nb:50,bc:"#3a3835",t:"Hành tinh lùn lớn nhất trong vành đai tiểu hành tinh."},
+{n:"Sao Mộc",r:4.5,d:66,v:.084,a:[170,120,80],b:[242,218,184],f:.35,nb:20,bc:"#c0503a",t:"Lớn nhất hệ. Vết Đỏ Lớn là cơn bão đã được quan sát hơn 150 năm.",ms:[[.5,7,6,0xd8c090],[.45,8.6,4,0xcfc7b8],[.6,11,2.5,0x9a8f84],[.55,14,1.5,0x8a7a6a]]},
+{n:"Sao Thổ",r:3.8,d:88,v:.034,a:[200,175,120],b:[236,216,162],f:.25,nb:10,bc:"#d9b86a",ring:1,t:"Vành đai gồm băng và đá, trải rộng hàng trăm nghìn km.",ms:[[.7,12,2,0xd9a066],[.35,13.5,3,0xdddddd],[.3,15,1.6,0xcccccc],[.25,10.5,3.5,0xe8e8e8]]},
+{n:"Sao Thiên Vương",r:2.6,d:108,v:.012,a:[130,200,210],b:[172,232,236],f:.05,nb:6,bc:"#bfffff",t:"Trục quay nghiêng gần 98°, nên nó gần như lăn trên quỹ đạo.",ms:[[.3,5,3,0xaab0b8],[.35,6.5,2,0x9a9aa0],[.4,8,1.3,0xb0a8a0]]},
+{n:"Sao Hải Vương",r:2.5,d:126,v:.006,a:[40,70,200],b:[72,112,242],f:.12,nb:12,bc:"#8fb0ff",t:"Có gió mạnh nhất hệ, tốc độ có thể vượt 2.000 km/h.",ms:[[.55,6.5,-2.5,0xbfd0e0],[.22,9,3.5,0xaaaaaa]]},
+{n:"Diêm Vương Tinh",r:.6,d:148,v:.004,a:[150,120,100],b:[225,200,175],f:.3,nb:40,bc:"#8a5a40",t:"Hành tinh lùn, từng được coi là hành tinh thứ chín cho tới năm 2006.",ms:[[.25,1.6,3,0xaaaaaa]]},
+{n:"Eris",r:.6,d:172,v:.003,a:[170,172,176],b:[228,230,235],f:.2,nb:20,bc:"#aaaaaa",t:"Hành tinh lùn nặng gần bằng Diêm Vương Tinh, quay rất xa ngoài rìa hệ."}];
 P.forEach(function(p,i){
 p.h=new THREE.Group();p.m=new THREE.Mesh(new THREE.SphereGeometry(p.r,48,32),new THREE.MeshStandardMaterial({map:mkTex(p.a,p.b,p.f,p.nb,p.bc),roughness:1,metalness:0}));p.h.add(p.m);
 p.ang=R()*6.283;scene.add(p.h);var gs=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex(p.b[0],p.b[1],p.b[2]),transparent:true,opacity:.45,blending:THREE.AdditiveBlending,depthWrite:false}));gs.scale.setScalar(p.r*3.2);p.h.add(gs);
@@ -104,11 +107,14 @@ var ring=new THREE.Mesh(rg,new THREE.MeshBasicMaterial({map:new THREE.CanvasText
 ring.rotation.x=Math.PI/2.3;p.h.add(ring);p.m.rotation.z=.4}
 });
 
+P.forEach(function(p){p.mm=(p.ms||[]).map(function(q){var m=new THREE.Mesh(new THREE.SphereGeometry(q[0],16,12),new THREE.MeshStandardMaterial({color:q[3],roughness:1}));m.userData.q=q;m.userData.a=R()*6.283;p.h.add(m);return m})});
 /* Vành đai tiểu hành tinh */
-var N=3000,bp=new Float32Array(N*3);
+var N=14000,bp=new Float32Array(N*3);
 for(var i=0;i<N;i++){var a=R()*6.283,d=42+R()*11;bp[i*3]=Math.cos(a)*d;bp[i*3+1]=(R()-.5)*2.4;bp[i*3+2]=Math.sin(a)*d}
 var bg=new THREE.BufferGeometry();bg.setAttribute("position",new THREE.BufferAttribute(bp,3));
 var belt=new THREE.Points(bg,new THREE.PointsMaterial({color:0xa89c8c,size:.45,sizeAttenuation:true}));scene.add(belt);
+var KN=9000,kp=new Float32Array(KN*3);for(var i=0;i<KN;i++){var a=R()*6.283,d=135+R()*48;kp[i*3]=Math.cos(a)*d;kp[i*3+1]=(R()-.5)*14;kp[i*3+2]=Math.sin(a)*d}
+var kg=new THREE.BufferGeometry();kg.setAttribute("position",new THREE.BufferAttribute(kp,3));var kb=new THREE.Points(kg,new THREE.PointsMaterial({color:0x8fa6c4,size:.5,sizeAttenuation:true}));scene.add(kb);
 var sys0=new THREE.Group();scene.children.slice().forEach(function(o){if(o!==sky&&!o.isLight)sys0.add(o)});scene.add(sys0);
 
 /* ===== Các tầng quy mô vũ trụ ===== */
@@ -126,47 +132,45 @@ var r=Rr*(.06+.94*Math.pow(R(),.8)),k=r/Rr,a=(i%arms)*6.283/arms+Math.log(k+.1)*
 return[Math.cos(a)*r,g3()*Rr*.03*(1.1-k),Math.sin(a)*r,(.55+.45*(1-k))*b,(.7+.2*(1-k))*b,(.95-.2*(1-k))*b]},sz)}
 /* Tầng 1: Nhánh Orion (gốc = Mặt Trời) */
 var L1=new THREE.Group();
-L1.add(cloud(6000,function(){var t=R();return[g3()*130,g3()*22,g3()*45,.6+.4*t,.7+.3*R(),.8+.2*(1-t)]},2.2));
-L1.add(cloud(60,function(){return[g3()*110,g3()*18,g3()*40,1,.95,.85]},5));
-for(var q=0;q<7;q++)L1.add(neb(55+g3()*16,g3()*5,10+g3()*10,24+R()*30,255,110+R()*80,160+R()*80,.22));L1.add(neb(-70,5,-14,38,120,160,255,.3));L1.add(neb(-20,-3,25,30,110,150,255,.22));
+L1.add(cloud(24000,function(){var t=R();return[g3()*130,g3()*22,g3()*45,.6+.4*t,.7+.3*R(),.8+.2*(1-t)]},2.2));
+L1.add(cloud(220,function(){return[g3()*110,g3()*18,g3()*40,1,.95,.85]},5));
+for(var q=0;q<16;q++)L1.add(neb(55+g3()*16,g3()*5,10+g3()*10,24+R()*30,255,110+R()*80,160+R()*80,.22));L1.add(neb(-70,5,-14,38,120,160,255,.3));L1.add(neb(-20,-3,25,30,110,150,255,.22));for(var q=0;q<14;q++)L1.add(neb(g3()*110,g3()*8,g3()*40,18+R()*30,100+R()*155,120+R()*100,200+R()*55,.13));
 /* Tầng 2: Dải Ngân Hà (gốc = tâm thiên hà) */
 var tilt=new THREE.Group();tilt.rotation.set(.95,0,.25);function spiral2(n,Rr,arms,sz){return cloud(n,function(i){
 if(i%5===0){var q=Math.pow(R(),2)*Rr*.32,t1=R()*6.283,t2=Math.acos(2*R()-1);return[q*Math.sin(t2)*Math.cos(t1),q*Math.cos(t2)*.6,q*Math.sin(t2)*Math.sin(t1),.85,.65-.2*q/Rr,.4]}
 var r=Rr*(.05+.95*Math.pow(R(),.75)),k=r/Rr,a=(i%arms)*6.283/arms+Math.log(k+.1)*2.4+g3()*.28/(.25+k),b=.5+R()*.5;
 if(R()<.06)return[Math.cos(a)*r,g3()*Rr*.02,Math.sin(a)*r,1,.45,.75];
 return[Math.cos(a)*r,g3()*Rr*.025*(1.15-k),Math.sin(a)*r,(.5+.5*(1-k))*b,(.65+.25*(1-k))*b,(.95-.15*(1-k))*b]},sz)}
-tilt.add(spiral2(45000,150,4,1.25));tilt.add(neb(0,0,0,110,255,215,150,.85));
+tilt.add(spiral2(110000,150,4,1.1));for(var q=0;q<45;q++){var qa=R()*6.283,qr=20+R()*120;tilt.add(neb(Math.cos(qa)*qr,g3()*3,Math.sin(qa)*qr,10+R()*22,200+R()*55,100+R()*100,150+R()*100,.17))}tilt.add(neb(0,0,0,110,255,215,150,.85));
 var L2=new THREE.Group();L2.add(tilt);var off2=new THREE.Vector3(82,0,0).applyEuler(tilt.rotation);
 /* Tầng 3: Nhóm Địa Phương */
 var L3=new THREE.Group();
 function gal(x,y,z,r,n,rx,rz){var t=new THREE.Group();t.position.set(x,y,z);t.rotation.set(rx,0,rz);t.add(spiral(n,r,2,1.5));t.add(neb(0,0,0,r*3,255,225,170,.7));L3.add(t)}
 gal(95,12,-60,11,2500,.6,.3);gal(125,-6,-105,5,800,1.1,-.4);
-L3.add(cloud(70,function(){var a=R()*6.283,r=15+R()*85;return[Math.cos(a)*r,g3()*25,Math.sin(a)*r*.8,.7,.8,1]},3));
+for(var q=0;q<30;q++){var ga=R()*6.283,gr=18+R()*95;gal(Math.cos(ga)*gr,g3()*22,Math.sin(ga)*gr*.8,1.5+R()*3.5,300+Math.floor(R()*500),R()*3,R()*3)}
+L3.add(cloud(500,function(){var a=R()*6.283,r=15+R()*85;return[Math.cos(a)*r,g3()*25,Math.sin(a)*r*.8,.7,.8,1]},3));
 L3.add(neb(-9,-4,7,5,200,220,255,.5));L3.add(neb(-12,-5,10,3,200,220,255,.4));
 /* Tầng 4: Siêu cụm Xử Nữ */
 var L4=new THREE.Group(),C4=[[115,0,-35,26]];
-for(var i=0;i<45;i++){var ca=R()*6.283,cr=25+R()*110;C4.push([Math.cos(ca)*cr,g3()*14,Math.sin(ca)*cr*.8,5+R()*8])}
-L4.add(cloud(9000,function(i){var c=i<2600?C4[0]:C4[1+Math.floor(R()*45)],s=c[3];return[c[0]+g3()*s,c[1]+g3()*s*.6,c[2]+g3()*s,1,.8+.2*R(),.6+.3*R()]},1.8));
-L4.add(neb(115,0,-35,70,255,200,140,.55));
+for(var i=0;i<140;i++){var ca=R()*6.283,cr=25+R()*110;C4.push([Math.cos(ca)*cr,g3()*14,Math.sin(ca)*cr*.8,5+R()*8])}
+L4.add(cloud(48000,function(i){var c=i<10000?C4[0]:C4[1+Math.floor(R()*140)],s=c[3];return[c[0]+g3()*s,c[1]+g3()*s*.6,c[2]+g3()*s,1,.8+.2*R(),.6+.3*R()]},1.8));
+L4.add(neb(115,0,-35,70,255,200,140,.55));for(var i=1;i<40;i++)L4.add(neb(C4[i][0],C4[i][1],C4[i][2],C4[i][3]*4,255,200,150,.18));
 /* Tầng 5: Laniakea */
 var L5=new THREE.Group(),N5=[];
-for(var i=0;i<34;i++){var na=R()*6.283,nr=Math.sqrt(R())*135;N5.push([Math.cos(na)*nr,g3()*20,Math.sin(na)*nr*.75])}
-L5.add(cloud(14000,function(i){var a=N5[i%34],b=N5[(i*7+1+Math.floor(R()*3))%34],t=R(),w=.5+.5*R();return[a[0]+(b[0]-a[0])*t+g3()*3,a[1]+(b[1]-a[1])*t+g3()*3,a[2]+(b[2]-a[2])*t+g3()*3,.4*w,.5*w,w]},1.5));
-L5.add(cloud(5000,function(i){var n=N5[i%34];return[n[0]+g3()*7,n[1]+g3()*5,n[2]+g3()*7,1,.8,.6]},1.8));
-L5.add(neb(-80,0,30,110,255,170,120,.5));
+for(var i=0;i<90;i++){var na=R()*6.283,nr=Math.sqrt(R())*135;N5.push([Math.cos(na)*nr,g3()*20,Math.sin(na)*nr*.75])}
+L5.add(cloud(60000,function(i){var a=N5[i%90],b=N5[(i*7+1+Math.floor(R()*3))%90],t=R(),w=.5+.5*R();return[a[0]+(b[0]-a[0])*t+g3()*3,a[1]+(b[1]-a[1])*t+g3()*3,a[2]+(b[2]-a[2])*t+g3()*3,.4*w,.5*w,w]},1.5));
+L5.add(cloud(20000,function(i){var n=N5[i%90];return[n[0]+g3()*7,n[1]+g3()*5,n[2]+g3()*7,1,.8,.6]},1.8));
+L5.add(neb(-80,0,30,110,255,170,120,.5));for(var z=0;z<30;z++){var nz=N5[z];L5.add(neb(nz[0],nz[1],nz[2],25+R()*30,200,170,255,.14))}
 var zero=new THREE.Vector3();
 [[sys0,zero],[L1,zero],[L2,off2],[L3,off2.clone().divideScalar(F)],[L4,off2.clone().divideScalar(F*F)],[L5,off2.clone().divideScalar(F*F*F)]].forEach(function(e,k){if(k)scene.add(e[0]);LV.push({g:e[0],off:e[1]})});
 var LVI=[null,["Nhánh Orion","Một đoạn cánh xoắn ốc nhỏ của Dải Ngân Hà, rộng khoảng 3.500 và dài khoảng 10.000 năm ánh sáng. Mặt Trời nằm trong đó."],["Dải Ngân Hà","Thiên hà xoắn ốc có thanh, đường kính khoảng 100.000 năm ánh sáng, chứa hàng trăm tỉ ngôi sao. Mặt Trời cách tâm khoảng 26.000 năm ánh sáng."],["Nhóm Địa Phương","Hơn 80 thiên hà, gồm Dải Ngân Hà, Andromeda và Tam Giác, trải rộng khoảng 10 triệu năm ánh sáng."],["Siêu cụm thiên hà Xử Nữ","Nhóm Địa Phương chỉ nằm ở vùng rìa. Siêu cụm rộng khoảng 110 triệu năm ánh sáng, tâm là cụm thiên hà Xử Nữ."],["Siêu cụm thiên hà Laniakea","Rộng khoảng 520 triệu năm ánh sáng, chứa khoảng 100.000 thiên hà, tất cả đang chảy về phía Vật hút Lớn."]];
 ["Hệ Mặt Trời","Nhánh Orion","Dải Ngân Hà","Nhóm Địa Phương","Siêu cụm Xử Nữ","Laniakea"].forEach(function(n,k){var b=document.createElement("button");b.textContent=n;b.onclick=function(){focus(-1);if(k)goal=300*Math.pow(F,k)};lb.push(b);document.getElementById("lv").appendChild(b)});
 function showInfo(){var t=curLv?LVI[curLv]:txt0;info.textContent=t[0];ft.textContent=t[1];lb.forEach(function(b,k){b.classList.toggle("on",k===curLv)})}
-var yc=document.createElement("canvas");yc.width=yc.height=64;var yx=yc.getContext("2d");yx.strokeStyle="#7fe0ff";yx.lineWidth=3;yx.beginPath();yx.arc(32,32,24,0,7);yx.stroke();yx.fillStyle="#fff";yx.beginPath();yx.arc(32,32,4,0,7);yx.fill();
-var you=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(yc),transparent:true,sizeAttenuation:false,depthTest:false}));you.scale.setScalar(.05);you.visible=false;scene.add(you);
 var lab=document.createElement("div");lab.id="labs";document.body.appendChild(lab);
 var LB=[],lv3=new THREE.Vector3();
 function mkLab(t,k,p,fn){var e=document.createElement("span");e.textContent=t;lab.appendChild(e);LB.push({e:e,k:k,p:p&&new THREE.Vector3(p[0],p[1],p[2]),fn:fn})}
 mkLab("Mặt Trời",0,null,function(v){return v.set(0,0,0)});
 P.forEach(function(p){mkLab(p.n,0,null,function(v){return p.h.getWorldPosition(v)})});
-mkLab("Bạn ở đây",9,null,function(v){return v.set(0,0,0)});
 mkLab("Tinh vân Orion",1,[55,0,10]);mkLab("Tâm Ngân Hà",2,[0,0,0]);
 mkLab("Dải Ngân Hà",3,[0,0,0]);mkLab("Andromeda",3,[95,12,-60]);mkLab("Tam Giác",3,[125,-6,-105]);mkLab("Mây Magellan",3,[-9,-4,7]);
 mkLab("Nhóm Địa Phương",4,[0,0,0]);mkLab("Cụm Xử Nữ",4,[115,0,-35]);
@@ -181,18 +185,63 @@ function levels(u,t){var lv=u<.5?0:Math.min(5,Math.round(u));if(lv!==curLv){curL
 LV.forEach(function(L,k){var a=(k?ss(k-.7,k-.1,u):1)*(k<5?1-ss(k+1.2,k+2.2,u):1),g=L.g;
 if(a<.01){g.visible=false;L.a=0;return}g.visible=true;var s=Math.pow(F,k-u);g.scale.setScalar(s);g.position.copy(L.off).multiplyScalar(-s);
 if(Math.abs(a-(L.a||0))>.003){L.a=a;g.traverse(function(o){var m=o.material;if(!m)return;var d=o.userData;if(d.bo===undefined){d.bo=m.opacity;d.t0=m.transparent}m.opacity=d.bo*a;m.transparent=d.t0||a<.999})}});
-labelsUpdate(u);you.material.opacity=ss(.9,1.5,u);you.visible=u>.9;you.scale.setScalar(.05+.008*Math.sin(t*3))}
+labelsUpdate(u)}
 
 /* Camera */
-var th=.8,ph=1.1,dist=230,goal=230,tgt=new THREE.Vector3(),foc=-1;
+var th=.8,ph=1.1,dist=.02,goal=.02,tgt=new THREE.Vector3(),foc=-1;
 var curLv=0,txt0=[],info=document.getElementById("nm"),ft=document.getElementById("ft"),chips=document.getElementById("chips"),cb=[];
-var names=[["Tổng quan",-1],["Mặt Trời",-2]].concat(P.map(function(p,i){return[p.n,i]}));
-function focus(k){foc=k;cb.forEach(function(b){b.classList.toggle("on",+b.dataset.k===k)});
-if(k===-1){goal=230;info.textContent="Hệ Mặt Trời";ft.textContent="Tám hành tinh, một vành đai tiểu hành tinh và một ngôi sao. Chọn một thiên thể bên dưới để bay tới.";}
+var names=[["Mặt đất",-3],["Tổng quan",-1],["Mặt Trời",-2]].concat(P.map(function(p,i){return[p.n,i]}));
+function focus(k){foc=k===-3?2:k;gst=-1;cb.forEach(function(b){b.classList.toggle("on",+b.dataset.k===k)});
+if(k===-3){goal=.02;info.textContent="Mặt đất";ft.textContent="Bạn đang đứng trên Trái Đất.";}else if(k===-1){goal=290;info.textContent="Hệ Mặt Trời";ft.textContent="Tám hành tinh, một vành đai tiểu hành tinh và một ngôi sao. Chọn một thiên thể bên dưới để bay tới.";}
 else if(k===-2){goal=34;info.textContent="Mặt Trời";ft.textContent="Chứa khoảng 99,86% khối lượng của cả hệ Mặt Trời.";}
 else{goal=P[k].r*5+5;info.textContent=P[k].n;ft.textContent=P[k].t}txt0=[info.textContent,ft.textContent];if(curLv>0)showInfo()}
 names.forEach(function(n){var b=document.createElement("button");b.textContent=n[0];b.dataset.k=n[1];b.onclick=function(){focus(n[1])};cb.push(b);chips.appendChild(b)});
-focus(-1);
+focus(-3);
+
+/* ===== Cảnh mặt đất ===== */
+var gst=-1,GN=[["Bạn đang đứng trên Trái Đất","Cuộn ra xa hoặc chụm hai ngón để bay lên. Kéo để xoay quanh."],["Bầu trời","Bạn đang bay lên, người và cây cối nhỏ dần."],["Tầng mây","Mây nằm trong tầng thấp nhất của khí quyển, nơi diễn ra phần lớn thời tiết."],["Trên tầng mây","Từ đây Trái Đất bắt đầu hiện ra như một quả cầu."]];
+var gCv=document.createElement("canvas");gCv.id="g";document.body.insertBefore(gCv,cv);
+var gRen=new THREE.WebGLRenderer({canvas:gCv,antialias:true});gRen.setPixelRatio(Math.min(devicePixelRatio||1,2));
+var gSc=new THREE.Scene(),gCam=new THREE.PerspectiveCamera(60,1,.05,150000),gTop=new THREE.Color(),gHor=new THREE.Color(),gFog=new THREE.Fog(0xaad0f5,300,30000);gSc.fog=gFog;
+var gFol=new THREE.Group();gSc.add(gFol);var sunDir=new THREE.Vector3(.6,.5,-.55).normalize();
+var dome=new THREE.Mesh(new THREE.SphereGeometry(100000,24,12),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,depthTest:false,uniforms:{top:{value:gTop},hor:{value:gHor}},vertexShader:"varying float h;void main(){h=normalize(position).y;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",fragmentShader:"uniform vec3 top,hor;varying float h;void main(){gl_FragColor=vec4(mix(hor,top,pow(max(h,0.),.55)),1.);}"}));dome.renderOrder=-2;gFol.add(dome);
+var gsa=new Float32Array(2500*3);for(var i=0;i<2500;i++){var u1=R()*2-1,t1=R()*6.283,s1=Math.sqrt(1-u1*u1);gsa[i*3]=90000*s1*Math.cos(t1);gsa[i*3+1]=90000*u1;gsa[i*3+2]=90000*s1*Math.sin(t1)}
+var gsg=new THREE.BufferGeometry();gsg.setAttribute("position",new THREE.BufferAttribute(gsa,3));
+var gStars=new THREE.Points(gsg,new THREE.PointsMaterial({color:0xffffff,size:1.6,sizeAttenuation:false,transparent:true,opacity:0,fog:false,depthWrite:false}));gFol.add(gStars);
+var gSun=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex(255,244,214),transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));gSun.position.copy(sunDir).multiplyScalar(80000);gSun.scale.setScalar(26000);gFol.add(gSun);
+gSc.add(new THREE.HemisphereLight(0xcfe6ff,0x4a6a38,.85));var gDl=new THREE.DirectionalLight(0xfff1d6,1.1);gDl.position.copy(sunDir).multiplyScalar(100);gSc.add(gDl);
+var gtc=document.createElement("canvas");gtc.width=gtc.height=128;var gx=gtc.getContext("2d");gx.fillStyle="#5a9440";gx.fillRect(0,0,128,128);
+for(var i=0;i<1400;i++){gx.fillStyle="rgba("+(R()<.5?"30,80,25":"140,190,80")+","+(.15+R()*.25)+")";gx.fillRect(R()*128,R()*128,1+R()*2,1+R()*3)}
+var gTex=new THREE.CanvasTexture(gtc);gTex.wrapS=gTex.wrapT=THREE.RepeatWrapping;gTex.repeat.set(25000,25000);gTex.anisotropy=gRen.capabilities.getMaxAnisotropy();
+var gnd=new THREE.Mesh(new THREE.PlaneGeometry(200000,200000),new THREE.MeshLambertMaterial({map:gTex}));gnd.rotation.x=-Math.PI/2;gSc.add(gnd);
+for(var i=0;i<16;i++){var ha1=R()*6.283,hd1=600+R()*5000,hr1=300+R()*900,hl=new THREE.Mesh(new THREE.SphereGeometry(1,16,10),new THREE.MeshLambertMaterial({color:i%2?0x3f7a35:0x4a8a3e}));hl.scale.set(hr1,hr1*.35,hr1);hl.position.set(Math.cos(ha1)*hd1,-hr1*.05,Math.sin(ha1)*hd1);gSc.add(hl)}
+var tg=new THREE.CylinderGeometry(.22,.32,2.4,6),cg=new THREE.ConeGeometry(1.7,5,8),tm=new THREE.MeshLambertMaterial({color:0x6b4a2b}),cms=[0x2f7a3a,0x3e8f3f,0x285f31].map(function(c){return new THREE.MeshLambertMaterial({color:c})});
+for(var i=0;i<110;i++){var ta=R()*6.283,td=9+Math.pow(R(),1.5)*420,tt=new THREE.Group(),tk=new THREE.Mesh(tg,tm),tc=new THREE.Mesh(cg,cms[i%3]);tk.position.y=1.2;tc.position.y=4.2;tt.add(tk);tt.add(tc);tt.scale.setScalar(.7+R()*1.1);tt.position.set(Math.cos(ta)*td,0,Math.sin(ta)*td);gSc.add(tt)}
+for(var i=0;i<7;i++){var ha=R()*6.283,hd=45+R()*220,hh=new THREE.Group(),hw=5+R()*4,hb=new THREE.Mesh(new THREE.BoxGeometry(hw,3.6,hw*.8),new THREE.MeshLambertMaterial({color:[0xe8d9b8,0xd8b8a0,0xcfd8e0][i%3]})),hr=new THREE.Mesh(new THREE.ConeGeometry(hw*.78,2.4,4),new THREE.MeshLambertMaterial({color:0xa4472f}));hb.position.y=1.8;hr.position.y=4.8;hr.rotation.y=Math.PI/4;hh.add(hb);hh.add(hr);hh.position.set(Math.cos(ha)*hd,0,Math.sin(ha)*hd);hh.rotation.y=R()*6;gSc.add(hh)}
+/* người */
+var man=new THREE.Group(),mS=new THREE.MeshLambertMaterial({color:0xe3b08a}),mT=new THREE.MeshLambertMaterial({color:0x2f6fd0}),mP=new THREE.MeshLambertMaterial({color:0x2a2f45}),mH=new THREE.MeshLambertMaterial({color:0x2b1d14});
+function bx(par,w,h,d,m,x,y,z){var o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);par.add(o);return o}
+bx(man,.17,.85,.2,mP,-.11,.43,0);bx(man,.17,.85,.2,mP,.11,.43,0);bx(man,.46,.62,.26,mT,0,1.16,0);
+var gArm=new THREE.Group(),arm2=new THREE.Group();gArm.position.set(.3,1.42,0);arm2.position.set(-.3,1.42,0);arm2.rotation.z=-.1;
+[gArm,arm2].forEach(function(a){bx(a,.12,.6,.14,mS,0,-.28,0);bx(a,.14,.22,.16,mT,0,-.06,0);man.add(a)});
+var head=new THREE.Group(),hs=new THREE.Mesh(new THREE.SphereGeometry(.13,16,12),mS);head.position.set(0,1.5,0);head.rotation.x=-.5;hs.position.y=.14;head.add(hs);bx(head,.27,.1,.27,mH,0,.24,-.01);bx(head,.03,.03,.02,mH,-.05,.16,.125);bx(head,.03,.03,.02,mH,.05,.16,.125);man.add(head);gSc.add(man);
+var shd=new THREE.Mesh(new THREE.CircleGeometry(.5,20),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:.3,depthWrite:false,fog:false}));shd.rotation.x=-Math.PI/2;shd.position.y=.02;gSc.add(shd);
+/* mây */
+var ctc=document.createElement("canvas");ctc.width=ctc.height=256;var ccx=ctc.getContext("2d");
+for(var i=0;i<14;i++){var px=70+R()*116,py=96+R()*70,pr=40+R()*45,pg2=ccx.createRadialGradient(px,py,0,px,py,pr);pg2.addColorStop(0,"rgba(255,255,255,.55)");pg2.addColorStop(.6,"rgba(250,252,255,.25)");pg2.addColorStop(1,"rgba(245,248,255,0)");ccx.fillStyle=pg2;ccx.fillRect(0,0,256,256)}
+var cMat=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(ctc),transparent:true,depthWrite:false,opacity:.95}),gCl=new THREE.Group();gSc.add(gCl);
+for(var i=0;i<125;i++){var low=i<14,ka=R()*6.283,kr=low?300+R()*2700:R()*14000,kx=Math.cos(ka)*kr,kz=Math.sin(ka)*kr,ky=low?280+R()*140:650+R()*600;
+for(var j=0;j<4;j++){var cs=new THREE.Sprite(cMat);cs.position.set(kx+g3()*(low?250:900),ky+g3()*(low?20:60),kz+g3()*(low?250:900));cs.scale.set((low?300:900)+R()*(low?400:1500),(low?170:500)+R()*(low?200:700),1);gCl.add(cs)}}
+function groundFrame(t,dt,ts){
+if(dist>=3.4){gCv.style.display="none";if(gst>=0&&foc===2){gst=-1;info.textContent="Trái Đất";ft.textContent=P[2].t;txt0=[info.textContent,ft.textContent]}return}
+gCv.style.display="block";
+var q=Math.max(0,Math.min(1,Math.log(dist/.02)/Math.log(160))),A=4*Math.pow(1500,q),pgl=Math.min(1.5,ph+.25)*(1-.75*ss(.35,.9,q)),sk=ss(.45,.95,q);
+gCam.position.set(A*Math.sin(pgl)*Math.cos(th),1.1+A*Math.cos(pgl),A*Math.sin(pgl)*Math.sin(th));gCam.near=Math.max(.05,A*.02);gCam.updateProjectionMatrix();gCam.lookAt(0,1.1,0);gFol.position.copy(gCam.position);
+gTop.setRGB(.16*(1-sk)+.01*sk,.42*(1-sk)+.015*sk,.86*(1-sk)+.04*sk);gHor.setRGB(.68*(1-sk)+.25*sk,.82*(1-sk)+.45*sk,.96*(1-sk)+.8*sk);
+gFog.color.copy(gHor);gFog.near=200+A*2;gFog.far=25000+A*8;gStars.material.opacity=ss(.6,.95,q);
+gCl.rotation.y+=dt*.003*ts;gArm.rotation.z=2.6+Math.sin(t*3)*.18;gRen.render(gSc,gCam);
+if(foc===2){var st=A<40?0:A<500?1:A<1500?2:3;if(st!==gst){gst=st;var x=GN[st];info.textContent=x[0];ft.textContent=x[1];txt0=[x[0],x[1]]}}}
+rs();
 
 var ptrs={},pd=0,cvs=cv;
 cvs.addEventListener("pointerdown",function(e){ptrs[e.pointerId]=[e.clientX,e.clientY];cvs.setPointerCapture(e.pointerId);cvs.style.cursor="grabbing";pd=0});
@@ -200,23 +249,25 @@ cvs.addEventListener("pointerup",function(e){delete ptrs[e.pointerId];cvs.style.
 cvs.addEventListener("pointercancel",function(e){delete ptrs[e.pointerId]});
 cvs.addEventListener("pointermove",function(e){var o=ptrs[e.pointerId];if(!o)return;var ids=Object.keys(ptrs);
 if(ids.length===1){th-=(e.clientX-o[0])*.006;ph=Math.min(3.0,Math.max(.15,ph-(e.clientY-o[1])*.006))}
-else if(ids.length===2){var q=ptrs[ids.filter(function(i){return+i!==e.pointerId})[0]],d0=Math.hypot(o[0]-q[0],o[1]-q[1]),d1=Math.hypot(e.clientX-q[0],e.clientY-q[1]);goal=clampD(goal*Math.pow(d0/Math.max(d1,1),goal>300?2.5:1))}
+else if(ids.length===2){var q=ptrs[ids.filter(function(i){return+i!==e.pointerId})[0]],d0=Math.hypot(o[0]-q[0],o[1]-q[1]),d1=Math.hypot(e.clientX-q[0],e.clientY-q[1]);goal=clampD(goal*Math.pow(d0/Math.max(d1,1),goal>300?2.5:goal<3.4?3:1))}
 ptrs[e.pointerId]=[e.clientX,e.clientY]});
-function clampD(v){return Math.min(300*Math.pow(28,5),Math.max(3,v))}
-cvs.addEventListener("wheel",function(e){e.preventDefault();goal=clampD(goal*Math.exp(e.deltaY*(goal>300?.004:.0012)))},{passive:false});
+function clampD(v){return Math.min(300*Math.pow(28,5),Math.max(foc===2?.02:3,v))}
+cvs.addEventListener("wheel",function(e){e.preventDefault();goal=clampD(goal*Math.exp(e.deltaY*(goal>300?.004:goal<3.4?.003:.0012)))},{passive:false});
 
 var spd=document.getElementById("sp");if(reduce)spd.value=.2;
 var last=0,tmp=new THREE.Vector3();
 function loop(now){var dt=Math.min((now-last)/1000,.05);last=now;var ts=+spd.value;
-sun.rotation.y+=dt*.05*ts;belt.rotation.y+=dt*.01*ts;
+sun.rotation.y+=dt*.05*ts;belt.rotation.y+=dt*.01*ts;kb.rotation.y+=dt*.004*ts;
 P.forEach(function(p){p.ang+=dt*p.v*.05*ts;p.h.position.set(Math.cos(p.ang)*p.d,0,Math.sin(p.ang)*p.d);p.m.rotation.y+=dt*.6*ts;if(p.cl)p.cl.rotation.y+=dt*.8*ts;
-if(p.mo)p.mo.position.set(Math.cos(p.ang*12)*3,0,Math.sin(p.ang*12)*3)});
+if(p.mo)p.mo.position.set(Math.cos(p.ang*12)*3,0,Math.sin(p.ang*12)*3);
+p.mm.forEach(function(m){var q=m.userData.q;m.userData.a+=dt*q[2]*.3*ts;m.position.set(Math.cos(m.userData.a)*q[1],0,Math.sin(m.userData.a)*q[1])})});
 dist=Math.exp(Math.log(dist)+(Math.log(goal)-Math.log(dist))*.07);
 var u=dist>300?Math.log(dist/300)/Math.log(F):0,cd=Math.min(dist,300);
 if(foc>=0&&u===0)tmp.copy(P[foc].h.position);else tmp.set(0,0,0);
 tgt.lerp(tmp,.1);
-var s=Math.sin(ph);cam.position.set(tgt.x+cd*s*Math.cos(th),tgt.y+cd*Math.cos(ph),tgt.z+cd*s*Math.sin(th));cam.lookAt(tgt);sky.position.copy(cam.position);levels(u,now/1000);
-ren.render(scene,cam);requestAnimationFrame(loop)}
+var pe=ph;if(foc===2&&dist<9)pe=ph+(Math.min(1.5,ph+.25)*.25-ph)*(1-ss(3.2,9,dist));var s=Math.sin(pe);cam.position.set(tgt.x+cd*s*Math.cos(th),tgt.y+cd*Math.cos(pe),tgt.z+cd*s*Math.sin(th));cam.lookAt(tgt);sky.position.copy(cam.position);levels(u,now/1000);
+var mo=ss(1.9,3,dist);cv.style.opacity=mo;lab.style.opacity=mo;if(mo>.01)ren.render(scene,cam);
+groundFrame(now/1000,dt,ts);requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
 })();
 </script>
