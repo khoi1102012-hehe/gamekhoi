@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hand Network AI</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #04050a; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e8ecff; }
+  #video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.28; filter: brightness(.8) saturate(.8); }
+  #three { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #overlay { position: fixed; inset: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
+  #hud { position: fixed; left: 14px; top: 14px; width: 292px; max-height: calc(100vh - 28px); overflow: auto; padding: 12px 14px; border-radius: 14px; background: rgba(8,10,22,.68); backdrop-filter: blur(8px); font-size: 13px; line-height: 1.5; border: 1px solid rgba(120,170,255,.18); }
+  #hud.hidden { display: none; }
+  #status { font-size: 15px; font-weight: 600; margin-bottom: 6px; min-height: 40px; }
+  #info { color: #9fc4ff; margin-bottom: 8px; }
+  .sep { height: 1px; background: rgba(255,255,255,.12); margin: 8px 0; }
+  .row { display: flex; gap: 8px; padding: 3px 6px; border-radius: 8px; transition: background .15s; }
+  .row .ic { width: 118px; flex: none; font-weight: 600; }
+  .row .ef { color: #b9c4e6; }
+  .row.on { background: rgba(110,190,255,.28); }
+  .row.on .ef { color: #fff; }
+  #toggle { position: fixed; right: 14px; top: 14px; width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(8,10,22,.68); color: #fff; font-size: 18px; cursor: pointer; border: 1px solid rgba(120,170,255,.25); }
+  #toast { position: fixed; left: 50%; bottom: 42px; transform: translateX(-50%) translateY(10px); padding: 12px 22px; border-radius: 999px; background: rgba(20,30,70,.85); border: 1px solid rgba(130,190,255,.5); font-size: 18px; font-weight: 600; opacity: 0; transition: all .25s; pointer-events: none; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #start { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); padding: 14px 28px; font-size: 18px; border: 0; border-radius: 12px; background: #4a7dff; color: #fff; cursor: pointer; display: none; }
+  #err { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); background: rgba(160,30,30,.88); padding: 10px 16px; border-radius: 10px; display: none; max-width: 90%; text-align: center; }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<div id="three"></div>
+<canvas id="overlay"></canvas>
+
+<div id="hud">
+  <div id="status">Đang khởi động...</div>
+  <div id="info"></div>
+  <div class="sep"></div>
+  <div id="legend"></div>
+  <div class="sep"></div>
+  <div style="color:#8ea0cc">Phím tắt: ← → đổi hình · C đổi màu · R sóng xung kích · D dây dày/thưa · Space phân rã · H ẩn/hiện bảng</div>
+</div>
+<button id="toggle" title="Ẩn/hiện hướng dẫn">?</button>
+<div id="toast"></div>
+<button id="start">Bật camera</button>
+<div id="err"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+// =====================================================================
+//  CẤU HÌNH
+// =====================================================================
+const N = 486, HALF = N / 2, R = 1.6;
+const PAL = [
+  { name: 'Băng xanh', h0: 0.50, h1: 0.64, s: 0.9 },
+  { name: 'Hồng tím',  h0: 0.78, h1: 0.95, s: 0.85 },
+  { name: 'Lửa',       h0: 0.00, h1: 0.13, s: 0.95 },
+  { name: 'Rừng',      h0: 0.24, h1: 0.45, s: 0.85 },
+  { name: 'Cầu vồng',  h0: 0.00, h1: 1.00, s: 0.9 },
+  { name: 'Vàng kim',  h0: 0.09, h1: 0.16, s: 0.95 },
+];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+
+// =====================================================================
+//  THREE.JS
+// =====================================================================
+const container = document.getElementById('three');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
+container.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+camera.position.z = 6;
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  const o = document.getElementById('overlay');
+  o.width = w; o.height = h;
+}
+addEventListener('resize', resize);
+resize();
+
+// sprite phát sáng cho các nút
+function glowTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.25, 'rgba(255,255,255,.85)');
+  gr.addColorStop(0.55, 'rgba(255,255,255,.18)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+// các nút (điểm)
+const P = new Float32Array(N * 3);   // vị trí
+const C = new Float32Array(N * 3);   // màu
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(C, 3));
+const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
+  size: 0.14, map: glowTexture(), vertexColors: true, transparent: true,
+  depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+}));
+points.frustumCulled = false;
+scene.add(points);
+
+// các dây nối
+const MAXSEG = 3700;
+const LP = new Float32Array(MAXSEG * 6), LC = new Float32Array(MAXSEG * 6);
+const lGeo = new THREE.BufferGeometry();
+const lpA = new THREE.BufferAttribute(LP, 3), lcA = new THREE.BufferAttribute(LC, 3);
+lpA.setUsage(THREE.DynamicDrawUsage); lcA.setUsage(THREE.DynamicDrawUsage);
+lGeo.setAttribute('position', lpA); lGeo.setAttribute('color', lcA);
+lGeo.setDrawRange(0, 0);
+const lines = new THREE.LineSegments(lGeo, new THREE.LineBasicMaterial({
+  vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending
+}));
+lines.frustumCulled = false;
+scene.add(lines);
+
+// vòng sóng xung kích
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(0.97, 1, 96),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
+);
+ring.visible = false; ring.userData.t = -1;
+scene.add(ring);
+
+// =====================================================================
+//  12 HÌNH KHỐI
+// =====================================================================
+function tilt(arr, th) {
+  const c = Math.cos(th), s = Math.sin(th);
+  return arr.map(([x, y, z]) => [x, y * c - z * s, y * s + z * c]);
+}
+function mk(name, arr) {
+  for (let i = arr.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  const f = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const pad = i >= arr.length;
+    const p = pad ? arr[(Math.random() * arr.length) | 0] : arr[i];
+    const j = pad ? 0.05 : 0;
+    f[3 * i] = p[0] + (Math.random() - .5) * j;
+    f[3 * i + 1] = p[1] + (Math.random() - .5) * j;
+    f[3 * i + 2] = p[2] + (Math.random() - .5) * j;
+  }
+  return { name, pts: f };
+}
+
+function gSphere() {
+  const a = [], g = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < N; i++) {
+    const y = 1 - 2 * (i + .5) / N, r = Math.sqrt(1 - y * y), t = g * i;
+    a.push([Math.cos(t) * r * R, y * R, Math.sin(t) * r * R]);
+  }
+  return a;
+}
+function gCube() {
+  const a = [], k = 9, S = R * 0.8;
+  for (let f = 0; f < 6; f++) for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) {
+    const u = -1 + 2 * (i + .5) / k, v = -1 + 2 * (j + .5) / k;
+    const p = [[1, u, v], [-1, u, v], [u, 1, v], [u, -1, v], [u, v, 1], [u, v, -1]][f];
+    a.push([p[0] * S, p[1] * S, p[2] * S]);
+  }
+  return a;
+}
+function gTorus() {
+  const a = [], A = R * 0.85, B = R * 0.4;
+  for (let i = 0; i < 27; i++) for (let j = 0; j < 18; j++) {
+    const u = i / 27 * Math.PI * 2, v = j / 18 * Math.PI * 2;
+    a.push([(A + B * Math.cos(v)) * Math.cos(u), B * Math.sin(v), (A + B * Math.cos(v)) * Math.sin(u)]);
+  }
+  return tilt(a, 0.9);
+}
+function gPyramid() {
+  const a = [], L = 14, aw = R * 0.95, y0 = -R * 0.7, y1 = R;
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) a.push([-aw + 2 * aw * (i + .5) / 9, y0, -aw + 2 * aw * (j + .5) / 9]);
+  for (let l = 0; l < L; l++) {
+    const s = 1 - l / L, w = aw * s, y = y0 + (y1 - y0) * (l / L), n = Math.max(1, Math.round(14 * s));
+    for (let t = 0; t < n; t++) {
+      const q = t / n;
+      a.push([-w + 2 * w * q, y, -w]); a.push([w, y, -w + 2 * w * q]);
+      a.push([w - 2 * w * q, y, w]);   a.push([-w, y, w - 2 * w * q]);
+    }
+  }
+  a.push([0, y1, 0]);
+  return a;
+}
+function gDNA() {
+  const a = [], S = 150, rr = R * 0.55;
+  const A = [], B = [];
+  for (let i = 0; i < S; i++) {
+    const t = i / S * Math.PI * 4, y = (i / S - .5) * 2.5 * R;
+    A.push([rr * Math.cos(t), y, rr * Math.sin(t)]);
+    B.push([rr * Math.cos(t + Math.PI), y, rr * Math.sin(t + Math.PI)]);
+  }
+  a.push(...A, ...B);
+  for (let i = 5; i < S; i += 8) for (let m = 1; m <= 9; m++) {
+    const f = m / 10;
+    a.push([A[i][0] + (B[i][0] - A[i][0]) * f, A[i][1], A[i][2] + (B[i][2] - A[i][2]) * f]);
+  }
+  return a;
+}
+function gOcta() {
+  const a = [], n = 10, A = R * 1.3;
+  for (const sx of [1, -1]) for (const sy of [1, -1]) for (const sz of [1, -1])
+    for (let i = 0; i <= n; i++) for (let j = 0; j <= n - i; j++) {
+      const p = i / n, q = j / n, r = 1 - p - q;
+      a.push([A * p * sx, A * q * sy, A * r * sz]);
+    }
+  return a;
+}
+function gHeart() {
+  const a = [], s = R / 15;
+  for (let i = 0; i < 27; i++) {
+    const t = i / 27 * Math.PI * 2;
+    const hx = 16 * Math.pow(Math.sin(t), 3);
+    const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 2.5;
+    for (let j = 0; j < 18; j++) {
+      const phi = (-1 + 2 * (j + .5) / 18) * Math.PI / 2;
+      a.push([hx * s * Math.cos(phi), hy * s * Math.cos(phi), Math.sin(phi) * R * 0.55]);
+    }
+  }
+  return a;
+}
+function gGalaxy() {
+  const a = [];
+  for (let i = 0; i < N; i++) {
+    const u = (i + .5) / N, r = R * 1.25 * Math.sqrt(u) + 0.05, arm = i % 3;
+    const ang = r * 2.4 + arm * 2.0944 + (Math.random() - .5) * 0.35;
+    a.push([Math.cos(ang) * r, (Math.random() - .5) * 0.25 * (1.2 - r / 2), Math.sin(ang) * r]);
+  }
+  return tilt(a, 1.0);
+}
+function gKnot() {
+  const a = [], k = R * 0.42, rt = 0.2, M = 162;
+  const P3 = t => { const r = Math.cos(3 * t) + 2; return new THREE.Vector3(r * Math.cos(2 * t), r * Math.sin(2 * t), -Math.sin(3 * t)).multiplyScalar(k); };
+  for (let i = 0; i < M; i++) {
+    const t = i / M * Math.PI * 2, p = P3(t), T = P3(t + 0.01).sub(p).normalize();
+    const Nn = new THREE.Vector3().crossVectors(T, new THREE.Vector3(0.3, 0.2, 1)).normalize();
+    const B = new THREE.Vector3().crossVectors(T, Nn).normalize();
+    for (let m = 0; m < 3; m++) {
+      const ang = m / 3 * Math.PI * 2;
+      const q = p.clone().addScaledVector(Nn, Math.cos(ang) * rt).addScaledVector(B, Math.sin(ang) * rt);
+      a.push([q.x, q.y, q.z]);
+    }
+  }
+  return a;
+}
+function gCylinder() {
+  const a = [], rc = R * 0.7, h = R * 0.9;
+  for (let i = 0; i < 27; i++) for (let j = 0; j < 14; j++) {
+    const t = i / 27 * Math.PI * 2;
+    a.push([rc * Math.cos(t), -h + 2 * h * j / 13, rc * Math.sin(t)]);
+  }
+  [[.25, 6], [.5, 12], [.75, 18], [1, 24]].forEach(([f, c]) => {
+    for (let k = 0; k < c; k++) { const t = k / c * Math.PI * 2; for (const y of [-h, h]) a.push([rc * f * Math.cos(t), y, rc * f * Math.sin(t)]); }
+  });
+  return a;
+}
+function gWave() {
+  const a = [], S = R * 1.5;
+  for (let i = 0; i < 22; i++) for (let j = 0; j < 22; j++) {
+    const x = -S + 2 * S * i / 21, z = -S + 2 * S * j / 21;
+    a.push([x, 0.3 * R * (Math.sin(x * 2) + Math.cos(z * 2)) * 0.7, z]);
+  }
+  return tilt(a, 0.9);
+}
+function gAtom() {
+  const a = [], rO = R * 1.35, g = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < 60; i++) {
+    const y = 1 - 2 * (i + .5) / 60, r = Math.sqrt(1 - y * y), t = g * i;
+    a.push([Math.cos(t) * r * R * 0.32, y * R * 0.32, Math.sin(t) * r * R * 0.32]);
+  }
+  for (let m = 0; m < 3; m++) {
+    const rot = m * Math.PI / 3;
+    for (let k = 0; k < 142; k++) {
+      const t = k / 142 * Math.PI * 2, x = rO * Math.cos(t), y = rO * Math.sin(t);
+      a.push([x * Math.cos(rot), y, -x * Math.sin(rot)]);
+    }
+  }
+  return a;
+}
+
+const SH = [
+  mk('Hình cầu', gSphere()), mk('Khối lập phương', gCube()), mk('Hình xuyến (donut)', gTorus()),
+  mk('Hình chóp', gPyramid()), mk('Xoắn kép DNA', gDNA()), mk('Bát diện', gOcta()),
+  mk('Trái tim 3D', gHeart()), mk('Thiên hà xoắn ốc', gGalaxy()), mk('Nút thắt xuyến', gKnot()),
+  mk('Hình trụ', gCylinder()), mk('Sóng lưới', gWave()), mk('Nguyên tử', gAtom()),
+];
+
+// =====================================================================
+//  TRẠNG THÁI
+// =====================================================================
+const SC = new Float32Array(N * 3); // hướng văng khi phân rã
+for (let i = 0; i < N; i++) {
+  const v = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize().multiplyScalar(0.6 + Math.random() * 1.2);
+  SC[3 * i] = v.x; SC[3 * i + 1] = v.y; SC[3 * i + 2] = v.z;
+  const s = SH[0].pts; P[3 * i] = s[3 * i]; P[3 * i + 1] = s[3 * i + 1]; P[3 * i + 2] = s[3 * i + 2];
+}
+const CL = [
+  { shape: 0, e: 0, eT: 0, cx: 0, cy: 0, s: 1, ay: 0, ax: 0, boost: 0, boostT: 0, tcx: 0, tcy: 0, ts: 1 },
+  { shape: 1, e: 0, eT: 0, cx: 0, cy: 0, s: 1, ay: 0, ax: 0, boost: 0, boostT: 0, tcx: 0, tcy: 0, ts: 1 },
+];
+let mode = 'single', merge = 0, palIdx = 0, dense = false, impulse = 0, manualExplode = false, handCount = 0;
+let activeG = [];
+
+// =====================================================================
+//  HUD
+// =====================================================================
+const LEGEND = [
+  ['open',  '✋ Xòe tay',       'Khối phân rã, dây đứt dần'],
+  ['fist',  '✊ Nắm tay',       'Ghép lại như cũ'],
+  ['pinch', '🤏 Chụm ngón',     'Chuyển sang hình kế tiếp'],
+  ['peace', '✌️ Chữ V',        'Quay lại hình trước'],
+  ['point', '☝️ Chỉ 1 ngón',    'Khối xoay tít'],
+  ['thumb', '👍 Ngón cái lên',  'Đổi bảng màu'],
+  ['rock',  '🤟 Rock (trỏ+út)', 'Sóng xung kích'],
+  ['three', '🖖 Ba ngón',       'Dây dày ↔ dây thưa'],
+  ['two',   '🙌 Hai tay',       'Mỗi tay cầm một khối riêng'],
+  ['merge', '🙏 Hai tay chạm',  'Hợp thể: khối lồng khối'],
+];
+const legendEl = document.getElementById('legend');
+legendEl.innerHTML = LEGEND.map(([id, ic, ef]) => `<div class="row" data-g="${id}"><span class="ic">${ic}</span><span class="ef">${ef}</span></div>`).join('');
+const rows = [...legendEl.querySelectorAll('.row')];
+const statusEl = document.getElementById('status'), infoEl = document.getElementById('info');
+const GN = { open: '✋ Xòe tay', fist: '✊ Nắm tay', pinch: '🤏 Chụm ngón', peace: '✌️ Chữ V', point: '☝️ Chỉ 1 ngón', thumb: '👍 Ngón cái', rock: '🤟 Rock', three: '🖖 Ba ngón', trans: '🖐 Đang chuyển' };
+let lastStatus = '', lastInfo = '';
+function updateHud() {
+  const on = new Set(activeG);
+  if (handCount === 2) on.add('two');
+  if (merge > 0.55) on.add('merge');
+  rows.forEach(r => r.classList.toggle('on', on.has(r.dataset.g)));
+  let info;
+  if (mode === 'dual') info = `Trái: ${SH[CL[0].shape].name} · Phải: ${SH[CL[1].shape].name} · Màu: ${PAL[palIdx].name}`;
+  else info = `Hình: ${SH[CL[0].shape].name} · Màu: ${PAL[palIdx].name}`;
+  if (info !== lastInfo) { infoEl.textContent = info; lastInfo = info; }
+}
+function setStatus(t) { if (t !== lastStatus) { statusEl.innerHTML = t; lastStatus = t; } }
+const toastEl = document.getElementById('toast'); let toastT;
+function toast(m) { toastEl.textContent = m; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 1600); }
+function toggleHud() { document.getElementById('hud').classList.toggle('hidden'); }
+document.getElementById('toggle').onclick = toggleHud;
+updateHud();
+
+// =====================================================================
+//  SỰ KIỆN CỬ CHỈ
+// =====================================================================
+function shock(cl) {
+  impulse = 1; ring.userData.t = 0; ring.visible = true; ring.position.set(cl.cx, cl.cy, 0);
+}
+function nextShape(cl, d) { cl.shape = (cl.shape + d + SH.length) % SH.length; }
+function fire(slot, g) {
+  const c = mode === 'dual' ? slot : 0, cl = CL[c];
+  const side = mode === 'dual' ? (slot === 0 ? 'Trái · ' : 'Phải · ') : '';
+  switch (g) {
+    case 'pinch': nextShape(cl, 1); toast(`🤏 ${side}${SH[cl.shape].name}`); break;
+    case 'peace': nextShape(cl, -1); toast(`✌️ ${side}${SH[cl.shape].name}`); break;
+    case 'thumb': palIdx = (palIdx + 1) % PAL.length; toast(`👍 Màu: ${PAL[palIdx].name}`); break;
+    case 'rock': shock(cl); toast('🤟 Sóng xung kích!'); break;
+    case 'three': dense = !dense; toast(dense ? '🖖 Lưới dây dày' : '🖖 Lưới dây thưa'); break;
+    default: return;
+  }
+  updateHud();
+}
+const stab = [{ cand: '', n: 0, stable: '' }, { cand: '', n: 0, stable: '' }];
+const pinchSt = [{ on: false, cnt: 0, t: 0 }, { on: false, cnt: 0, t: 0 }];
+function stabilize(slot, g) {
+  const s = stab[slot];
+  if (g === 'pinch') { s.cand = 'pinch'; s.n = 0; s.stable = 'pinch'; return; } // chụm đã xử lý riêng
+  if (g === s.cand) s.n++; else { s.cand = g; s.n = 1; }
+  if (s.n >= 4 && s.stable !== g) { s.stable = g; fire(slot, g); }
+}
+
+// =====================================================================
+//  PHÂN TÍCH BÀN TAY
+// =====================================================================
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * 0.5);
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function classify(lm) {
+  const w = lm[0], palm = dist(lm[0], lm[9]);
+  const ratios = [[5, 8], [9, 12], [13, 16], [17, 20]].map(([m, t]) => dist(lm[t], w) / dist(lm[m], w));
+  const ext = ratios.map(r => r > 1.5), fold = ratios.map(r => r < 1.35);
+  const n = ext.filter(Boolean).length;
+  const avg = ratios.reduce((a, b) => a + b, 0) / 4;
+  const openness = clamp((avg - 1.25) / 0.6);
+  const hs = Math.max(palm, dist(lm[5], lm[17]) * 1.1, dist(lm[0], lm[5])); // cỡ bàn tay, ít bị méo khi xoay tay
+  const pinchD = dist(lm[4], lm[8]) / hs;
+  const othersExt = ext[1] || ext[2] || ext[3];
+  const thumbOut = dist(lm[4], lm[5]) / palm;
+  const thumbUp = thumbOut > 0.7 && lm[4].y < lm[5].y - 0.5 * palm && lm[4].y < lm[3].y;
+  let g;
+  if (n === 4) g = 'open';
+  else if (fold.every(Boolean)) g = thumbUp ? 'thumb' : 'fist';
+  else if (n === 1 && ext[0]) g = 'point';
+  else if (n === 2 && ext[0] && ext[1]) g = 'peace';
+  else if (n === 2 && ext[0] && ext[3]) g = 'rock';
+  else if (n === 3 && ext[0] && ext[1] && ext[2]) g = 'three';
+  else g = 'trans';
+  return { lm, g, openness, palm, pinchD, othersExt };
+}
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+function cover() {
+  const W = innerWidth, H = innerHeight, vw = video.videoWidth || 640, vh = video.videoHeight || 480;
+  const sc = Math.max(W / vw, H / vh);
+  return { W, H, vw, vh, sc, ox: (W - vw * sc) / 2, oy: (H - vh * sc) / 2 };
+}
+function toWorld(p) {
+  const k = cover();
+  const px = p.x * k.vw * k.sc + k.ox, py = p.y * k.vh * k.sc + k.oy;
+  const nx = (k.W - px) / k.W * 2 - 1, ny = 1 - py / k.H * 2;
+  const halfH = camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  return { x: nx * halfH * camera.aspect * 0.9, y: ny * halfH * 0.9 };
+}
+
+let modelReady = false;
+function onResults(res) {
+  modelReady = true;
+  const k = cover();
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  const list = (res.multiHandLandmarks || []).map(classify).sort((a, b) => b.lm[9].x - a.lm[9].x); // trái màn hình trước
+  handCount = list.length;
+
+  // nhận diện chụm ngón riêng: có trễ (hysteresis) và chỉ cần 2 khung hình liên tiếp
+  const pinchFire = [];
+  list.forEach((h, slot) => {
+    if (slot > 1) return;
+    const ps = pinchSt[slot];
+    const enter = h.pinchD < 0.22 || (h.pinchD < 0.38 && h.othersExt);
+    if (ps.on) {
+      if (h.pinchD > 0.5) { ps.on = false; ps.cnt = 0; }
+    } else if (enter) {
+      ps.cnt++;
+      if (ps.cnt >= 2) {
+        ps.on = true;
+        const now = performance.now();
+        if (now - ps.t > 450) { ps.t = now; pinchFire.push(slot); }
+      }
+    } else ps.cnt = 0;
+    if (ps.on) h.g = 'pinch';
+  });
+  for (let s = list.length; s < 2; s++) { pinchSt[s].on = false; pinchSt[s].cnt = 0; }
+
+  // vẽ bộ xương bàn tay
+  octx.lineWidth = 2; octx.strokeStyle = 'rgba(130,200,255,.55)'; octx.fillStyle = 'rgba(180,230,255,.9)';
+  list.forEach(h => {
+    const pt = i => [h.lm[i].x * k.vw * k.sc + k.ox, h.lm[i].y * k.vh * k.sc + k.oy];
+    CONN.forEach(([a, b]) => { const A = pt(a), B = pt(b); octx.beginPath(); octx.moveTo(A[0], A[1]); octx.lineTo(B[0], B[1]); octx.stroke(); });
+    for (let i = 0; i < 21; i++) { const q = pt(i); octx.beginPath(); octx.arc(q[0], q[1], 3, 0, 7); octx.fill(); }
+    if (h.g === 'pinch') { // báo hiệu đã nhận chụm
+      const a = pt(4), b = pt(8);
+      octx.save(); octx.fillStyle = 'rgba(120,255,160,.9)'; octx.beginPath();
+      octx.arc((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 14, 0, 7); octx.fill(); octx.restore();
+    }
+  });
+
+  activeG = list.map(h => h.g);
+  const eFor = h => h.g === 'open' ? 1 : h.g === 'trans' ? h.openness : 0;
+
+  if (handCount === 0) {
+    mode = 'single'; merge = 0;
+    CL[0].eT = manualExplode ? 1 : 0; CL[1].eT = 0;
+    CL[0].tcx = CL[0].tcy = 0; CL[0].ts = 1;
+    CL[0].boostT = CL[1].boostT = 0;
+    stab.forEach(s => { s.cand = ''; s.n = 0; s.stable = ''; });
+    setStatus('🖐 Đưa tay vào camera');
+  } else if (handCount === 1) {
+    mode = 'single'; merge = 0;
+    const h = list[0], w = toWorld(h.lm[9]);
+    CL[0].eT = eFor(h); CL[1].eT = 0;
+    CL[0].tcx = w.x; CL[0].tcy = w.y; CL[0].ts = clamp(h.palm / 0.2, 0.6, 1.5);
+    CL[0].boostT = h.g === 'point' ? 4.5 : 0; CL[1].boostT = 0;
+    stabilize(0, h.g); stab[1].cand = ''; stab[1].n = 0; stab[1].stable = '';
+    setStatus(`Một tay: ${GN[h.g]}`);
+  } else {
+    mode = 'dual';
+    const w = list.slice(0, 2).map(h => toWorld(h.lm[9]));
+    const dw = Math.hypot(w[0].x - w[1].x, w[0].y - w[1].y);
+    merge = clamp((2.2 - dw) / 1.2);
+    const mid = { x: (w[0].x + w[1].x) / 2, y: (w[0].y + w[1].y) / 2 };
+    list.slice(0, 2).forEach((h, i) => {
+      const cl = CL[i], base = 0.62 * clamp(h.palm / 0.2, 0.7, 1.3);
+      cl.eT = eFor(h);
+      cl.tcx = w[i].x + (mid.x - w[i].x) * merge; cl.tcy = w[i].y + (mid.y - w[i].y) * merge;
+      cl.ts = i === 0 ? base + (1.05 - base) * merge : base + (0.55 - base) * merge;
+      cl.boostT = h.g === 'point' ? 4.5 : 0;
+      stabilize(i, h.g);
+    });
+    setStatus(merge > 0.55 ? '🙏 Hợp thể: khối lồng khối' : `Hai tay: ${GN[list[0].g]} | ${GN[list[1].g]}`);
+  }
+  pinchFire.forEach(s => fire(s, 'pinch'));
+  updateHud();
+}
+
+// =====================================================================
+//  VÒNG LẶP VẼ
+// =====================================================================
+const bd = new Float32Array(8), bj = new Int16Array(8);
+function buildLines(th, K, gain) {
+  const th2 = th * th; let s = 0;
+  for (let i = 0; i < N; i++) {
+    const xi = P[3 * i], yi = P[3 * i + 1], zi = P[3 * i + 2]; let cnt = 0;
+    for (let j = 0; j < N; j++) {
+      if (j === i) continue;
+      const dx = P[3 * j] - xi; if (dx > th || dx < -th) continue;
+      const dy = P[3 * j + 1] - yi; if (dy > th || dy < -th) continue;
+      const dz = P[3 * j + 2] - zi, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= th2) continue;
+      if (cnt < K || d2 < bd[K - 1]) {
+        let p = cnt < K ? cnt++ : K - 1;
+        while (p > 0 && bd[p - 1] > d2) { bd[p] = bd[p - 1]; bj[p] = bj[p - 1]; p--; }
+        bd[p] = d2; bj[p] = j;
+      }
+    }
+    for (let k = 0; k < cnt; k++) {
+      if (s >= MAXSEG) return s;
+      const j = bj[k], g = (1 - Math.sqrt(bd[k]) / th) * gain, o = s * 6;
+      LP[o] = xi; LP[o + 1] = yi; LP[o + 2] = zi;
+      LP[o + 3] = P[3 * j]; LP[o + 4] = P[3 * j + 1]; LP[o + 5] = P[3 * j + 2];
+      LC[o] = C[3 * i] * g; LC[o + 1] = C[3 * i + 1] * g; LC[o + 2] = C[3 * i + 2] * g;
+      LC[o + 3] = C[3 * j] * g; LC[o + 4] = C[3 * j + 1] * g; LC[o + 5] = C[3 * j + 2] * g;
+      s++;
+    }
+  }
+  return s;
+}
+
+const col = new THREE.Color();
+let last = performance.now();
+function frame(t) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (t - last) / 1000 || 0.016); last = t;
+  const kE = 1 - Math.pow(0.0005, dt), kC = 1 - Math.pow(0.00005, dt), kP = 1 - Math.pow(0.0003, dt), kS = 1 - Math.pow(0.001, dt);
+  impulse *= Math.pow(0.03, dt);
+
+  // cập nhật hai cụm
+  const baseSpin = 0.35;
+  CL.forEach((cl, i) => {
+    cl.e += (cl.eT - cl.e) * kE;
+    cl.cx += (cl.tcx - cl.cx) * kC; cl.cy += (cl.tcy - cl.cy) * kC;
+    cl.s += (cl.ts - cl.s) * kS;
+    cl.boost += (cl.boostT - cl.boost) * kS;
+    let sp = baseSpin + cl.boost;
+    if (i === 1) sp *= (1 - 2.4 * merge);
+    cl.ay += sp * dt;
+    cl.ax = 0.3 * Math.sin(t * 0.0004 + i);
+  });
+  if (mode === 'single') { CL[1].tcx = CL[0].tcx; CL[1].tcy = CL[0].tcy; }
+
+  // vị trí các nút
+  const dual = mode === 'dual';
+  const tr = CL.map(cl => ({ cy: Math.cos(cl.ay), sy: Math.sin(cl.ay), cx: Math.cos(cl.ax), sx: Math.sin(cl.ax) }));
+  for (let i = 0; i < N; i++) {
+    const c = dual && i >= HALF ? 1 : 0, cl = CL[c], q = tr[c], sh = SH[cl.shape].pts;
+    const e = Math.min(1.25, cl.e + impulse * 1.1), sc = cl.s;
+    const sf = e * 1.7 * Math.max(sc, 0.65), f = sc * (1 + 0.5 * e), wob = 0.06 * e;
+    const x = sh[3 * i] * f + SC[3 * i] * sf + Math.sin(t * 0.002 + i) * wob;
+    const y = sh[3 * i + 1] * f + SC[3 * i + 1] * sf + Math.cos(t * 0.0023 + i) * wob;
+    const z = sh[3 * i + 2] * f + SC[3 * i + 2] * sf;
+    const x1 = x * q.cy + z * q.sy, z1 = -x * q.sy + z * q.cy;
+    const y1 = y * q.cx - z1 * q.sx, z2 = y * q.sx + z1 * q.cx;
+    P[3 * i] += (cl.cx + x1 - P[3 * i]) * kP;
+    P[3 * i + 1] += (cl.cy + y1 - P[3 * i + 1]) * kP;
+    P[3 * i + 2] += (z2 - P[3 * i + 2]) * kP;
+  }
+
+  // màu
+  const pal = PAL[palIdx];
+  for (let i = 0; i < N; i++) {
+    const c = dual && i >= HALF ? 1 : 0, cl = CL[c];
+    const frac = clamp(0.5 + (P[3 * i + 1] - cl.cy) / 3.6);
+    let h = pal.h0 + (pal.h1 - pal.h0) * frac + (dual ? c * 0.07 : 0);
+    h = ((h % 1) + 1) % 1;
+    col.setHSL(h, pal.s, 0.52 + 0.12 * Math.min(1, cl.e));
+    C[3 * i] = col.r; C[3 * i + 1] = col.g; C[3 * i + 2] = col.b;
+  }
+
+  // dây nối
+  const eAvg = dual ? (CL[0].e + CL[1].e) / 2 : CL[0].e;
+  const sMean = dual ? (CL[0].s + CL[1].s) / 2 : CL[0].s;
+  const th = (0.36 + 0.28 * sMean) * (dense ? 1.2 : 1);
+  const gain = 0.85 * (1 - 0.3 * Math.min(1, eAvg)) + impulse * 0.9;
+  const segs = buildLines(th, dense ? 7 : 4, gain);
+  lGeo.setDrawRange(0, segs * 2);
+  lpA.needsUpdate = true; lcA.needsUpdate = true;
+  pGeo.attributes.position.needsUpdate = true; pGeo.attributes.color.needsUpdate = true;
+
+  // vòng xung kích
+  if (ring.userData.t >= 0) {
+    ring.userData.t += dt;
+    const u = ring.userData.t / 0.9;
+    if (u >= 1) { ring.visible = false; ring.userData.t = -1; }
+    else {
+      ring.scale.setScalar(0.3 + u * 7);
+      ring.material.opacity = (1 - u) * 0.9;
+      col.setHSL(pal.h0, 0.8, 0.7); ring.material.color.copy(col);
+    }
+  }
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+
+// =====================================================================
+//  BÀN PHÍM (dự phòng / thử nhanh)
+// =====================================================================
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'arrowright') { nextShape(CL[0], 1); toast(SH[CL[0].shape].name); }
+  else if (k === 'arrowleft') { nextShape(CL[0], -1); toast(SH[CL[0].shape].name); }
+  else if (k === 'c') { palIdx = (palIdx + 1) % PAL.length; toast('Màu: ' + PAL[palIdx].name); }
+  else if (k === 'r') { shock(CL[0]); }
+  else if (k === 'd') { dense = !dense; toast(dense ? 'Lưới dây dày' : 'Lưới dây thưa'); }
+  else if (k === ' ') { e.preventDefault(); manualExplode = !manualExplode; if (handCount === 0) CL[0].eT = manualExplode ? 1 : 0; }
+  else if (k === 'h') toggleHud();
+  updateHud();
+});
+
+// =====================================================================
+//  CAMERA + MEDIAPIPE
+// =====================================================================
+async function startCamera() {
+  const err = document.getElementById('err'), btn = document.getElementById('start');
+  err.style.display = 'none';
+  if (typeof Hands === 'undefined') {
+    err.style.display = 'block';
+    err.textContent = 'Không tải được thư viện nhận diện tay. Hãy kiểm tra kết nối internet. Bạn vẫn có thể dùng phím tắt.';
+    setStatus('Chưa có nhận diện tay');
+    return;
+  }
+  const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.5 });
+  hands.onResults(onResults);
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 960, height: 540, facingMode: 'user' }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+    btn.style.display = 'none';
+    setStatus('Đang tải mô hình nhận diện tay...');
+    const loop = async () => {
+      if (video.readyState >= 2) { try { await hands.send({ image: video }); } catch (e) {} }
+      requestAnimationFrame(loop);
+    };
+    loop();
+  } catch (e) {
+    btn.style.display = 'block';
+    err.style.display = 'block';
+    err.textContent = 'Không mở được camera: ' + e.message + '. Hãy cho phép camera, hoặc chạy bằng localhost/HTTPS.';
+    setStatus('Chưa có camera');
+  }
+}
+document.getElementById('start').onclick = startCamera;
+startCamera();
+</script>
+</body>
+</html>
