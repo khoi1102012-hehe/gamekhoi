@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đọc văn bản</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef2f6; --card:#ffffff; --ink:#16212e; --muted:#5b6b7c; --line:#d3dce6;
+    --brand:#1f4fd8; --brand-ink:#ffffff; --hl:#ffe36e; --hl-ink:#16212e;
+    --m:#a8d4ff; --mc:#ff9f43; --m-ink:#16212e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0f1620; --card:#18212d; --ink:#e8eef5; --muted:#93a3b5; --line:#2a3646;
+      --brand:#6c93ff; --brand-ink:#0b1220; --hl:#5b4b00; --hl-ink:#fff4c2;
+      --m:#1d4f91; --mc:#b45309; --m-ink:#ffffff; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;padding:20px 16px 60px}
+  .wrap{max-width:860px;margin:0 auto;display:grid;gap:16px}
+  h1{font-size:1.5rem;margin:4px 0 0}
+  .sub{color:var(--muted);margin:0;font-size:.95rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  label{font-weight:500;font-size:.9rem}
+  textarea{width:100%;min-height:150px;margin-top:8px;padding:12px;font:inherit;color:var(--ink);
+    background:var(--bg);border:1px solid var(--line);border-radius:8px;resize:vertical}
+  textarea:focus,button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  button{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--card);color:var(--ink);
+    padding:10px 16px;border-radius:8px;cursor:pointer}
+  button:hover{border-color:var(--brand)}
+  button.main{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:700;padding:10px 26px}
+  .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-top:4px}
+  .settings > div{display:grid;gap:4px;align-content:start}
+  select,input[type=number],input[type=search]{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%}
+  input[type=range]{width:100%;accent-color:var(--brand)}
+  input[type=checkbox]{accent-color:var(--brand)}
+  .range-row{display:flex;gap:8px;align-items:center}
+  .range-row input[type=number]{width:80px}
+  .inline{font-weight:400;display:flex;gap:6px;align-items:center}
+  .status{color:var(--muted);font-size:.9rem;min-height:1.4em;margin:10px 0}
+  .status.warn{color:#c2410c}
+  hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+  .search-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .search-row input[type=search]{flex:1 1 220px;width:auto}
+  .count{color:var(--muted);font-size:.9rem;min-width:6em}
+  #list{display:grid;gap:8px;margin-top:10px}
+  .p{display:grid;grid-template-columns:2.2rem 1fr;gap:6px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:8px;cursor:pointer;background:var(--card)}
+  .p:hover{border-color:var(--brand)}
+  .p .n{color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums}
+  .p.active{background:var(--hl);color:var(--hl-ink);border-color:var(--hl)}
+  .p.active .n{color:var(--hl-ink)}
+  .p.out{opacity:.45}
+  mark{background:var(--m);color:var(--m-ink);border-radius:3px;padding:0 1px}
+  mark.cur{background:var(--mc);color:#fff;font-weight:700}
+  .empty{color:var(--muted);padding:8px 0}
+  @media (prefers-reduced-motion:no-preference){ .p{transition:background .15s} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Đọc văn bản thành tiếng</h1>
+    <p class="sub">Dán văn bản, bấm Đọc. Bấm vào bất kỳ đoạn nào bên dưới để đọc từ đoạn đó, hoặc gõ từ cần tìm để nhảy tới đó.</p>
+  </div>
+
+  <div class="card">
+    <label for="txt">Dán văn bản vào đây (mỗi lần xuống dòng là một đoạn)</label>
+    <textarea id="txt" placeholder="Dán văn bản vào đây..."></textarea>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button class="main" id="bRead">Đọc</button>
+      <button id="bPause">Tạm dừng</button>
+      <button id="bStop">Dừng</button>
+      <button id="bPrev">Đoạn trước</button>
+      <button id="bNext">Đoạn sau</button>
+      <button id="bAgain">Đọc lại đoạn này</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
+
+    <div class="search-row">
+      <input type="search" id="q" placeholder="Tìm từ hoặc cụm từ trong văn bản..." aria-label="Tìm từ hoặc cụm từ">
+      <button id="mPrev" title="Kết quả trước (Shift+Enter)">Trước</button>
+      <button id="mNext" title="Kết quả sau (Enter)">Sau</button>
+      <span class="count" id="count"></span>
+      <button id="mRead">Đọc từ kết quả này</button>
+      <label class="inline"><input type="checkbox" id="accent" checked> Bỏ qua dấu</label>
+    </div>
+
+    <hr>
+
+    <div class="settings">
+      <div>
+        <label for="voice">Giọng đọc</label>
+        <select id="voice"></select>
+      </div>
+      <div>
+        <label for="rate">Tốc độ: <span id="rateV">1.0</span>x</label>
+        <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
+      </div>
+      <div>
+        <label for="pitch">Cao độ: <span id="pitchV">1.0</span></label>
+        <input type="range" id="pitch" min="0.5" max="2" step="0.1" value="1">
+      </div>
+      <div>
+        <label>Đọc từ đoạn … đến đoạn …</label>
+        <div class="range-row">
+          <input type="number" id="from" min="1" value="1" aria-label="Từ đoạn">
+          <span>đến</span>
+          <input type="number" id="to" min="1" value="1" aria-label="Đến đoạn">
+        </div>
+      </div>
+      <div>
+        <label for="repPara">Mỗi đoạn đọc mấy lần</label>
+        <input type="number" id="repPara" min="1" max="99" value="1">
+      </div>
+      <div>
+        <label for="repAll">Cả khoảng đã chọn đọc mấy lần</label>
+        <input type="number" id="repAll" min="1" max="99" value="1">
+        <label class="inline"><input type="checkbox" id="inf"> Lặp mãi cho đến khi bấm Dừng</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Danh sách đoạn</label>
+    <div id="list"><div class="empty">Chưa có văn bản.</div></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const synth = window.speechSynthesis;
+let paras = [], cur = 0, chunkPos = 0, token = 0, state = 'idle', voices = [];
+let paraDone = 0, allDone = 0;
+let toTouched = false;
+let matches = [], curM = -1;
+
+if (!synth) {
+  $('status').textContent = 'Trình duyệt này không hỗ trợ đọc giọng nói. Hãy dùng Chrome, Edge hoặc Safari.';
+  $('status').classList.add('warn');
+}
+
+/* ---------- Giọng đọc ---------- */
+function loadVoices() {
+  if (!synth) return;
+  voices = synth.getVoices();
+  const sel = $('voice'), old = sel.value;
+  const sorted = [...voices].sort((a, b) => {
+    const av = a.lang.toLowerCase().startsWith('vi') ? 0 : 1;
+    const bv = b.lang.toLowerCase().startsWith('vi') ? 0 : 1;
+    return av - bv || a.name.localeCompare(b.name);
+  });
+  sel.innerHTML = '';
+  sorted.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.voiceURI; o.textContent = v.name + ' (' + v.lang + ')';
+    sel.appendChild(o);
+  });
+  if (old && sorted.some(v => v.voiceURI === old)) sel.value = old;
+  const hasVi = voices.some(v => v.lang.toLowerCase().startsWith('vi'));
+  if (voices.length && !hasVi) {
+    setStatus('Máy chưa có giọng tiếng Việt. Hãy cài giọng Việt trong cài đặt hệ thống hoặc dùng Chrome/Edge.', true);
+  }
+}
+if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+
+function getVoice() { return voices.find(v => v.voiceURI === $('voice').value) || null; }
+
+/* ---------- Chia đoạn ---------- */
+function parse() {
+  paras = $('txt').value.normalize('NFC').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  $('from').max = $('to').max = paras.length || 1;
+  if (!toTouched || +$('to').value > paras.length || +$('to').value < 1) $('to').value = paras.length || 1;
+  if (+$('from').value > paras.length) $('from').value = 1;
+  if (cur >= paras.length) cur = 0;
+  findMatches(false);
+}
+
+function renderList() {
+  const list = $('list');
+  list.innerHTML = '';
+  if (!paras.length) { list.innerHTML = '<div class="empty">Chưa có văn bản.</div>'; return; }
+  const byPara = {};
+  matches.forEach((m, k) => { (byPara[m.p] = byPara[m.p] || []).push({ ...m, k }); });
+  paras.forEach((t, i) => {
+    const d = document.createElement('div');
+    d.className = 'p'; d.dataset.i = i;
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1;
+    const s = document.createElement('span'); s.className = 't';
+    let pos = 0;
+    (byPara[i] || []).forEach(m => {
+      if (m.s > pos) s.appendChild(document.createTextNode(t.slice(pos, m.s)));
+      const mk = document.createElement('mark');
+      mk.dataset.m = m.k; mk.textContent = t.slice(m.s, m.s + m.l);
+      if (m.k === curM) mk.className = 'cur';
+      s.appendChild(mk);
+      pos = m.s + m.l;
+    });
+    if (pos < t.length) s.appendChild(document.createTextNode(t.slice(pos)));
+    d.append(n, s);
+    d.addEventListener('click', () => goTo(i));
+    list.appendChild(d);
+  });
+  mark(state === 'idle' ? -1 : cur, false);
+  refreshOut();
+}
+
+function refreshOut() {
+  const a = startIdx(), b = endIdx();
+  document.querySelectorAll('.p').forEach(el => {
+    const i = +el.dataset.i;
+    el.classList.toggle('out', i < a || i >= b);
+  });
+}
+
+function mark(i, scroll = true) {
+  document.querySelectorAll('.p.active').forEach(e => e.classList.remove('active'));
+  const el = document.querySelector('.p[data-i="' + i + '"]');
+  if (el) { el.classList.add('active'); if (scroll) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+
+function startIdx() { return Math.max(0, Math.min(paras.length - 1, (+$('from').value || 1) - 1)); }
+function endIdx()   { return Math.max(startIdx() + 1, Math.min(paras.length, +$('to').value || paras.length)); }
+
+/* ---------- Tìm kiếm ---------- */
+function foldText(s, strip) {
+  return Array.from(s).map(c => {
+    if (c.length !== 1) return c;
+    let r = c;
+    if (strip) r = r.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+    r = r.toLowerCase();
+    return r.length === 1 ? r : c;
+  }).join('');
+}
+
+function findMatches(jump) {
+  const strip = $('accent').checked;
+  const q = $('q').value.normalize('NFC').trim();
+  matches = []; curM = -1;
+  if (q) {
+    const needle = foldText(q, strip);
+    paras.forEach((t, i) => {
+      const hay = foldText(t, strip);
+      let from = 0, idx;
+      while ((idx = hay.indexOf(needle, from)) !== -1) {
+        matches.push({ p: i, s: idx, l: needle.length });
+        from = idx + needle.length;
+      }
+    });
+  }
+  if (matches.length && jump) curM = 0;
+  renderList();
+  updateCount();
+  if (curM >= 0) selectMatch(curM);
+}
+
+function updateCount() {
+  const q = $('q').value.trim();
+  if (!q) $('count').textContent = '';
+  else if (!matches.length) $('count').textContent = 'Không thấy';
+  else $('count').textContent = (curM + 1) + '/' + matches.length + ' kết quả';
+}
+
+function selectMatch(k) {
+  if (!matches.length) return;
+  k = (k + matches.length) % matches.length;
+  curM = k;
+  document.querySelectorAll('mark.cur').forEach(e => e.classList.remove('cur'));
+  const el = document.querySelector('mark[data-m="' + k + '"]');
+  if (el) { el.classList.add('cur'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  const p = matches[k].p;
+  setRangeFor(p);
+  refreshOut();
+  updateCount();
+  if (state === 'idle') setStatus('Đã chọn đoạn ' + (p + 1) + '. Bấm "Đọc" hoặc "Đọc từ kết quả này" để đọc từ đây.');
+}
+
+function setRangeFor(p) {
+  if (p < startIdx() || p < 0) $('from').value = p + 1;
+  if (p >= endIdx()) { $('to').value = paras.length; }
+}
+
+$('q').addEventListener('input', () => { clearTimeout(window._qt); window._qt = setTimeout(() => findMatches(true), 250); });
+$('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); if (!matches.length) findMatches(true); else selectMatch(curM + (e.shiftKey ? -1 : 1)); }
+});
+$('accent').onchange = () => findMatches(true);
+$('mNext').onclick = () => selectMatch(curM + 1);
+$('mPrev').onclick = () => selectMatch(curM - 1);
+$('mRead').onclick = () => {
+  if (curM < 0) { setStatus('Hãy gõ từ cần tìm trước.', true); return; }
+  const p = matches[curM].p;
+  $('from').value = p + 1;
+  if (p >= endIdx()) $('to').value = paras.length;
+  refreshOut();
+  allDone = 0; paraDone = 0; cur = p; chunkPos = 0;
+  run();
+};
+
+/* ---------- Cắt đoạn dài thành câu ngắn (tránh bị ngắt giữa chừng) ---------- */
+function splitChunks(text) {
+  const sentences = text.match(/[^.!?…]+[.!?…]*["”’)\]]*\s*/g) || [text];
+  const out = []; let buf = '';
+  const push = s => { s = s.trim(); if (s) out.push(s); };
+  sentences.forEach(s => {
+    if (s.length > 180) {
+      push(buf); buf = '';
+      let part = '';
+      s.split(/\s+/).forEach(w => {
+        if ((part + ' ' + w).length > 180) { push(part); part = w; }
+        else part = part ? part + ' ' + w : w;
+      });
+      push(part);
+    } else if ((buf + s).length > 180) { push(buf); buf = s; }
+    else buf += s;
+  });
+  push(buf);
+  return out;
+}
+
+/* ---------- Điều khiển đọc ---------- */
+function setStatus(msg, warn) {
+  const s = $('status'); s.textContent = msg; s.classList.toggle('warn', !!warn);
+}
+
+function nPara() { return Math.max(1, Math.min(99, +$('repPara').value || 1)); }
+function nAll()  { return Math.max(1, Math.min(99, +$('repAll').value || 1)); }
+
+function run() {
+  if (!synth || !paras.length) { setStatus('Hãy dán văn bản trước.', true); return; }
+  const my = ++token;
+  synth.cancel();
+  state = 'playing';
+  ui();
+  setTimeout(() => step(my), 80);
+}
+
+function step(my) {
+  if (my !== token) return;
+  if (cur >= endIdx()) {
+    allDone++;
+    if ($('inf').checked || allDone < nAll()) { cur = startIdx(); chunkPos = 0; paraDone = 0; }
+    else { finish(); return; }
+  }
+  const chunks = splitChunks(paras[cur]);
+  if (chunkPos >= chunks.length) {
+    paraDone++;
+    if (paraDone >= nPara()) { cur++; paraDone = 0; }
+    chunkPos = 0;
+    step(my); return;
+  }
+  mark(cur);
+  let msg = 'Đang đọc đoạn ' + (cur + 1) + '/' + paras.length;
+  if (nPara() > 1) msg += ' · lần ' + (paraDone + 1) + '/' + nPara();
+  if ($('inf').checked) msg += ' · vòng ' + (allDone + 1) + ' (lặp mãi)';
+  else if (nAll() > 1) msg += ' · vòng ' + (allDone + 1) + '/' + nAll();
+  setStatus(msg);
+  const u = new SpeechSynthesisUtterance(chunks[chunkPos]);
+  const v = getVoice();
+  if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'vi-VN'; }
+  u.rate = +$('rate').value;
+  u.pitch = +$('pitch').value;
+  u.onend = () => { if (my !== token) return; chunkPos++; step(my); };
+  u.onerror = e => {
+    if (my !== token) return;
+    if (e.error === 'canceled' || e.error === 'interrupted') return;
+    chunkPos++; step(my);
+  };
+  synth.speak(u);
+}
+
+function finish() {
+  token++; state = 'idle'; chunkPos = 0; paraDone = 0; allDone = 0; cur = startIdx();
+  mark(-1); ui(); setStatus('Đã đọc xong.');
+}
+
+function goTo(i) {
+  if (!paras.length) return;
+  cur = Math.max(0, Math.min(paras.length - 1, i)); chunkPos = 0; paraDone = 0;
+  if (cur < startIdx()) $('from').value = cur + 1;
+  if (cur >= endIdx()) $('to').value = paras.length;
+  refreshOut();
+  run();
+}
+
+function ui() {
+  $('bPause').textContent = state === 'paused' ? 'Tiếp tục' : 'Tạm dừng';
+}
+
+$('bRead').onclick = () => { cur = startIdx(); chunkPos = 0; paraDone = 0; allDone = 0; run(); };
+$('bPause').onclick = () => {
+  if (state === 'playing') {
+    token++; synth.cancel(); state = 'paused'; ui();
+    setStatus('Đã tạm dừng ở đoạn ' + (cur + 1) + '. Bấm "Tiếp tục" để đọc tiếp.');
+  } else if (state === 'paused') run();
+};
+$('bStop').onclick = () => {
+  token++; if (synth) synth.cancel();
+  state = 'idle'; chunkPos = 0; paraDone = 0; allDone = 0; cur = startIdx(); mark(-1); ui(); setStatus('Đã dừng.');
+};
+$('bPrev').onclick = () => goTo(cur - 1);
+$('bNext').onclick = () => goTo(cur + 1);
+$('bAgain').onclick = () => goTo(cur);
+
+/* Đổi tốc độ / cao độ / giọng khi đang đọc thì áp dụng ngay */
+function liveChange() {
+  $('rateV').textContent = (+$('rate').value).toFixed(1);
+  $('pitchV').textContent = (+$('pitch').value).toFixed(1);
+  if (state === 'playing') run();
+}
+$('rate').oninput = liveChange;
+$('pitch').oninput = liveChange;
+$('voice').onchange = () => { if (state === 'playing') run(); };
+
+$('from').oninput = refreshOut;
+$('to').oninput = () => { toTouched = true; refreshOut(); };
+
+let timer;
+$('txt').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(parse, 250); });
+$('txt').addEventListener('paste', () => { toTouched = false; });
+
+window.addEventListener('beforeunload', () => { if (synth) synth.cancel(); });
+parse();
+</script>
+</body>
+</html>
