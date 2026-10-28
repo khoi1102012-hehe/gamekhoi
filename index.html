@@ -1208,6 +1208,7 @@ function hostVent(p,vid){
  if(GAME_VENTS.length<2)return;
  const to=(vid+1)%GAME_VENTS.length;
  // Vent is a normal action: no cooldown. The short timer is only the entry animation.
+ G.players.forEach(b=>{if(b.isBot&&b!==p&&b.alive&&aiCanSee(b,p,250))aiRemember(b,'vent',{target:p.id,targetName:p.name});});
  p.inVent=true;p.ventT=1.05;p.ventTo=to;p.ventFrom=vid;p.ventCd=0;p.tx=p.x;p.ty=p.y;
  if(p===G.me)toast('🕳️ Đang chui cống…');beep(115,.28,'triangle',.07);
 }
@@ -1322,6 +1323,7 @@ function hostKill(k){
   if(v)kill(k,v);
 }
 function kill(k,v){
+  aiWitnessKill(k,v);
   scanRelease(v.id);v.alive=false;G.bodies.push({x:v.x,y:v.y,color:v.color,name:v.name,id:v.id,killer:k.id});
   k.x=v.x;k.y=v.y;k.tx=v.x;k.ty=v.y;k.cd=20;beep(120,.25,'square',.12);
   if(k.conn)send(k.conn,{t:'tp',x:v.x,y:v.y});
@@ -1331,7 +1333,9 @@ function kill(k,v){
   checkWin();
 }
 function completeTask(p,t){
-  if(t.done)return;t.done=true;
+  if(t.done)return;
+  if(G&&p&&t)G.players.forEach(b=>{if(b.isBot&&b!==p&&b.alive&&aiCanSee(b,p,190))aiRemember(b,'taskDoneSeen',{target:p.id,targetName:p.name,task:t.name||t.type||'nhiệm vụ'});});
+  t.done=true;
   if(NET.role==='client'){
     if(p===G.me){sendHost({t:'task',di:t.di});beep(660,.2);if(p.imp)toast('Nhiệm vụ giả hoàn tất (để ngụy trang)')}
     return;
@@ -1552,6 +1556,83 @@ function openTask(t){
   $('modal').classList.add('on');
 }
 
+/* ===== AI NHẬN THỨC & TRÍ NHỚ THEO TỪNG BOT ===== */
+function aiMem(b){
+  if(!b.aiMemory)b.aiMemory={events:[],lastSeen:{},suspicion:{},lastStatement:'',lastSpeak:-99};
+  return b.aiMemory;
+}
+function aiRemember(b,type,data){
+  if(!b||!b.isBot)return;
+  const m=aiMem(b);m.events.push({type,t:G.time,...data});
+  // Trí nhớ gần đây quan trọng hơn; giữ đủ dài cho một trận nhưng không tăng vô hạn.
+  if(m.events.length>100)m.events.splice(0,m.events.length-100);
+}
+function aiCanSee(a,b,range=230){return !!(a&&b&&a.alive&&Math.hypot(a.x-b.x,a.y-b.y)<=range&&hasLineOfSight(a.x,a.y,b.x,b.y));}
+function aiObserve(b,dt){
+  if(!G||G.state!=='play'||!b.alive)return;
+  const m=aiMem(b);m.observeT=(m.observeT||0)-dt;if(m.observeT>0)return;m.observeT=.22;
+  G.players.forEach(q=>{
+    if(q===b||!q.alive||!aiCanSee(b,q,245))return;
+    const old=m.lastSeen[q.id];
+    if(old&&G.time-old.t<4&&Math.hypot(q.x-old.x,q.y-old.y)<330){
+      const pairKey=[Math.min(b.id,q.id),Math.max(b.id,q.id)].join(':');
+      const prev=m.events.findLast?m.events.findLast(e=>e.type==='together'&&e.pairKey===pairKey):[...m.events].reverse().find(e=>e.type==='together'&&e.pairKey===pairKey);
+      if(!prev||G.time-prev.t>5)aiRemember(b,'together',{target:q.id,targetName:q.name,otherId:b.id,otherName:b.name,pairKey,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'});
+    }
+    m.lastSeen[q.id]={t:G.time,x:q.x,y:q.y,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'};
+    if(q.inVent||q.ventPop>.25){const recent=m.events.some(e=>e.type==='vent'&&e.target===q.id&&G.time-e.t<8);if(!recent)aiRemember(b,'vent',{target:q.id,targetName:q.name});}
+    if(q.goalTask||q.atTask){const task=q.atTask||q.goalTask;const recent=m.events.some(e=>e.type==='taskSeen'&&e.target===q.id&&G.time-e.t<8);if(!recent)aiRemember(b,'taskSeen',{target:q.id,targetName:q.name,task:task?.name||task?.type||'nhiệm vụ'});}
+  });
+  // Ghi nhận cả hai người khác cùng xuất hiện trong tầm nhìn, không chỉ bot đi cùng một người.
+  const visible=G.players.filter(q=>q!==b&&q.alive&&aiCanSee(b,q,245));
+  for(let i=0;i<visible.length;i++)for(let j=i+1;j<visible.length;j++){
+    const q=visible[i],r=visible[j];if(Math.hypot(q.x-r.x,q.y-r.y)>185)continue;
+    const pairKey=[Math.min(q.id,r.id),Math.max(q.id,r.id)].join(':');
+    const prev=[...m.events].reverse().find(e=>e.type==='together'&&e.pairKey===pairKey);
+    if(!prev||G.time-prev.t>5)aiRemember(b,'together',{target:q.id,targetName:q.name,otherId:r.id,otherName:r.name,pairKey,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'});
+  }
+}
+function aiWitnessKill(k,v){
+  if(!G)return;
+  G.players.forEach(b=>{if(!b.isBot||!b.alive||b===k||b===v)return;
+    if(aiCanSee(b,k,280)&&aiCanSee(b,v,280))aiRemember(b,'witnessKill',{target:k.id,targetName:k.name,victim:v.name,victimId:v.id,confidence:1});
+    else if(aiCanSee(b,v,220))aiRemember(b,'nearDeath',{target:v.id,targetName:v.name,room:ROOMS[roomAt(v.x,v.y)]?.n||'khu vực này'});
+  });
+}
+function aiEvidence(b,targetId){
+  const m=aiMem(b),ev=m.events.filter(e=>e.target===targetId||e.targetId===targetId||e.killerId===targetId);
+  return {witness:ev.find(e=>e.type==='witnessKill'),vent:ev.find(e=>e.type==='vent'),together:ev.filter(e=>e.type==='together').slice(-3),taskSeen:ev.find(e=>e.type==='taskSeen'),events:ev};
+}
+function aiBestSuspect(b){
+  const candidates=G.players.filter(p=>p.alive&&p!==b&&!p.imp);let best=null,score=0,why='';
+  for(const p of candidates){const e=aiEvidence(b,p.id);let s=0,w='';
+    if(e.witness){s=100;w=`Mình tận mắt thấy ${p.name} hạ gục ${e.witness.victim}.`;}
+    else if(e.vent){s+=5;w=`Mình thấy ${p.name} chui cống.`;}
+    if(e.together.length){s+=Math.min(3,e.together.length)*2;if(!w)w=`Mình đã thấy ${p.name} đi cùng người khác gần đây.`}
+    const body=G.bodies.find(x=>x.name&&G.players[x.killer]?.id===p.id);
+    if(body&&e.witness){s=100;w=`Mình thấy ${p.name} giết ${body.name}.`}
+    if(s>score){best=p;score=s;why=w}
+  }
+  return best?{player:best,score,why}:null;
+}
+function aiSpeak(b){
+  const m=aiMem(b);const dead=G.bodies[G.bodies.length-1];
+  const witnessed=m.events.filter(e=>e.type==='witnessKill').slice(-1)[0];
+  if(witnessed&&G.players[witnessed.target]?.alive)return `Mình tận mắt thấy ${witnessed.targetName} giết ${witnessed.victim}. Đây là điều mình trực tiếp chứng kiến.`;
+  const vent=m.events.filter(e=>e.type==='vent'&&G.time-e.t<90).slice(-1)[0];
+  if(vent&&G.players[vent.target]?.alive&&Math.random()<.45)return `Mình thấy ${vent.targetName} chui cống. Chi tiết này khá đáng nghi, nhưng mình chưa thể kết luận chỉ từ đó.`;
+  if(dead){
+    const together=m.events.filter(e=>e.type==='together'&&G.time-e.t<35&&(e.targetName===dead.name||e.otherName===dead.name)).slice(-1)[0];
+    if(together){const companion=together.targetName===dead.name?together.otherName:together.targetName;const cid=together.targetName===dead.name?together.otherId:together.target;if(G.players[cid]?.alive)return `Trước đó mình thấy ${dead.name} đi cùng ${companion} ở ${together.room}. Mình không tận mắt thấy ai ra tay nên đây chỉ là manh mối, chưa đủ để kết luận.`;}
+  }
+  const suspect=aiBestSuspect(b);if(suspect&&suspect.score>=5)return suspect.why;
+  const task=m.events.filter(e=>(e.type==='taskDoneSeen'||e.type==='taskSeen')&&G.time-e.t<60).slice(-1)[0];
+  if(task&&Math.random()<.5)return task.type==='taskDoneSeen'?`Mình tận mắt thấy ${task.targetName} hoàn thành một nhiệm vụ ở gần mình.`:`Mình chỉ thấy ${task.targetName} ở gần chỗ làm ${task.task}; mình không thể chắc họ đã hoàn thành.`;
+  const recent=m.events.filter(e=>e.type==='together'&&G.time-e.t<25).slice(-1)[0];
+  if(recent)return `Mình nhớ có thấy ${recent.targetName} đi cùng người khác ở ${recent.room}. Có ai xác nhận được chuyện gì xảy ra sau đó không?`;
+  return pick(['Mình chưa có bằng chứng trực tiếp nên chưa muốn buộc tội ai.','Mọi người kể rõ mình đã thấy gì và ở đâu nhé; mình sẽ đối chiếu lời khai.','Mình chưa quan sát được gì đủ chắc để kết luận.']);
+}
+
 /* ===== MEETING ===== */
 let cineTimer=null;
 function playCinematic(title,sub,color,done,duration=1450){
@@ -1620,20 +1701,26 @@ function sendChat(){
 }
 $('chatSend').onclick=sendChat;
 function botChat(){
-  const al=G.players.filter(p=>p.isBot&&p.alive);if(!al.length)return;const b=pick(al);
-  const others=G.players.filter(p=>p.alive&&p!==b);const o=others.length?pick(others):b;
-  const room=ROOMS[roomAt(b.lastX||b.x,b.lastY||b.y)].n;
-  let lines;
-  if(b.imp)lines=[`Mình đang ở ${room} làm nhiệm vụ nãy giờ.`,`Mình nghi ${o.name} đó.`,`${o.name} cư xử hơi lạ nha.`,`Đừng vội, chưa có bằng chứng gì cả.`,`Mình thấy ${o.name} đi một mình ở ${pick(ROOMS).n}.`];
-  else lines=[`Mình làm nhiệm vụ ở ${room}.`,`Có ai thấy gì không?`,`Mình nghi ${o.name}.`,`${o.name} đang ở đâu lúc nãy?`,`Mình thấy ${o.name} ở gần ${pick(ROOMS).n}.`,`Ai vừa đi cùng ${o.name}?`,`Cẩn thận, đừng vote bừa nhé.`];
-  const text=pick(lines);
+  const al=G.players.filter(p=>p.isBot&&p.alive);if(!al.length)return;
+  // Chọn bot có manh mối mới; tránh lặp nguyên câu vừa nói.
+  const ordered=al.slice().sort((a,b)=>{
+    const score=x=>aiMem(x).events.filter(e=>G.time-e.t<35).length+(aiMem(x).events.some(e=>e.type==='witnessKill')?30:0);
+    return score(b)-score(a);
+  });
+  const b=ordered[0],mem=aiMem(b);let text=aiSpeak(b);
+  if(text===mem.lastStatement){text=pick(['Mình nói rõ nhé: đó là điều mình thấy, còn phần còn lại mình chưa chắc.','Có ai có thông tin khác để đối chiếu không?','Mình không muốn đoán mò nếu chưa có bằng chứng.']);}
+  mem.lastStatement=text;mem.lastSpeak=G.time;
   addChat(b,text);bcast({t:'chat',id:b.id,text});
 }
 function botVote(b){
-  const mt=G.mt;const al=G.players.filter(p=>p.alive&&p!==b);
-  if(b.imp){const t=al.filter(p=>!p.imp);return Math.random()<.2?'skip':(t.length?pick(t).id:'skip')}
-  if(mt.killerId!==null&&mt.killerId!==undefined&&G.players[mt.killerId].alive&&Math.random()<.35)return mt.killerId;
-  const r=Math.random();if(r<.35||!al.length)return'skip';return pick(al).id;
+  const mt=G.mt,al=G.players.filter(p=>p.alive&&p!==b);if(!al.length)return 'skip';
+  if(b.imp){const t=al.filter(p=>!p.imp);return Math.random()<.18?'skip':(t.length?pick(t).id:'skip')}
+  const mem=aiMem(b),witness=mem.events.filter(e=>e.type==='witnessKill'&&G.players[e.target]?.alive).slice(-1)[0];
+  if(witness)return witness.target;
+  const suspect=aiBestSuspect(b);
+  if(suspect&&suspect.score>=5&&Math.random()<Math.min(.9,.35+suspect.score*.04))return suspect.player.id;
+  // Không biết thì bỏ phiếu trắng thay vì chọn người ngẫu nhiên.
+  return Math.random()<.72?'skip':pick(al).id;
 }
 function updateMeet(){const mt=G.mt;if(!mt)return;$('mtTimer').textContent=(mt.phase==='discuss'?'Thảo luận ':mt.phase==='vote'?'Bỏ phiếu ':'')+Math.max(0,Math.ceil(mt.t))+'s'}
 function meetingTick(dt){
@@ -1686,6 +1773,7 @@ function goTo(b,pt){
 }
 function botUpdate(b,dt){
   if(!b.alive)return;
+  aiObserve(b,dt);
   b.lastX=b.x;b.lastY=b.y;
   if(b.cd>0)b.cd-=dt;
   if(b.imp&&G.state==='play'){const s=G.sab;if(G.abilities.sab&&s.cd<=0&&!s.l&&s.p<=0&&s.d<=0&&Math.random()<dt*.03)hostSab(b,pick(['l','p']));if(G.abilities.copy&&b.scd<=0&&b.disg<0&&Math.random()<dt*.03){const o=G.players.filter(q=>q.alive&&q!==b);if(o.length)hostShift(b,pick(o).id)}}
