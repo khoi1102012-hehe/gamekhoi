@@ -142,6 +142,18 @@ canvas{display:block;width:100%;height:100%}
 #cin2 .star{position:absolute;border-radius:50%;background:#fff;animation:twinkle 2s infinite ease-in-out}
 #cin2 .ejc{position:absolute;z-index:3;left:-18%;top:50%;animation:ejectFly 3.6s .3s linear both}
 #cin2 .ejc svg{width:clamp(70px,14vw,130px)}
+#cin2.ej0{background:radial-gradient(ellipse at 50% 55%,#2a1c6a,#05060f 75%)}
+#cin2.ej1{background:linear-gradient(180deg,#0f2a58,#3b78b8 55%,#9ccaee)}
+#cin2.ej2{background:radial-gradient(ellipse at 50% 55%,#0e3c48,#031016 78%)}
+#cin2 .spore{position:absolute;border-radius:50%;animation:sporeUp 6s infinite linear;box-shadow:0 0 10px currentColor}
+#cin2 .cloud{position:absolute;height:34px;border-radius:40px;background:#fffc;animation:cloudDrift 5s infinite linear}
+#cin2 .cloud:before,#cin2 .cloud:after{content:'';position:absolute;background:#fffc;border-radius:50%}
+#cin2 .cloud:before{width:46%;height:150%;left:14%;top:-70%}#cin2 .cloud:after{width:36%;height:120%;right:12%;top:-45%}
+#cin2 .gridfx{position:absolute;inset:0;background:linear-gradient(#5cf3ff18 1px,transparent 1px) 0 0/48px 48px,linear-gradient(90deg,#5cf3ff18 1px,transparent 1px) 0 0/48px 48px;animation:gridMove 3s linear infinite}
+#cin2 .mote{position:absolute;width:6px;height:6px;border-radius:50%;background:#5cf3ff;box-shadow:0 0 12px #5cf3ff;animation:sporeUp 4s infinite linear}
+@keyframes sporeUp{from{transform:translateY(0);opacity:0}15%{opacity:.9}to{transform:translateY(-70vh);opacity:0}}
+@keyframes cloudDrift{from{transform:translateX(0)}to{transform:translateX(-140vw)}}
+@keyframes gridMove{to{background-position:-48px 0,-48px 0}}
 @keyframes raySpin{to{transform:rotate(360deg)}}
 @keyframes pop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.14)}100%{transform:scale(1);opacity:1}}
 @keyframes slam{0%{transform:translateX(-120%) skewX(-14deg)}55%{transform:translateX(3%) skewX(-4deg)}78%{transform:translateX(-1.2%)}100%{transform:none}}
@@ -1727,8 +1739,12 @@ function cineEject(res,done,hold){
   let l1,l2='';
   if(p){l1=`${p.name} ${res.wi?'LÀ':'KHÔNG phải là'} sát nhân.`;l2=res.left>0?`Còn ${res.left} sát nhân.`:(res.wi?'Không còn sát nhân nào nữa!':'')}
   else l1='Không ai bị đuổi ra ngoài.';
-  const stars=Array.from({length:70},()=>{const s=Math.random()*2.6+1;return `<i class="star" style="left:${Math.random()*100}%;top:${Math.random()*100}%;width:${s}px;height:${s}px;animation-delay:${(Math.random()*2).toFixed(2)}s"></i>`}).join('');
-  cineRun('t-space',`${stars}${p?`<div class="ejc">${critter(p.color,{look:'l'})}</div>`:''}<div class="eject-lines"><div class="l1" id="ejL1"></div><div class="l2" id="ejL2"></div></div>`,p?6200:3800,done,hold);
+  const rr=Math.random,m=(typeof MAPI==='number')?MAPI:0;
+  let fx;
+  if(m===1)fx=Array.from({length:9},()=>{const w=90+rr()*140;return `<i class="cloud" style="left:${100+rr()*60}%;top:${rr()*80}%;width:${w}px;animation-duration:${3.2+rr()*3}s;animation-delay:${-rr()*5}s"></i>`}).join('');
+  else if(m===2)fx='<i class="gridfx"></i>'+Array.from({length:30},()=>`<i class="mote" style="left:${rr()*100}%;top:${50+rr()*50}%;animation-duration:${3+rr()*3}s;animation-delay:${-rr()*4}s"></i>`).join('');
+  else fx=Array.from({length:46},()=>{const c=['#4fe3ff','#ff5ad7','#9d7bff'][(rr()*3)|0],z=3+rr()*6;return `<i class="spore" style="left:${rr()*100}%;top:${40+rr()*60}%;width:${z}px;height:${z}px;background:${c};color:${c};animation-duration:${4+rr()*4}s;animation-delay:${-rr()*6}s"></i>`}).join('');
+  cineRun('t-space ej'+m,`${fx}${p?`<div class="ejc">${critter(p.color,{look:'l'})}</div>`:''}<div class="eject-lines"><div class="l1" id="ejL1"></div><div class="l2" id="ejL2"></div></div>`,p?6200:3800,done,hold);
   cineType($('ejL1'),l1,p?1400:500,()=>{if(l2)cineType($('ejL2'),l2,250)});
 }
 
