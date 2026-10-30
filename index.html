@@ -34,13 +34,13 @@ canvas{display:block;width:100%;height:100%}
 #hudTop{position:absolute;left:10px;top:10px;width:min(300px,55vw);pointer-events:none}
 #bar{height:16px;background:#0008;border:2px solid #fff6;border-radius:10px;overflow:hidden}
 #barf{height:100%;width:0;background:linear-gradient(90deg,#3ddc84,#c9ff6b);transition:width .4s}
-#tasks{margin-top:8px;background:#000a;border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.5}
+#tasks{display:none;margin-top:8px;background:#000a;border-radius:10px;padding:8px 10px;font-size:13px;line-height:1.5}
 #tasks .d{text-decoration:line-through;opacity:.5;color:#6f6}
 #roleTag{position:absolute;right:10px;top:10px;padding:6px 12px;border-radius:10px;background:#000a;font-weight:700;font-size:14px}
 #btns{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:10px;align-items:flex-end;max-height:92vh;flex-wrap:wrap-reverse;justify-content:flex-end;align-content:flex-end}
 #btns button{width:78px;height:78px;border-radius:50%;font-size:12px;box-shadow:0 4px 14px #000a;border:3px solid #fff5}
 #btns button[hidden]{display:none}
-#btnShift{background:#8e44ad}#btnSab{background:#b5651d}#btnUse{background:#2e9d57}#btnRep{background:#e08a1e}#btnKill{background:#d6334a}
+#btnTask{background:#2a6fdb}#btnShift{background:#8e44ad}#btnSab{background:#b5651d}#btnUse{background:#2e9d57}#btnRep{background:#e08a1e}#btnKill{background:#d6334a}
 #joy{position:absolute;left:18px;bottom:18px;width:130px;height:130px;border-radius:50%;background:#fff1;border:2px solid #fff3;touch-action:none;display:none}
 #knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:#fff6}
 @media (pointer:coarse){#joy{display:block}}
@@ -49,21 +49,6 @@ canvas{display:block;width:100%;height:100%}
 .ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:20;background:#000d;text-align:center;padding:16px}
 .ov.on{display:flex}
 #revealT{font-size:clamp(30px,7vw,64px);font-weight:900;text-shadow:0 0 30px currentColor}
-/* Cinematic transitions: a brief character beat before important events */
-#cinematic{position:fixed;inset:0;z-index:45;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:radial-gradient(ellipse at center,#172744 0%,#05070d 72%);text-align:center;padding:22px;overflow:hidden}
-#cinematic.on{display:flex;animation:cinFade .22s ease-out}
-#cinematic .cineTitle{font-size:clamp(24px,5vw,48px);font-weight:950;letter-spacing:2px;text-shadow:0 5px 22px #000;animation:popIn .42s both}
-#cinematic .cineSub{font-size:clamp(13px,2vw,18px);opacity:.82;animation:popIn .55s both}
-/* Nhân vật cinematic: linh thể Mầm Quang, hình giọt đá bất đối xứng — không dùng dáng phi hành gia/visor */
-.cineChar{position:relative;width:82px;height:106px;border-radius:34px 34px 25px 25px;background:linear-gradient(110deg,var(--suit,#48b9e8),#172c50);border:4px solid #d7e8ff;box-shadow:inset -12px -5px 0 #0003,0 15px 40px #0009;animation:shh 1.35s ease-in-out both}
-.cineChar:before{content:'';position:absolute;right:-23px;top:17px;width:42px;height:28px;border-radius:16px;background:linear-gradient(#e8faff,#6ec9ed);border:4px solid #d7e8ff;box-shadow:inset -5px -3px 0 #0002}
-.cineChar:after{content:'☝';position:absolute;left:48px;top:34px;font-size:35px;color:#f5f7ff;text-shadow:0 2px 4px #000;transform:rotate(-8deg);animation:shushFinger 1.35s ease-in-out both}
-.cineShadow{width:95px;height:12px;background:#0008;border-radius:50%;filter:blur(5px);margin-top:-8px;animation:shadowPulse 1.35s both}
-@keyframes cinFade{from{opacity:0}to{opacity:1}}@keyframes popIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
-@keyframes shh{0%{transform:translateY(35px) scale(.8);opacity:0}25%{transform:translateY(0) scale(1);opacity:1}45%,70%{transform:translateY(-3px) scale(1.02)}100%{transform:translateY(-10px) scale(.96);opacity:.9}}
-@keyframes shushFinger{0%,28%{opacity:0;transform:translate(8px,10px) rotate(15deg)}45%,78%{opacity:1;transform:translate(0,0) rotate(-8deg)}100%{opacity:0}}@keyframes sproutWiggle{0%{opacity:0;transform:translateY(8px) rotate(-30deg)}30%,75%{opacity:1;transform:translateY(0) rotate(-13deg)}100%{opacity:1;transform:translateY(-2px) rotate(-18deg)}}
-@keyframes shadowPulse{0%,100%{opacity:.3;transform:scale(.7)}35%,70%{opacity:1;transform:scale(1)}}
-@media(prefers-reduced-motion:reduce){#cinematic.on,.cineChar,.cineShadow,#cinematic .cineTitle,#cinematic .cineSub{animation:none}}
 #modal .box{background:#18213a;border:2px solid #4a5d99;border-radius:16px;padding:18px;min-width:min(380px,94vw);display:flex;flex-direction:column;gap:12px;align-items:center}
 .wire{width:56px;height:34px;border-radius:8px;border:3px solid #fff3}
 .wire.sel{border-color:#fff}.wire.ok{opacity:.35;pointer-events:none}
@@ -110,6 +95,88 @@ canvas{display:block;width:100%;height:100%}
 .vip-panel label{font-size:10px;white-space:nowrap}
 .vip-panel input{width:88px!important;min-width:0;background:#080d19;border:1px solid #35405b;border-radius:6px;color:#dce8ff;padding:4px 7px;font-size:11px;letter-spacing:2px}
 .vip-panel span{font-size:10px;max-width:110px;line-height:1.2}
+
+/* ===== CẮT CẢNH KIỂU AMONG US ===== */
+#cin2{position:fixed;inset:0;z-index:60;display:none;overflow:hidden;background:#05060f;color:#fff;text-align:center;font-family:inherit}
+#cin2.on{display:block;animation:cinIn .2s ease-out}
+#cin2 .rays{position:absolute;inset:-60%;animation:raySpin 60s linear infinite}
+#cin2.t-blue .rays{background:repeating-conic-gradient(#2358c4 0 7.5deg,#173b8a 7.5deg 15deg)}
+#cin2.t-red .rays{background:repeating-conic-gradient(#8e1426 0 7.5deg,#5a0b18 7.5deg 15deg)}
+#cin2.t-dark .rays,#cin2.t-space .rays{display:none}
+#cin2 .vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 50%,transparent 32%,#000c 100%);pointer-events:none}
+#cin2.t-dark{background:radial-gradient(ellipse at 50% 45%,#161d3a,#04050b 75%)}
+#cin2.t-space{background:#02030a}
+#cinBody{position:absolute;inset:0;z-index:2}
+#cin2 .stage{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;width:100%;height:100%;padding:14px;box-sizing:border-box}
+#cin2 .cin-title{font-size:clamp(36px,10vw,92px);font-weight:950;letter-spacing:3px;line-height:1;text-shadow:0 5px 0 #000a,0 0 30px currentColor;animation:pop .6s cubic-bezier(.2,.9,.3,1.3) both}
+#cin2 .cin-sub{font-size:clamp(13px,2.6vw,22px);font-weight:700;text-shadow:0 2px 6px #000;animation:popIn .6s .25s both}
+#cin2 .band{width:100%;background:linear-gradient(180deg,#32050d,#6a0c1e 50%,#32050d);border-top:4px solid #ff6b7a;border-bottom:4px solid #ff6b7a;padding:clamp(10px,2.4vh,22px) 8px;animation:slam .55s cubic-bezier(.2,.9,.3,1.1) both;box-shadow:0 0 40px #000a}
+#cin2 .band-t{font-size:clamp(24px,5.8vw,66px);font-weight:950;letter-spacing:2px;line-height:1.05;text-shadow:0 4px 0 #000a,0 0 24px #ff4b5c88}
+#cin2 .band-s{font-size:clamp(12px,2.4vw,20px);opacity:.9;margin-top:6px;font-weight:700}
+#cin2 .flash{position:absolute;inset:0;background:#fff;z-index:5;pointer-events:none;opacity:0;animation:flashW .45s .4s forwards}
+#cin2 .stage.rep{animation:shk .5s .45s}
+#cin2 .row{display:flex;align-items:flex-end;justify-content:center;gap:clamp(24px,9vw,110px);margin-top:3vh}
+#cin2 .who{position:relative;animation:lineIn .5s .6s both}
+#cin2 .who svg,#cin2 .who .cine-avatar,#cin2 .ejc svg,#cin2 .ejc .cine-avatar{width:clamp(70px,15vw,140px);height:auto;overflow:visible;display:block;margin:0 auto}
+#cin2 .lying{transform:rotate(84deg) translateX(8%);margin:0 6px}
+#cin2 .nm{display:block;margin-top:6px;font-size:clamp(11px,2.3vw,17px);font-weight:800;text-shadow:0 2px 4px #000}
+#cin2 .bubble{position:absolute;background:#fff;color:#111;border-radius:16px;padding:4px 16px;font-weight:950;font-size:clamp(18px,4vw,30px);box-shadow:0 4px 14px #0008;animation:pop .35s both}
+#cin2 .bubble:after{content:'';position:absolute;bottom:-9px;left:22px;border:9px solid transparent;border-top-color:#fff;border-bottom:0}
+#cin2 .bubble.ex{top:-34px;left:50%;margin-left:-14px;animation-delay:.9s}
+.lineup{display:flex;justify-content:center;align-items:flex-end;gap:clamp(2px,1.2vw,14px);margin-top:2vh;max-width:100%}
+.lineup .lu{animation:lineIn .5s var(--d,.3s) both}
+.lineup .lu svg,.lineup .lu .cine-avatar{width:clamp(34px,8.2vw,84px);height:auto;overflow:visible;display:block;margin:0 auto}
+.lineup .lu.me svg{width:clamp(46px,10.6vw,112px)}
+.lineup .lu-n{display:block;margin-top:3px;font-size:clamp(9px,2.1vw,16px);font-weight:800;text-shadow:0 2px 4px #000;max-width:12vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lineup .lu.me .lu-n{color:#ffe066}
+.mush{position:relative;width:150px;height:134px;animation:lineIn .5s .5s both}
+.mush .cap{position:absolute;top:0;left:0;width:150px;height:82px;border-radius:150px 150px 22px 22px;background:radial-gradient(ellipse at 35% 28%,#ff9a9a,#e53935 55%,#8f1420);border:4px solid #3a0a10;box-sizing:border-box;animation:press 1.3s .7s both;z-index:2}
+.mush .cap b{position:absolute;border-radius:50%;background:#fff;opacity:.92}
+.mush .cap b:nth-child(1){left:22px;top:20px;width:24px;height:20px}.mush .cap b:nth-child(2){left:78px;top:12px;width:18px;height:15px}.mush .cap b:nth-child(3){left:108px;top:34px;width:22px;height:18px}
+.mush .stem{position:absolute;top:70px;left:35px;width:80px;height:60px;background:linear-gradient(90deg,#efe3c8,#cdbb96);border:4px solid #3a0a10;border-radius:10px 10px 22px 22px;box-sizing:border-box}
+.mush .ring{position:absolute;left:50%;top:40px;width:120px;height:120px;margin:-60px 0 0 -60px;border:5px solid #ff6b7a;border-radius:50%;opacity:0;animation:ring 1.2s 1s infinite}
+.mush .ring.r2{animation-delay:1.35s}
+.eject-lines{position:absolute;left:0;right:0;bottom:12vh;z-index:3}
+.eject-lines .l1{font-size:clamp(18px,4.4vw,38px);font-weight:900;min-height:1.3em;text-shadow:0 3px 10px #000}
+.eject-lines .l2{font-size:clamp(13px,2.6vw,22px);font-weight:700;min-height:1.3em;opacity:.85;margin-top:6px}
+#cin2 .star{position:absolute;border-radius:50%;background:#fff;animation:twinkle 2s infinite ease-in-out}
+#cin2 .ejc{position:absolute;z-index:3;left:-18%;top:50%;animation:ejectFly 3.6s .3s linear both}
+#cin2 .ejc svg{width:clamp(70px,14vw,130px)}
+@keyframes raySpin{to{transform:rotate(360deg)}}
+@keyframes pop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.14)}100%{transform:scale(1);opacity:1}}
+@keyframes slam{0%{transform:translateX(-120%) skewX(-14deg)}55%{transform:translateX(3%) skewX(-4deg)}78%{transform:translateX(-1.2%)}100%{transform:none}}
+@keyframes lineIn{from{opacity:0;transform:translateY(40px) scale(.6)}to{opacity:1;transform:none}}
+@keyframes flashW{0%{opacity:.95}100%{opacity:0}}
+@keyframes shk{0%,100%{transform:none}20%{transform:translate(-9px,4px)}40%{transform:translate(8px,-5px)}60%{transform:translate(-5px,3px)}80%{transform:translate(4px,-2px)}}
+@keyframes press{0%,25%{transform:translateY(0)}38%,58%{transform:translateY(14px)}100%{transform:translateY(0)}}
+@keyframes ring{from{transform:scale(.4);opacity:.95}to{transform:scale(2.8);opacity:0}}
+@keyframes twinkle{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes ejectFly{0%{left:-18%;top:56%;transform:translate(-50%,-50%) rotate(0) scale(1.5)}100%{left:118%;top:30%;transform:translate(-50%,-50%) rotate(960deg) scale(.4)}}
+/* màn kết thúc */
+#end{overflow:hidden;background:#05060f}
+#endRays{position:absolute;inset:-60%;animation:raySpin 60s linear infinite}
+#end.win #endRays{background:repeating-conic-gradient(#9a7414 0 7.5deg,#684c0a 7.5deg 15deg)}
+#end.lose #endRays{background:repeating-conic-gradient(#6d0f1f 0 7.5deg,#3a0711 7.5deg 15deg)}
+#end:before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 50%,transparent 30%,#000c 100%);z-index:1}
+#endIn{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:12px;max-width:100%}
+#endT{font-size:clamp(38px,11vw,100px);font-weight:950;letter-spacing:3px;line-height:1;text-shadow:0 6px 0 #000a,0 0 34px currentColor;animation:pop .7s cubic-bezier(.2,.9,.3,1.3) both}
+#endLine{min-height:60px}
+@media(prefers-reduced-motion:reduce){#cin2 *,#end *{animation-duration:.01s!important;animation-delay:0s!important}}
+
+/* Nút Nhiệm vụ -> bản đồ nhiệm vụ */
+#mbox:has(#taskMapCanvas){width:min(980px,96vw);max-height:94vh;overflow-y:auto;align-items:stretch;padding:12px}
+#taskMapCanvas{display:block;width:100%;height:auto;max-height:50vh;object-fit:contain;background:#050912;border:1px solid #587081;border-radius:9px}
+.task-list-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%}
+.task-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #657b8a;background:#111c2b;border-radius:8px;font-size:12px;text-align:left;line-height:1.3}
+.task-item.done{opacity:.5;border-color:#3a8f5a}.task-item.done .tn{text-decoration:line-through}
+.task-num{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:50%;background:#ffd65a;color:#182333;font-weight:900;border:2px solid #fff;flex:none}
+.task-item.done .task-num{background:#43c37a}
+@media(max-width:560px){.task-list-grid{grid-template-columns:1fr}}
+/* Thời gian bàn luận */
+.disc-row{display:flex;gap:8px;align-items:center;flex:3;flex-wrap:wrap}
+.disc-row input[type=number]{width:84px!important;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a}
+.disc-row input[type=number]:disabled{opacity:.4}
+#endDiscBtn{flex:none;font-size:12px}
 /* Phòng chờ: bảng chỉnh kỹ năng của chủ phòng */
 .settingsBlock{margin-top:12px;padding:12px;border:1px solid #34467a;border-radius:12px;background:#080e1dcc}
 .ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
@@ -138,41 +205,37 @@ canvas{display:block;width:100%;height:100%}
 #mbox:has(#camPreview){width:min(860px,96vw);max-height:94vh;overflow-y:auto;align-items:stretch;padding:12px}
 #mbox:has(#camPreview) .cam-switch{max-height:110px;overflow-y:auto;align-content:flex-start;padding:2px}
 #mbox:has(#camPreview) .cam-switch button{min-height:32px}
-/* Cảnh SUỴT mới: con mắt tín hiệu, vòng quỹ đạo và bào tử trôi; không dùng visor phi hành gia */
-#cinematic{background:radial-gradient(ellipse at 50% 44%,#15323b 0%,#091421 38%,#02050b 78%);isolation:isolate}
-#cinematic:before,#cinematic:after{content:"";position:absolute;left:50%;top:42%;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:-1}
-#cinematic:before{width:min(72vw,430px);aspect-ratio:1;border:1px solid #66e7dc55;box-shadow:0 0 0 22px #57cfc20a,0 0 0 55px #57cfc20a,0 0 75px #42e7e144;animation:orbitBreath 3.2s ease-in-out infinite}
-#cinematic:after{width:min(52vw,310px);aspect-ratio:1;border:1px dashed #8ce9e566;animation:orbitSpin 22s linear infinite}
-#cinematic .cineChar{width:112px;height:104px;border-radius:52% 48% 43% 57% / 48% 43% 57% 52%;border:3px solid #8fdcd5;background:radial-gradient(ellipse at 33% 23%,#b8ffe9 0%,#3ea79f 23%,#17434d 67%,#081b28 100%);box-shadow:inset -12px -12px 0 #00131b55,0 0 26px #4ce6d066,0 18px 45px #000b;animation:eyeCreatureIn 1.65s cubic-bezier(.2,.8,.2,1) both;z-index:1}
-#cinematic .cineChar:before{right:29px;top:27px;width:36px;height:36px;border-radius:50%;border:3px solid #c7fff4;background:radial-gradient(circle at 38% 35%,#fff 0 10%,#8af6e9 12% 20%,#0b202d 24% 46%,#e8fffb 49% 60%,#63d9d0 63% 100%);box-shadow:0 0 18px #a4fff4a0;}
-#cinematic .cineChar:after{content:'☝';right:auto;left:70px;top:44px;width:auto;height:auto;border:0;background:none;box-shadow:none;font-size:33px;color:#effffb;text-shadow:0 3px 7px #001015;transform-origin:50% 100%;animation:shushFinger 1.65s ease-in-out both}
-#cinematic .cineShadow{width:120px;height:13px;background:#35c9c333;filter:blur(9px);animation:shadowPulse 1.65s both}
-#cinematic .cineTitle{letter-spacing:5px;color:#bdfff5;text-shadow:0 0 20px #2be4d877,0 5px 22px #000;animation:popIn .5s both}
-#cinematic .cineSub{color:#d8eee9;letter-spacing:.4px}
-@keyframes orbitBreath{0%,100%{opacity:.42;transform:translate(-50%,-50%) scale(.94)}50%{opacity:.9;transform:translate(-50%,-50%) scale(1.04)}}
-@keyframes orbitSpin{from{transform:translate(-50%,-50%) rotate(0)}to{transform:translate(-50%,-50%) rotate(360deg)}}
-@keyframes eyeCreatureIn{0%{opacity:0;transform:translateY(45px) rotate(-12deg) scale(.45)}30%{opacity:1;transform:translateY(-4px) rotate(5deg) scale(1.08)}55%{transform:translateY(0) rotate(-2deg) scale(1)}100%{transform:translateY(-5px) rotate(0) scale(1)}}
-@media(max-width:520px){.ability-grid{grid-template-columns:1fr}.settingsBlock{padding:9px}#cinematic:before{width:300px}#cinematic:after{width:225px}}
-/* SUỴT được làm lại thành linh thể nổi riêng, không còn dáng áo phi hành gia. */
-#cinematic .cineChar.shhWisp{width:132px;height:140px;position:relative;display:block;border:0;border-radius:0;background:none;box-shadow:none;animation:shhWispEnter 1.55s cubic-bezier(.18,.78,.22,1) both;filter:drop-shadow(0 0 20px #52e8d477);}
-#cinematic .cineChar.shhWisp:before{content:'';position:absolute;left:24px;top:17px;width:84px;height:88px;border:0;border-radius:0;background:radial-gradient(ellipse at 38% 22%,#c6fff3 0%,var(--suit,#48b9e8) 24%,#1b5965 60%,#061a2b 100%);clip-path:polygon(50% 0%,67% 8%,82% 23%,100% 48%,85% 68%,68% 71%,60% 100%,45% 80%,26% 94%,18% 72%,0 60%,14% 37%,18% 20%,36% 9%);box-shadow:none;}
-#cinematic .cineChar.shhWisp:after{content:'';position:absolute;left:83px;top:40px;width:11px;height:44px;border-radius:9px;background:linear-gradient(90deg,#e5fff9,#62dccf);border:2px solid #eafffa;box-shadow:0 0 15px #8affee;transform:rotate(-7deg);animation:shhFingerLift 1.55s ease-in-out both;}
-.shhEye{position:absolute;left:53px;top:46px;width:29px;height:29px;border-radius:50%;z-index:3;background:radial-gradient(circle at 37% 33%,#fff 0 9%,#bffff3 12% 25%,#0b2430 29% 52%,#e7fffc 55% 67%,#3ed0c3 72%);box-shadow:0 0 18px #aafff3;}
-.shhEye i{position:absolute;width:7px;height:7px;left:11px;top:9px;border-radius:50%;background:#06121d;box-shadow:0 0 0 3px #9efff0;}
-.shhFin{position:absolute;top:52px;width:38px;height:16px;border-radius:100% 10% 100% 10%;background:linear-gradient(90deg,#5cdbd2aa,#b5fff066);border:1px solid #8df5e4aa;z-index:1;}
-.shhFinA{left:2px;transform:rotate(20deg);animation:shhFinA 1.55s ease-in-out both;}
-.shhFinB{right:7px;transform:scaleX(-1) rotate(23deg);animation:shhFinB 1.55s ease-in-out both;}
-.shhTail{position:absolute;left:48px;top:91px;width:23px;height:38px;border-left:5px solid #57cfc5;border-bottom:4px solid #b8fff0;border-radius:0 0 0 23px;transform:rotate(-18deg);opacity:.9;}
-@keyframes shhWispEnter{0%{opacity:0;transform:translateY(48px) scale(.4) rotate(-15deg)}35%{opacity:1;transform:translateY(-6px) scale(1.09) rotate(5deg)}55%{transform:translateY(0) scale(1) rotate(-2deg)}100%{transform:translateY(-5px) scale(1) rotate(0)}}
-@keyframes shhFingerLift{0%,32%{opacity:0;transform:translate(10px,13px) rotate(20deg)}48%,84%{opacity:1;transform:translate(0,0) rotate(-7deg)}100%{opacity:0;transform:translate(-3px,-5px) rotate(-12deg)}}
-@keyframes shhFinA{0%{transform:rotate(-30deg) scale(.2);opacity:0}45%,90%{transform:rotate(20deg) scale(1);opacity:1}100%{transform:rotate(10deg) scale(.9);opacity:.6}}
-@keyframes shhFinB{0%{transform:scaleX(-1) rotate(-30deg) scale(.2);opacity:0}45%,90%{transform:scaleX(-1) rotate(23deg) scale(1);opacity:1}100%{transform:scaleX(-1) rotate(12deg) scale(.9);opacity:.6}}
-/* Thẻ vai trò cũng dùng linh thể riêng, không quay lại hình dáng visor cũ. */
-#reveal .cineChar.roleWisp{width:108px;height:112px;border:0;border-radius:0;background:none;box-shadow:none;filter:drop-shadow(0 0 18px #51dcd477);animation:shhWispEnter 1.15s ease-out both;}
-#reveal .cineChar.roleWisp:before{content:'';position:absolute;left:20px;top:11px;width:68px;height:76px;border:0;border-radius:0;background:radial-gradient(ellipse at 35% 22%,#e4fff8 0%,var(--suit,#48b9e8) 25%,#21546a 66%,#06152a 100%);clip-path:polygon(50% 0%,72% 9%,90% 31%,100% 53%,79% 72%,64% 100%,44% 79%,23% 91%,18% 68%,0 56%,15% 35%,21% 16%);}
-#reveal .cineChar.roleWisp:after{content:'';position:absolute;left:42px;top:31px;width:25px;height:25px;border:3px solid #d8fff7;border-radius:50%;background:radial-gradient(circle at 37% 33%,#fff 0 12%,#bafff1 17% 31%,#0b202d 39% 100%);box-shadow:0 0 15px #8cffee;}
-.roleFin{position:absolute;top:49px;width:31px;height:13px;background:#8df8e077;border:1px solid #aaffee88;border-radius:100% 8% 100% 8%;z-index:1;}
-.roleFinA{left:2px;transform:rotate(18deg)}.roleFinB{right:5px;transform:scaleX(-1) rotate(18deg)}
+@media(max-width:520px){.ability-grid{grid-template-columns:1fr}.settingsBlock{padding:9px}}
+
+/* ===== BẢNG PHÒNG CHỜ: phần cài đặt tự cuộn, hai nút luôn ở trong tầm nhìn ===== */
+#lobby{justify-content:flex-start;overflow-y:auto;overscroll-behavior:contain;padding-top:12px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+#lobby>h1{flex:none;font-size:clamp(24px,4.5vh,42px);margin:0 0 2px}
+#lobby .lobby-panel{height:calc(100vh - 92px);height:calc(100dvh - 92px);max-height:900px;min-height:260px;flex:0 0 auto;overflow:hidden;gap:8px;padding:12px}
+#lobby .lobby-scroll{min-height:0;flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:9px;padding:1px 4px 8px 0;scrollbar-width:thin;scrollbar-color:#40577f transparent}
+#lobby .lobby-scroll::-webkit-scrollbar{width:6px}#lobby .lobby-scroll::-webkit-scrollbar-thumb{background:#40577f;border-radius:8px}
+#lobby .lobby-actions{flex:0 0 auto;margin:0;padding:9px 0 0;border-top:1px solid #34467a;background:#121a2f;z-index:2}
+#lobby .lobby-actions button{min-height:44px}
+#lobby .settingsBlock{margin-top:2px;padding:10px}
+#lobby .ability-grid{gap:6px;margin-top:7px}
+#lobby .ability-check{padding:7px 8px;font-size:12px}
+@media(max-height:620px){#lobby .lobby-panel{height:calc(100dvh - 74px)}#lobby>h1{font-size:24px}#lobby{padding-top:7px;gap:8px}}
+@media(max-width:480px){#lobby .lobby-panel{width:100%;padding:10px}#lobby .plist{gap:6px}#lobby .pl{font-size:12px;padding:7px}}
+
+/* ===== CẢNH HẠ GỤC 5 GIÂY: dùng cùng nhân vật Canvas với trong trận ===== */
+#killCine{position:fixed;inset:0;z-index:90;display:none;overflow:hidden;background:#03050b;color:#fff;isolation:isolate;pointer-events:none}
+#killCine.on{display:block}
+#killCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#killCine:after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at 50% 48%,transparent 25%,#0008 78%,#000e 100%)}
+#killCopy{position:absolute;z-index:2;left:0;right:0;top:8%;padding:0 16px;text-align:center;text-shadow:0 3px 12px #000;font-weight:900;letter-spacing:1.5px}
+#killPhase{font-size:clamp(22px,5.2vw,50px);line-height:1.05;color:#ffe27a;text-shadow:0 0 22px #ffba4388,0 3px 12px #000}
+#killCaption{margin-top:9px;font-size:clamp(12px,2.2vw,19px);opacity:.9;letter-spacing:.3px}
+#killCount{position:absolute;right:18px;bottom:15px;font-size:12px;letter-spacing:1px;color:#dce8ff;background:#050a16aa;border:1px solid #94a8d455;border-radius:20px;padding:6px 11px}
+#reveal .reveal-model{width:120px;height:126px;display:flex;align-items:center;justify-content:center}
+#reveal .reveal-model svg,#reveal .reveal-model .cine-avatar{width:100%;height:100%;overflow:visible}
+#cin2 .lying{transform:none;margin:0 6px;display:flex;align-items:center;justify-content:center}
+#cin2 .lying svg,#cin2 .lying .cine-avatar{width:clamp(100px,19vw,180px);filter:drop-shadow(0 8px 10px #000a)}
+#cin2 .weapon-note{display:inline-block;margin-top:7px;padding:4px 10px;border:1px solid #ff9aa655;border-radius:14px;background:#120710aa;color:#ffe0b0;font-size:clamp(10px,1.8vw,14px);font-weight:800}
+@media(prefers-reduced-motion:reduce){#killCine,#killCanvas{animation:none!important}}
 
 </style>
 </head>
@@ -190,36 +253,40 @@ canvas{display:block;width:100%;height:100%}
     <button class="gray" id="bQuick">⚡ Chơi nhanh</button>
     <div class="row"><label for="quickMap" style="flex:2">Bản đồ chơi nhanh</label><select id="quickMap" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="0">Hang Nấm Phát Sáng</option><option value="1">Thị Trấn Hơi Nước Trên Mây</option><option value="2">Đại Lục Rễ Trời — Siêu Bản Đồ</option><option value="3">Ngẫu nhiên</option></select></div>
   </div>
-  <div class="sub" style="font-size:12px;max-width:460px">Tạo phòng → gửi mã 5 ký tự cho bạn bè (online thật, chủ phòng giữ tab mở). Chơi nhanh = offline với bot. Điều khiển: WASD/phím mũi tên • E dùng/camera • R báo cáo • Q giết • F hoặc X mở bảng kỹ năng sát nhân</div>
+  <div class="sub" style="font-size:12px;max-width:460px">Tạo phòng → gửi mã 5 ký tự cho bạn bè (online thật, chủ phòng giữ tab mở). Chơi nhanh = offline với bot. Điều khiển: WASD/phím mũi tên • E dùng/camera • R báo cáo • Q giết • T xem nhiệm vụ • F hoặc X mở bảng kỹ năng sát nhân</div>
 </div>
 
 <!-- LOBBY -->
 <div id="lobby" class="screen">
   <h1>PHÒNG CHỜ</h1>
-  <div class="panel">
-    <label>Mã phòng</label><div class="code" id="roomCode">-----</div>
-    <div class="plist" id="plist"></div>
-    <div id="lobbyMsg" class="sub" style="margin:0;font-size:13px"></div>
-    <div id="vipPanel" class="vip-panel" style="display:none" title="Ô mã riêng của chủ phòng">
-      <label for="vipCode">Chữ mã VIP</label>
-      <input id="vipCode" type="password" maxlength="7" inputmode="numeric" autocomplete="off" placeholder="•••••••" aria-label="Chữ mã VIP">
-      <span id="vipStatus">Mã riêng của chủ phòng</span>
-    </div>
-    <div class="row"><label style="flex:2">Số bot: <b id="nbV">0</b></label><input type="range" id="nb" min="0" max="9" value="0" style="flex:3"></div>
-    <div class="row"><label style="flex:2">Sát nhân</label><select id="ni" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="1">1</option><option value="2">2</option></select></div>
-    <div class="row"><label style="flex:2">Bản đồ</label><select id="mp" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="0">Hang Nấm Phát Sáng</option><option value="1">Thị Trấn Hơi Nước Trên Mây</option><option value="2">Đại Lục Rễ Trời — Siêu Bản Đồ</option><option value="3">Ngẫu nhiên</option></select></div>
-    <div class="settingsBlock">
-      <label>⚙️ KỸ NĂNG SÁT NHÂN — chủ phòng tùy chỉnh</label>
-      <div class="ability-grid">
-        <label class="ability-check"><input id="abilCopy" type="checkbox" checked> Sao chép hình dạng</label>
-        <label class="ability-check"><input id="abilDoors" type="checkbox" checked> Đóng cửa (tối đa 2)</label>
-        <label class="ability-check"><input id="abilLight" type="checkbox" checked> Tắt đèn</label>
-        <label class="ability-check"><input id="abilOxygen" type="checkbox" checked> Phá hoại oxy</label>
-        <label class="ability-check"><input id="abilVent" type="checkbox" checked> Chui cống + hoạt ảnh</label>
+  <div class="panel lobby-panel">
+    <div class="lobby-scroll">
+      <label>Mã phòng</label><div class="code" id="roomCode">-----</div>
+      <div class="plist" id="plist"></div>
+      <div id="lobbyMsg" class="sub" style="margin:0;font-size:13px"></div>
+      <div id="vipPanel" class="vip-panel" style="display:none" title="Ô mã riêng của chủ phòng">
+        <label for="vipCode">Chữ mã VIP</label>
+        <input id="vipCode" type="password" maxlength="7" inputmode="numeric" autocomplete="off" placeholder="•••••••" aria-label="Chữ mã VIP">
+        <span id="vipStatus">Mã riêng của chủ phòng</span>
       </div>
-      <div class="sub" style="font-size:12px;margin:6px 0 0">Tắt ô nào thì sát nhân không thể dùng kỹ năng đó. Tối đa 4 người thật (bạn + 3 bạn bè). Mặc định ưu tiên chơi đúng nhóm 4 người; phòng ít người có thể tự thêm bot, hoặc chủ phòng tăng bot bằng thanh trượt.</div>
+      <div class="row"><label style="flex:2">Số bot: <b id="nbV">0</b></label><input type="range" id="nb" min="0" max="9" value="0" style="flex:3"></div>
+      <div class="row"><label style="flex:2">Sát nhân</label><select id="ni" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="1">1</option><option value="2">2</option></select></div>
+      <div class="row"><label style="flex:2">Độ khó bot</label><select id="aiLv" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="0">Dễ — chậm, hay nhầm</option><option value="1" selected>Thường</option><option value="2">Khó — nhanh, tinh ranh</option></select></div>
+      <div class="row"><label style="flex:2">Bản đồ</label><select id="mp" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="0">Hang Nấm Phát Sáng</option><option value="1">Thị Trấn Hơi Nước Trên Mây</option><option value="2">Đại Lục Rễ Trời — Siêu Bản Đồ</option><option value="3">Ngẫu nhiên</option></select></div>
+      <div class="row"><label style="flex:2">⏱ Thời gian bàn luận</label><div class="disc-row"><input type="number" id="discT" min="5" max="3600" step="5" value="60"><span style="font-size:13px">giây</span><label class="ability-check" style="padding:6px 9px"><input id="discInf" type="checkbox"> Vô hạn</label></div></div>
+      <div class="settingsBlock">
+        <label>⚙️ KỸ NĂNG SÁT NHÂN — chủ phòng tùy chỉnh</label>
+        <div class="ability-grid">
+          <label class="ability-check"><input id="abilCopy" type="checkbox" checked> Sao chép hình dạng</label>
+          <label class="ability-check"><input id="abilDoors" type="checkbox" checked> Đóng cửa (tối đa 2)</label>
+          <label class="ability-check"><input id="abilLight" type="checkbox" checked> Tắt đèn</label>
+          <label class="ability-check"><input id="abilOxygen" type="checkbox" checked> Phá hoại oxy</label>
+          <label class="ability-check"><input id="abilVent" type="checkbox" checked> Chui cống + hoạt ảnh</label>
+        </div>
+        <div class="sub" style="font-size:12px;margin:6px 0 0">Tắt ô nào thì sát nhân không thể dùng kỹ năng đó. Tối đa 4 người thật (bạn + 3 bạn bè). Mặc định ưu tiên chơi đúng nhóm 4 người; phòng ít người có thể tự thêm bot, hoặc chủ phòng tăng bot bằng thanh trượt.</div>
+      </div>
     </div>
-    <div class="row"><button class="gray" id="bBack">⬅ Rời phòng</button><button class="green" id="bStart">▶ Bắt đầu</button></div>
+    <div class="row lobby-actions"><button class="gray" id="bBack">⬅ Rời phòng</button><button class="green" id="bStart">▶ Bắt đầu</button></div>
   </div>
 </div>
 
@@ -229,9 +296,10 @@ canvas{display:block;width:100%;height:100%}
   <div id="hudTop"><div id="bar"><div id="barf"></div></div><div id="tasks"></div></div>
   <div id="roleTag"></div>
   <div id="toast"></div>
-  <div id="hint">WASD/mũi tên di chuyển • E dùng / camera / chui cống • R báo cáo • Q giết • F hoặc X mở Kỹ năng</div>
+  <div id="hint">WASD/mũi tên di chuyển • E dùng / camera / chui cống • R báo cáo • Q giết • T nhiệm vụ • F hoặc X mở Kỹ năng</div>
   <div id="joy"><div id="knob"></div></div>
   <div id="btns">
+    <button id="btnTask" hidden>NHIỆM VỤ<br>(T)</button>
     <button id="btnSab" hidden>KỸ NĂNG<br>(X)</button>
     <button id="btnShift" hidden>KỸ NĂNG<br>(F)</button>
     <button id="btnKill" hidden>GIẾT<br>(Q)</button>
@@ -240,8 +308,9 @@ canvas{display:block;width:100%;height:100%}
   </div>
 </div>
 
-<div id="reveal" class="ov"><div class="cineChar roleWisp" style="--suit:#48b9e8"><span class="roleFin roleFinA"></span><span class="roleFin roleFinB"></span></div><div id="revealT"></div><div id="revealS" style="font-size:18px"></div></div>
-<div id="cinematic" aria-live="polite"><div class="cineChar shhWisp" id="cineChar" style="--suit:#48b9e8"><span class="shhFin shhFinA"></span><span class="shhFin shhFinB"></span><span class="shhEye"><i></i></span><span class="shhTail"></span></div><div class="cineShadow"></div><div class="cineTitle" id="cineTitle">SUỴT…</div><div class="cineSub" id="cineSub">Có chuyện sắp xảy ra</div></div>
+<div id="reveal" class="ov"><div class="reveal-model" id="revealChar"></div><div id="revealT"></div><div id="revealS" style="font-size:18px"></div></div>
+<div id="cin2"><div class="rays"></div><div class="vig"></div><div id="cinBody"></div></div>
+<div id="killCine" aria-live="assertive"><canvas id="killCanvas"></canvas><div id="killCopy"><div id="killPhase">NGUY HIỂM!</div><div id="killCaption"></div></div><div id="killCount">5.0 GIÂY</div></div>
 <div id="modal" class="ov"><div class="box" id="mbox"></div></div>
 
 <div id="meet">
@@ -249,10 +318,10 @@ canvas{display:block;width:100%;height:100%}
   <div id="cards"></div>
   <div id="mtMsg"></div>
   <div id="chatLog"></div>
-  <div class="row"><input id="chatIn" type="text" maxlength="80" placeholder="Nhắn tin..."><button id="chatSend" style="flex:none">Gửi</button><button id="skipBtn" class="gray" style="flex:none">Bỏ qua</button></div>
+  <div class="row" style="flex-wrap:wrap"><input id="chatIn" type="text" maxlength="80" placeholder="Nhắn tin..."><button id="chatSend" style="flex:none">Gửi</button><button id="endDiscBtn" class="gray">⏭ Kết thúc bàn luận</button><button id="skipBtn" class="gray" style="flex:none">Bỏ qua</button></div>
 </div>
 
-<div id="end" class="ov"><div id="endT" style="font-size:clamp(28px,6vw,54px);font-weight:900"></div><div id="endS" style="max-width:520px;line-height:1.7"></div><button id="endBtn">Về menu</button></div>
+<div id="end" class="ov"><div id="endRays"></div><div id="endIn"><div id="endT"></div><div id="endLine"></div><div id="endS" style="max-width:560px;line-height:1.7"></div><button id="endBtn">Về menu</button></div></div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
@@ -605,7 +674,7 @@ const MAPS=[
  ]}
 ];
 let ROOMS,CORR,EDGES,ADJ,ALLR,MEETBTN,TASKDEFS,DOORS,FIXP,MAPI=0,SCANPAD=null;
-let VGRID=null,VGW=0,VGH=0,PGRID=null,PW=0,PH=0;const VC=4,PC=20;
+let VGRID=null,VGW=0,VGH=0,PGRID=null,PW=0,PH=0,RDM=null,_avoidL=null;const VC=4,PC=20;
 // Các camera là điểm quan sát cố định trên hành lang, không phải một camera cho mỗi phòng.
 // Bản đồ 0 có 4 màn hình đồng thời; bản đồ 1 và 2 có 6 góc nhìn chọn từng kênh.
 const CAMERA_LAYOUTS=[
@@ -664,7 +733,7 @@ function setMap(i){const M=MAPS[i]||MAPS[0];MAPI=MAPS.indexOf(M);const S=M.scale
  ROOMS=M.R.map((r,k)=>({n:r[0],r:[r[1]*S,r[2]*S,r[3]*S,r[4]*S],node:[r[5]*S,r[6]*S],shape:MAPI===2?CHAMBER_SHAPES[k%CHAMBER_SHAPES.length]:null,c1:`hsl(${M.H[k]},20%,24%)`,c2:`hsl(${M.H[k]},20%,28%)`}));
  const TH=S>1?1.3:1;CORR=M.C.map(c=>{if(S===1)return c;const hz=c[2]>c[3];if(hz){const cy=(c[1]+c[3]/2)*S,h=c[3]*TH;return[c[0]*S,cy-h/2,c[2]*S,h]}const cx=(c[0]+c[2]/2)*S,w=c[2]*TH;return[cx-w/2,c[1]*S,w,c[3]*S]});EDGES=M.E;MEETBTN=[M.M[0]*S,M.M[1]*S];FIXP={l:[M.F.l[0]*S,M.F.l[1]*S],p:[M.F.p[0]*S,M.F.p[1]*S]};
  ADJ=ROOMS.map(()=>[]);EDGES.forEach(([a,b])=>{ADJ[a].push(b);ADJ[b].push(a)});
- ALLR=ROOMS.map(r=>r.r).concat(CORR);buildVisionGrid();buildPathGrid();_shutG=null;
+ ALLR=ROOMS.map(r=>r.r).concat(CORR);buildVisionGrid();buildPathGrid();_shutG=null;buildRoomDist();
  THEME=THEMES[MAPI];TN=THEME.tn;TASKDEFS=M.K.map(([t,x,y])=>({n:TN[t],type:t,x:x*S,y:y*S}));SCANPAD=TASKDEFS.find(t=>t.type==='scan')||null;
  // Mỗi bản đồ đều có một phòng an ninh có thể dùng và các camera quan sát thật.
  const securityRoom=MAPI===0?7:MAPI===1?6:10;
@@ -709,12 +778,17 @@ function buildVisionGrid(){
 }
 function visionWalk(x,y){if(!VGRID)return walk(x,y);const i=Math.round(x/VC),j=Math.round(y/VC);return i>=0&&j>=0&&i<VGW&&j<VGH&&VGRID[j*VGW+i]===1}
 // Tìm đường cho bot: A* trên lưới 20px rồi làm thẳng đường đi, nên bot đi theo hành lang thật, không cắt qua tường.
-function okPt(x,y){return visionWalk(x,y)&&visionWalk(x+10,y)&&visionWalk(x-10,y)&&visionWalk(x,y+10)&&visionWalk(x,y-10)&&visionWalk(x+7,y+7)&&visionWalk(x-7,y-7)&&visionWalk(x+7,y-7)&&visionWalk(x-7,y+7)}
+function doorNear(x,y){for(let i=0;i<_avoidL.length;i++){const r=_avoidL[i];if(x>r[0]-26&&x<r[0]+r[2]+26&&y>r[1]-26&&y<r[1]+r[3]+26)return true}return false}
+function okPt(x,y){if(_avoidL&&doorNear(x,y))return false;return visionWalk(x,y)&&visionWalk(x+10,y)&&visionWalk(x-10,y)&&visionWalk(x,y+10)&&visionWalk(x,y-10)&&visionWalk(x+7,y+7)&&visionWalk(x-7,y-7)&&visionWalk(x+7,y-7)&&visionWalk(x-7,y+7)}
 function buildPathGrid(){PW=Math.ceil(MAPW/PC)+1;PH=Math.ceil(MAPH/PC)+1;PGRID=new Uint8Array(PW*PH);
   for(let j=0;j<PH;j++)for(let i=0;i<PW;i++)if(visionWalk(i*PC,j*PC)&&okPt(i*PC,j*PC))PGRID[j*PW+i]=1}
 function segOK(ax,ay,bx,by){const L=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(L/8));for(let k=1;k<=n;k++){const t=k/n;if(!okPt(ax+(bx-ax)*t,ay+(by-ay)*t))return false}return true}
 function nearestCell(cx,cy){if(PGRID[cy*PW+cx])return cy*PW+cx;for(let r=1;r<=6;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;const x=cx+dx,y=cy+dy;if(x>=0&&y>=0&&x<PW&&y<PH&&PGRID[y*PW+x])return y*PW+x}return -1}
-function findPath(x0,y0,x1,y1){
+function findPath(x0,y0,x1,y1,avoid){
+  if(avoid){const L=shutDoors();if(L.length){_avoidL=L.slice();try{return _findPath(x0,y0,x1,y1,true)}finally{_avoidL=null}}}
+  return _findPath(x0,y0,x1,y1,false)
+}
+function _findPath(x0,y0,x1,y1,avoid){
   if(!PGRID)return null;
   const c0=nearestCell(Math.max(0,Math.min(PW-1,Math.round(x0/PC))),Math.max(0,Math.min(PH-1,Math.round(y0/PC))));
   const c1=nearestCell(Math.max(0,Math.min(PW-1,Math.round(x1/PC))),Math.max(0,Math.min(PH-1,Math.round(y1/PC))));
@@ -732,7 +806,7 @@ function findPath(x0,y0,x1,y1){
     const cx=cur%PW,cy=(cur/PW)|0;
     for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
       if(!dx&&!dy)continue;const nx=cx+dx,ny=cy+dy;if(nx<0||ny<0||nx>=PW||ny>=PH)continue;
-      const ni=ny*PW+nx;if(!PGRID[ni]||closed[ni])continue;
+      const ni=ny*PW+nx;if(!PGRID[ni]||closed[ni])continue;if(_avoidL&&doorNear(nx*PC,ny*PC))continue;
       if(dx&&dy&&(!PGRID[cy*PW+nx]||!PGRID[ny*PW+cx]))continue;
       const ng=g[cur]+(dx&&dy?1.414:1);if(ng<g[ni]){g[ni]=ng;from[ni]=cur;push(ng+hf(ni),ni)}
     }
@@ -754,7 +828,7 @@ let AC=null;
 function beep(f=440,d=.15,type='sine',v=.08){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch(e){}}
 
 /* ===== MENU / LOBBY ===== */
-let S={name:'',color:0,code:'',nb:0,ni:1,mp:0,vipArmed:false,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true}};
+let S={name:'',color:0,code:'',nb:0,ni:1,ai:1,mp:0,dt:60,dInf:false,vipArmed:false,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true}};
 try{S.name=localStorage.getItem('tkg_name')||'';S.color=+localStorage.getItem('tkg_color')||0}catch(e){}
 $('name').value=S.name;
 function drawSwatches(){$('colors').innerHTML='';COLORS.forEach((c,i)=>{const d=document.createElement('div');d.className='sw'+(i===S.color?' sel':'');d.style.background=c;d.onclick=()=>{S.color=i;drawSwatches()};$('colors').appendChild(d)})}
@@ -770,6 +844,7 @@ function sendHost(m){if(NET.role==='client')send(NET.hostConn,m)}
 function leaveNet(){try{NET.peer&&NET.peer.destroy()}catch(e){}NET.role='offline';NET.peer=null;NET.hostConn=null;NET.lobby=[];NET.view=null}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function botCount(h){const requested=Math.max(0,Math.min(S.nb,10-h));return h>=4?requested:Math.max(requested,5-h)}
+function readDisc(){let v=Math.round(+$('discT').value);if(!isFinite(v)||v<5)v=5;if(v>3600)v=3600;return v}
 function readAbilities(){const light=!!$('abilLight').checked,oxygen=!!$('abilOxygen').checked;return {copy:!!$('abilCopy').checked,doors:!!$('abilDoors').checked,sab:light||oxygen,light,oxygen,vent:!!$('abilVent').checked}}
 function updateAbilities(){if(NET.role==='client')return;S.abilities=readAbilities();if(NET.role==='host')broadcastLobby();else renderLobby()}
 function openLobby(code){saveProfile();S.code=code;$('roomCode').textContent=code;show('lobby');renderLobby()}
@@ -822,6 +897,9 @@ $('nb').oninput=()=>{S.nb=+$('nb').value;$('nbV').textContent=S.nb;NET.role==='h
 $('mp').onchange=()=>{S.mp=+$('mp').value;$('quickMap').value=String(S.mp);NET.role==='host'?broadcastLobby():renderLobby()};
 $('quickMap').value=String(S.mp);$('quickMap').onchange=()=>{S.mp=+$('quickMap').value;$('mp').value=String(S.mp)};
 $('ni').onchange=()=>{S.ni=+$('ni').value;NET.role==='host'?broadcastLobby():renderLobby()};
+$('aiLv').onchange=()=>{S.ai=+$('aiLv').value;NET.role==='host'?broadcastLobby():renderLobby()};
+$('discT').onchange=()=>{S.dt=readDisc();$('discT').value=S.dt;NET.role==='host'?broadcastLobby():renderLobby()};
+$('discInf').onchange=()=>{S.dInf=$('discInf').checked;NET.role==='host'?broadcastLobby():renderLobby()};
 ['abilCopy','abilDoors','abilLight','abilOxygen','abilVent'].forEach(id=>$(id).addEventListener('change',updateAbilities));
 
 /* --- lobby --- */
@@ -829,11 +907,11 @@ let lobbyBotNames=[];
 function renderLobby(){
   const cl=NET.role==='client',v=NET.view;
   $('vipPanel').style.display=(!cl&&NET.role==='host')?'flex':'none';
-  $('bStart').style.display=cl?'none':'';$('nb').disabled=cl;$('ni').disabled=cl;$('mp').disabled=cl;
+  $('bStart').style.display=cl?'none':'';$('discT').disabled=cl||(!cl&&S.dInf);$('discInf').disabled=cl;$('nb').disabled=cl;$('ni').disabled=cl;$('aiLv').disabled=cl;$('mp').disabled=cl;
   const ab=(cl&&v&&v.abilities)?v.abilities:S.abilities;
   [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilVent','vent']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
   let humans,nbots;
-  if(cl&&v){humans=v.players;nbots=v.bots;$('nb').value=v.nb;$('nbV').textContent=v.nb;$('ni').value=v.ni;$('mp').value=v.mp}
+  if(cl&&v){humans=v.players;nbots=v.bots;$('nb').value=v.nb;$('nbV').textContent=v.nb;$('ni').value=v.ni;if(v.ai!==undefined)$('aiLv').value=v.ai;$('mp').value=v.mp;if(v.dt!==undefined){$('discT').value=v.dt;$('discInf').checked=!!v.dInf;$('discT').disabled=true}}
   else if(NET.role==='host'){humans=NET.lobby.map(l=>({name:l.name,ci:l.ci}));nbots=botCount(humans.length)}
   else{humans=[{name:S.name,ci:S.color}];nbots=botCount(1)}
   const used=humans.map(h=>h.ci);
@@ -850,7 +928,7 @@ function renderLobby(){
 function broadcastLobby(){
   const players=NET.lobby.map(l=>({name:l.name,ci:l.ci}));
   const bots=botCount(players.length);
-  NET.lobby.forEach((l,i)=>{if(l.conn)send(l.conn,{t:'lobby',players,you:i,nb:S.nb,ni:S.ni,mp:S.mp,bots,abilities:{...S.abilities}})});
+  NET.lobby.forEach((l,i)=>{if(l.conn)send(l.conn,{t:'lobby',players,you:i,nb:S.nb,ni:S.ni,ai:S.ai,mp:S.mp,dt:S.dt,dInf:S.dInf,bots,abilities:{...S.abilities}})});
   renderLobby();
 }
 
@@ -912,8 +990,9 @@ function hostMsg(conn,d){
       if(G.state==='play'&&p.alive&&p.meetings>0&&Math.hypot(MEETBTN[0]-p.x,MEETBTN[1]-p.y)<85){p.meetings--;startMeeting(p,null)}
       break;
     case 'vote': hostVote(p,d.target);break;
+    case 'endDisc': setReady(p);break;
     case 'chat':
-      if(G.mt&&G.mt.phase==='discuss'&&p.alive&&typeof d.text==='string'){const tx=d.text.slice(0,80);addChat(p,tx);bcast({t:'chat',id:p.id,text:tx})}
+      if(G.mt&&G.mt.phase==='discuss'&&p.alive&&typeof d.text==='string'){const tx=d.text.slice(0,80);addChat(p,tx);bcast({t:'chat',id:p.id,text:tx});AI.onChat(p,tx)}
       break;
   }
 }
@@ -924,7 +1003,7 @@ function clientMsg(d){
   switch(d.t){
     case 'err': leaveNet();show('menu');alert(d.m);break;
     case 'lobby':
-      NET.view=d;S.nb=d.nb;S.ni=d.ni;S.mp=d.mp;if(d.abilities)S.abilities={...d.abilities};
+      NET.view=d;S.nb=d.nb;S.ni=d.ni;if(d.dt!==undefined){S.dt=d.dt;S.dInf=!!d.dInf}if(d.ai!==undefined)S.ai=d.ai;S.mp=d.mp;if(d.abilities)S.abilities={...d.abilities};
       if(!$('lobby').classList.contains('on'))openLobby(S.code);else renderLobby();
       break;
     case 'start': clientStart(d);break;
@@ -932,7 +1011,7 @@ function clientMsg(d){
       if(!G)break;
       d.p.forEach((a,i)=>{const p=G.players[i];if(!p)return;if(p!==G.me){p.tx=a[0];p.ty=a[1];p.face=a[2]}p.alive=!!a[3];p.disg=a[4];p.sft=a[5]||0;p.shiftPhase=a[6]||'none';p.shiftAnim=a[7]||0;p.ventT=a[8]||0;p.inVent=!!a[9];p.ventPop=a[10]||0;p.ventCd=a[11]||0;p.ventFrom=a[12]??-1;p.ventTo=a[13]??-1});
       G.closedDoors=(d.doors||[]).map(a=>({i:a[0],until:G.time+a[1],owner:a[2]}));
-      G.bodies=d.b.map(b=>({x:b[0],y:b[1],color:b[2],name:b[3]}));
+      G.bodies=d.b.map(b=>({x:b[0],y:b[1],color:b[2],name:b[3],weapon:b[4]||'knife'}));
       {const pv=G.scan,fresh=pv&&pv.by===G.me.id&&G.time-pv.t0<.8;if(d.sn)G.scan={by:d.sn[0],t0:G.time-d.sn[1],dur:d.sn[2],until:G.time-d.sn[1]+d.sn[2]+3};else if(!fresh)G.scan=null}
       G.done=d.d;G.me.cd=d.c;G.me.meetings=d.mt;G.me.scd=d.sc;Object.assign(G.sab,{l:d.sb[0],p:d.sb[1],d:d.sb[2],dx:d.sb[3],dy:d.sb[4],cd:d.sb[5]});
       break;
@@ -940,13 +1019,14 @@ function clientMsg(d){
     case 'scandeny': if(G){G.scan=null;closeModal();toast('🔬 Máy quét đang có người dùng — đợi một chút!')}break;
     case 'camUse': if(G){G.camWatchers=G.camWatchers||{};G.camWatchers[d.id]=!!d.active}break;
     case 'sabn': if(G)sabNote(d.k);break;
-    case 'killed': if(G){closeModal();G.flash=1;G.shake=1;beep(120,.25,'square',.12);toast('💀 Bạn đã bị giết! Bạn có thể tiếp tục làm nhiệm vụ (hồn ma).')}break;
+    case 'killed': if(G){closeModal();G.flash=1;G.shake=1;deathCinematic({weapon:d.weapon,killerName:d.killerName,killerColor:d.killerColor,victimName:d.victimName||G.me.name,victimColor:d.victimColor||G.me.color})}break;
     case 'meetStart': if(G)clientMeetStart(d);break;
     case 'voted': if(G&&G.mt){if(G.mt.votes[d.id]===undefined)G.mt.votes[d.id]='x';renderCards()}break;
-    case 'phase': if(G&&G.mt){G.mt.phase='vote';G.mt.t=22;$('chatIn').disabled=true;toast('Bắt đầu bỏ phiếu!')}break;
+    case 'phase': if(G&&G.mt){G.mt.phase='vote';G.mt.inf=false;G.mt.t=22;$('chatIn').disabled=true;toast('Bắt đầu bỏ phiếu!');updateMeet()}break;
+    case 'ready': if(G&&G.mt){G.mt.ready={};(d.ids||[]).forEach(i=>G.mt.ready[i]=1);updateMeet()}break;
     case 'chat': if(G&&G.mt&&G.players[d.id])addChat(G.players[d.id],d.text);break;
     case 'result': if(G&&G.mt)clientResult(d);break;
-    case 'meetEnd': if(G){$('meet').classList.remove('on');G.mt=null;G.state='play'}break;
+    case 'meetEnd': if(G){cineStop();$('meet').classList.remove('on');G.mt=null;G.state='play'}break;
     case 'end': if(G)endGame(!!d.impWin,d.why,d.roles);break;
   }
 }$('bStart').onclick=startGame;
@@ -960,6 +1040,7 @@ addEventListener('resize',resize);resize();
 function startGame(){
   saveProfile();
   if(NET.role==='client')return;
+  S.dt=readDisc();S.dInf=$('discInf').checked;
   let humans;
   if(NET.role==='host'){NET.lobby[0].name=S.name;NET.lobby[0].ci=S.color;humans=NET.lobby.slice()}
   else humans=[{lid:0,name:S.name,ci:S.color,conn:null}];
@@ -987,8 +1068,8 @@ function startGame(){
   // Consume the one-round private override after choosing roles; the input stays local to the host.
   S.vipArmed=false;
   pl.forEach(p=>{p.tasks=shuffle(TASKDEFS.map((t,i)=>i)).slice(0,taskCount).map(i=>({...TASKDEFS[i],done:false,di:i}))});
-  G={players:pl,me:pl[0],bodies:[],state:'reveal',done:0,total:pl.filter(p=>!p.imp).length*taskCount,ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{...S.abilities},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
-  pl.forEach(p=>{if(p.conn)send(p.conn,{t:'start',mp:MAPI,me:p.id,imp:p.imp,ni,total:G.total,abilities:{...G.abilities},
+  G={players:pl,me:pl[0],aiLevel:S.ai|0,discT:S.dInf?0:S.dt,bodies:[],state:'reveal',done:0,total:pl.filter(p=>!p.imp).length*taskCount,ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{...S.abilities},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
+  pl.forEach(p=>{if(p.conn)send(p.conn,{t:'start',disc:G.discT,mp:MAPI,me:p.id,imp:p.imp,ni,total:G.total,abilities:{...G.abilities},
     mates:p.imp?pl.filter(q=>q.imp&&q!==p).map(q=>q.id):[],
     players:pl.map(q=>({id:q.id,name:q.name,color:q.color,x:Math.round(q.x),y:Math.round(q.y)})),
     tasks:p.tasks.map(t=>t.di)})});
@@ -1000,12 +1081,12 @@ function clientStart(d){
     isBot:false,conn:null,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,meetings:1,tasks:[],path:[],seen:{}}));
   const me=pl[d.me];me.imp=!!d.imp;
   me.tasks=d.tasks.map(i=>({...TASKDEFS[i],done:false,di:i}));
-  G={players:pl,me,bodies:[],state:'reveal',done:0,total:d.total,ni:d.ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true,...(d.abilities||{})},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
+  G={players:pl,me,discT:d.disc||0,bodies:[],state:'reveal',done:0,total:d.total,ni:d.ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true,...(d.abilities||{})},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
   enterGameUI();
 }
 function enterGameUI(){
   $('game').classList.add('on');$('lobby').classList.remove('on');$('menu').classList.remove('on');
-  ['end','meet','modal','cinematic'].forEach(i=>$(i).classList.remove('on'));
+  ['end','meet','modal'].forEach(i=>$(i).classList.remove('on'));
   const imp=G.me.imp;
   const mates=G.players.filter(p=>p.imp&&p!==G.me).map(p=>p.name);
   $('roleTag').textContent=imp?'🔪 SÁT NHÂN':'👁 CƯ DÂN';
@@ -1014,12 +1095,9 @@ function enterGameUI(){
   $('revealT').style.color=imp?'#ff4b5c':'#6fd0ff';
   $('revealS').textContent=imp?('Đồng đội: '+(mates.join(', ')||'không có')+' — hãy hạ gục mọi người!'):('Hoàn thành nhiệm vụ & tìm ra '+G.ni+' sát nhân!');
   const g=G;
-  $('reveal').classList.remove('on');
-  playCinematic('SUỴT…','Một kẻ trong bóng tối đang giả làm người quen của bạn.',imp?'#d94a5c':'#58d8ca',()=>{
-    if(G!==g)return;
-    $('reveal').classList.add('on');beep(200,.42,'sawtooth');
-    setTimeout(()=>{if(G===g){$('reveal').classList.remove('on');if(G.state==='reveal')G.state='play'}},2400);
-  },1850);
+  if($('revealChar')){$('revealChar').innerHTML=critter(G.me.color,{look:'r'});paintCineAvatars($('revealChar'));}
+  $('reveal').classList.remove('on');cineStop();
+  cineRole(()=>{if(G===g&&G.state==='reveal')G.state='play'});
   last=performance.now();
 }
 /* ===== INPUT ===== */
@@ -1029,7 +1107,7 @@ addEventListener('keydown',e=>{
   keys[e.key.toLowerCase()]=true;
   if(!G)return;
   const k=e.key.toLowerCase();
-  if(k==='e')doUse();if(k==='r')doReport();if(k==='q')doKill();if(k==='f'||k==='x')openSkillMenu();
+  if(k==='e')doUse();if(k==='r')doReport();if(k==='q')doKill();if(k==='f'||k==='x')openSkillMenu();if(k==='t'){if($('modal').classList.contains('on')&&$('taskMapCanvas'))closeModal();else openTaskMap()}
   if(k==='escape')closeModal();
 });
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
@@ -1040,7 +1118,7 @@ let joy={x:0,y:0};
  j.addEventListener('pointermove',e=>{if(on)mv(e)});
  const up=()=>{on=false;joy={x:0,y:0};k.style.left='35px';k.style.top='35px'};
  j.addEventListener('pointerup',up);j.addEventListener('pointercancel',up)})();
-$('btnUse').onclick=doUse;$('btnRep').onclick=doReport;$('btnKill').onclick=doKill;$('btnShift').onclick=doShift;$('btnSab').onclick=doSab;
+$('btnTask').onclick=()=>openTaskMap();$('btnUse').onclick=doUse;$('btnRep').onclick=doReport;$('btnKill').onclick=doKill;$('btnShift').onclick=doShift;$('btnSab').onclick=doSab;
 
 /* ===== ACTIONS ===== */
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
@@ -1079,21 +1157,13 @@ function switchCamera(i){
 }
 function drawCameraActor(c,p,x,y,scale,T){
  const shown=lk(p),col=shown.color||p.color,face=p.face||1;
- c.save();c.translate(x,y);c.scale(scale,scale);
- const sw=Math.sin(T*5+p.x*.01)*1.5;
- c.fillStyle='#0008';c.beginPath();c.ellipse(0,19,17,5,0,0,Math.PI*2);c.fill();
- c.lineWidth=2.4;c.strokeStyle='#000d';c.fillStyle=col;
- // Dùng đúng mẫu nhân vật cũ của game trong feed, không thay thành chấm vị trí.
- [[-7,-1],[1,1]].forEach(([s],i)=>{const sd=i?1:-1,ex=sd*13+sw*sd*.4,ey=-31;c.beginPath();c.moveTo(sd*6,-14);c.quadraticCurveTo(sd*9,-24,ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,4,0,Math.PI*2);c.fillStyle='#ffe066';c.fill();c.stroke()});
- c.fillStyle=col;[-8,8].forEach(px=>{c.beginPath();c.ellipse(px,17,6,5,0,0,Math.PI*2);c.fill();c.stroke()});
- c.beginPath();c.moveTo(-face*15,-2);c.quadraticCurveTo(-face*29,2+sw,-face*24,12);c.quadraticCurveTo(-face*18,12,-face*14,8);c.closePath();c.fill();c.stroke();
- c.beginPath();c.moveTo(0,-17);c.bezierCurveTo(17,-17,19,0,17,10);c.bezierCurveTo(15,19,-15,19,-17,10);c.bezierCurveTo(-19,0,-17,-17,0,-17);c.closePath();c.fill();c.stroke();
- c.fillStyle='#fff';c.beginPath();c.arc(face*4,-3,9,0,Math.PI*2);c.fill();c.stroke();c.fillStyle='#111';c.beginPath();c.arc(face*7.5,-3,4.5,0,Math.PI*2);c.fill();c.fillStyle='#fff';c.beginPath();c.arc(face*8.8,-4.8,1.5,0,Math.PI*2);c.fill();
- c.restore();
+ const mainCtx=ctx;c.save();c.translate(x,y);c.scale(scale,scale);ctx=c;
+ try{drawChar(0,0,col,face,1,null,false)}finally{ctx=mainCtx;c.restore()}
  c.save();c.font=`bold ${Math.max(8,Math.min(13,10*scale))}px system-ui`;c.textAlign='center';c.lineWidth=3;c.strokeStyle='#02070b';c.strokeText(shown.name||p.name,x,y-27*scale);c.fillStyle='#fff';c.fillText(shown.name||p.name,x,y-27*scale);c.restore();
 }
 function drawCameraBody(c,b,x,y,scale){
- c.save();c.translate(x,y);c.scale(scale,scale);c.rotate(-.08);c.fillStyle='#03070b';c.beginPath();c.ellipse(0,9,25,9,0,0,Math.PI*2);c.fill();c.fillStyle=b.color||'#d94a5a';c.strokeStyle='#130b10';c.lineWidth=3;c.beginPath();c.ellipse(0,0,22,12,0,0,Math.PI*2);c.fill();c.stroke();c.strokeStyle='#fff';c.lineWidth=3;c.beginPath();c.moveTo(-8,-2);c.lineTo(7,8);c.moveTo(7,-2);c.lineTo(-8,8);c.stroke();c.restore();
+ const mainCtx=ctx;c.save();c.translate(x,y);c.scale(scale,scale);ctx=c;
+ try{drawChar(0,0,b.color||'#888',1,1,null,true)}finally{ctx=mainCtx;c.restore()}
 }
 function drawCameraWorldOverlays(c,wx0,wy0,scale,dx,dy,T){
  const mainCtx=ctx;c.save();c.translate(dx-wx0*scale,dy-wy0*scale);c.scale(scale,scale);ctx=c;
@@ -1148,7 +1218,7 @@ function nearMeetBtn(){const m=G.me;return m.alive&&m.meetings>0&&Math.hypot(MEE
 function nearBody(){const m=G.me;return m.alive&&G.bodies.find(b=>Math.hypot(b.x-m.x,b.y-m.y)<85)}
 function nearConsole(){const m=G.me;return m.alive&&Math.hypot(SECURITY.x-m.x,SECURITY.y-m.y)<68}
 function nearestVent(){const m=G.me;let best=null,bd=72;GAME_VENTS.forEach((v,i)=>{const d=Math.hypot(v.x-m.x,v.y-m.y);if(d<bd){bd=d;best={...v,i,d}}});return best}
-function canAct(){return G&&G.state==='play'&&!G.busy&&!G.me.inVent&&G.me.ventT<=0}
+function canAct(){return G&&G.state==='play'&&!G.busy&&!G.cineBusy&&!G.me.inVent&&G.me.ventT<=0}
 function useNearestVent(){
   if(!canAct())return false;
   const m=G.me,v=nearestVent();
@@ -1189,7 +1259,7 @@ function sabNote(k){toast(k==='l'?'💡 Đèn bị tắt! Ra bảng điện bậ
 function hostSab(p,k){const s=G.sab;if(!G||G.state!=='play'||!G.abilities.sab||!p.imp||!p.alive||s.cd>0||s.l||s.p>0||s.d>0)return;
  if(k==='l'){if(G.abilities.light===false)return;s.l=1}else if(k==='p'){if(G.abilities.oxygen===false)return;s.p=45}else return;
  s.cd=40;s.bf=rnd(12,22);bcast({t:'sabn',k});sabNote(k)}
-function hostShift(p,id){if(!G.abilities.copy||!p.imp||!p.alive||G.state!=='play'||p.ventT>0)return;if(id<0)return;const q=G.players[id];if(!q||q===p||!q.alive||p.scd>0||p.disg>=0)return;p.disg=id;p.sft=17;p.shiftPhase='in';p.shiftAnim=0;p.scd=40;beep(300,.25,'triangle')}
+function hostShift(p,id){if(!G.abilities.copy||!p.imp||!p.alive||G.state!=='play'||p.ventT>0)return;if(id<0)return;const q=G.players[id];if(!q||q===p||!q.alive||p.scd>0||p.disg>=0)return;p.disg=id;AI.onShift(p,id);p.sft=17;p.shiftPhase='in';p.shiftAnim=0;p.scd=40;beep(300,.25,'triangle')}
 function hostCloseDoor(p,i){
  if(!G||!G.abilities.doors||!p.imp||!p.alive||G.state!=='play'||!Number.isInteger(i)||i<0||i>=DOORS.length)return;
  G.closedDoors=G.closedDoors.filter(d=>d.until>G.time);
@@ -1208,7 +1278,7 @@ function hostVent(p,vid){
  if(GAME_VENTS.length<2)return;
  const to=(vid+1)%GAME_VENTS.length;
  // Vent is a normal action: no cooldown. The short timer is only the entry animation.
- G.players.forEach(b=>{if(b.isBot&&b!==p&&b.alive&&aiCanSee(b,p,250))aiRemember(b,'vent',{target:p.id,targetName:p.name});});
+ AI.onVent(p);
  p.inVent=true;p.ventT=1.05;p.ventTo=to;p.ventFrom=vid;p.ventCd=0;p.tx=p.x;p.ty=p.y;
  if(p===G.me)toast('🕳️ Đang chui cống…');beep(115,.28,'triangle',.07);
 }
@@ -1262,6 +1332,27 @@ function skillAction(action){
    const k=action==='light'?'l':'p';closeModal();if(!G.abilities.sab||(action==='light'&&G.abilities.light===false)||(action==='oxygen'&&G.abilities.oxygen===false)){toast('Chủ phòng đã khóa kỹ năng này');return;}
    if(NET.role==='client')sendHost({t:'sab',k});else hostSab(m,k);return;
  }
+}
+function openTaskMap(){
+  if(!G||G.busy||G.state!=='play')return;
+  G.busy=true;const b=$('mbox');b.className='box';
+  const m=G.me,done=m.tasks.filter(t=>t.done).length;
+  b.innerHTML=`<div style="font-size:20px;font-weight:900">📋 ${m.imp?'Nhiệm vụ giả':'Nhiệm vụ'} (${done}/${m.tasks.length})</div><div class="sub">Số trên bản đồ trùng với số trong danh sách. Vàng = chưa làm, xanh = đã xong, chấm trắng viền vàng = vị trí của bạn.</div><canvas id="taskMapCanvas" aria-label="Bản đồ nhiệm vụ"></canvas><div id="taskList" class="task-list-grid"></div><button class="gray" onclick="closeModal()">Đóng</button>`;
+  const cv2=$('taskMapCanvas'),w=Math.min(960,Math.max(500,Math.round(BW*0.5))),h=Math.round(w*BH/BW);cv2.width=w;cv2.height=h;
+  const c=cv2.getContext('2d'),sc=w/BW;
+  if(BG)c.drawImage(BG,0,0,BW,BH,0,0,w,h);else{c.fillStyle='#08101b';c.fillRect(0,0,w,h)}
+  c.fillStyle='#0005';c.fillRect(0,0,w,h);
+  const list=$('taskList');
+  m.tasks.forEach((t,i)=>{
+    const x=(t.x+BOFF)*sc,y=(t.y+BOFF)*sc;
+    c.save();c.beginPath();c.arc(x,y,13,0,Math.PI*2);c.fillStyle=t.done?'#2f9e5f':'#ffd65a';c.fill();c.lineWidth=2;c.strokeStyle='#fff';c.stroke();
+    c.fillStyle=t.done?'#fff':'#182333';c.font='bold 12px system-ui';c.textAlign='center';c.textBaseline='middle';c.fillText(t.done?'✔':String(i+1),x,y+.5);c.restore();
+    const it=document.createElement('div');it.className='task-item'+(t.done?' done':'');
+    it.innerHTML=`<span class="task-num">${t.done?'✔':i+1}</span><span class="tn"><b>${esc(ROOMS[t.room]?ROOMS[t.room].n:'')}</b><br>${esc(t.n)}</span>`;list.appendChild(it);
+  });
+  const px=(m.x+BOFF)*sc,py=(m.y+BOFF)*sc;
+  c.save();c.beginPath();c.arc(px,py,7,0,Math.PI*2);c.fillStyle='#fff';c.fill();c.lineWidth=3;c.strokeStyle='#ffb300';c.stroke();c.restore();
+  $('modal').classList.add('on');
 }
 function renderDoorChooser(){
  if(!G)return;G.busy=true;const b=$('mbox');b.className='box';
@@ -1322,19 +1413,22 @@ function hostKill(k){
   G.players.forEach(q=>{if(q.alive&&!q.imp){const d=dist(q,k);if(d<bd){bd=d;v=q}}});
   if(v)kill(k,v);
 }
-function kill(k,v){
-  aiWitnessKill(k,v);
-  scanRelease(v.id);v.alive=false;G.bodies.push({x:v.x,y:v.y,color:v.color,name:v.name,id:v.id,killer:k.id});
+function kill(k,v,weapon){
+  if(!G||!k||!v||!v.alive)return;
+  weapon=KILL_WEAPONS.includes(weapon)?weapon:pick(KILL_WEAPONS);
+  AI.onKill(k,v);
+  scanRelease(v.id);v.alive=false;G.bodies.push({x:v.x,y:v.y,color:v.color,name:v.name,id:v.id,killer:k.id,t:G.time,weapon});
   k.x=v.x;k.y=v.y;k.tx=v.x;k.ty=v.y;k.cd=20;beep(120,.25,'square',.12);
   if(k.conn)send(k.conn,{t:'tp',x:v.x,y:v.y});
-  if(v.conn)send(v.conn,{t:'killed'});
-  if(v===G.me){closeModal();G.flash=1;G.shake=1;toast('💀 Bạn đã bị giết! Bạn có thể tiếp tục làm nhiệm vụ (hồn ma).')}
-  if(k===G.me){toast('Đã hạ gục '+v.name)}
+  const killInfo={weapon,killerName:k.name,killerColor:k.color,victimName:v.name,victimColor:v.color};
+  if(v.conn)send(v.conn,{t:'killed',...killInfo});
+  if(v===G.me){closeModal();G.flash=1;G.shake=1;deathCinematic(killInfo)}
+  if(k===G.me){toast('Đã hạ gục '+v.name+' bằng '+weaponInfo(weapon).label.toLowerCase())}
   checkWin();
 }
 function completeTask(p,t){
   if(t.done)return;
-  if(G&&p&&t)G.players.forEach(b=>{if(b.isBot&&b!==p&&b.alive&&aiCanSee(b,p,190))aiRemember(b,'taskDoneSeen',{target:p.id,targetName:p.name,task:t.name||t.type||'nhiệm vụ'});});
+  if(G&&p&&t&&NET.role!=='client')AI.onTask(p,t);
   t.done=true;
   if(NET.role==='client'){
     if(p===G.me){sendHost({t:'task',di:t.di});beep(660,.2);if(p.imp)toast('Nhiệm vụ giả hoàn tất (để ngụy trang)')}
@@ -1358,14 +1452,17 @@ function endGame(impWin,why,roles){
   if(roles)G.players.forEach((p,i)=>p.imp=!!roles[i]);
   if(NET.role==='host')bcast({t:'end',impWin,why,roles:G.players.map(p=>p.imp?1:0)});
   const mi=G.me.imp;const win=(impWin===mi);
-  $('endT').textContent=impWin?'SÁT NHÂN THẮNG!':'CƯ DÂN THẮNG!';
-  $('endT').style.color=impWin?'#ff4b5c':'#6fd0ff';
-  $('endS').innerHTML=`<div>${why}</div><div>${win?'🎉 Bạn đã chiến thắng!':'😢 Bạn đã thua.'}</div><div style="margin-top:8px;font-size:14px">`+
+  cineStop();
+  $('end').classList.remove('win','lose');$('end').classList.add(win?'win':'lose');
+  $('endT').textContent=win?'CHIẾN THẮNG!':'THẤT BẠI';
+  $('endT').style.color=win?'#ffd84a':'#ff4b5c';
+  $('endLine').innerHTML=lineup(G.players.filter(p=>!!p.imp===!!impWin));paintCineAvatars($('endLine'));
+  $('endS').innerHTML=`<div style="font-weight:800">${impWin?'Sát nhân đã thắng':'Cư dân đã thắng'}</div><div>${why}</div><div style="margin-top:8px;font-size:14px">`+
     G.players.map(p=>`<span style="color:${p.imp?'#ff6b7a':'#aee'}">${esc(p.name)}${p.imp?' (sát nhân)':''}</span>`).join(' • ')+'</div>';
-  setTimeout(()=>{$('meet').classList.remove('on');$('end').classList.add('on')},600);
+  setTimeout(()=>{if(!G||G.state!=='end')return;$('meet').classList.remove('on');$('end').classList.add('on')},600);
   beep(win?880:150,.6,'triangle');
 }
-$('endBtn').onclick=()=>{leaveNet();G=null;$('end').classList.remove('on');$('game').classList.remove('on');show('menu')};
+$('endBtn').onclick=()=>{stopDeathCinematic();cineStop();leaveNet();G=null;$('end').classList.remove('on');$('game').classList.remove('on');show('menu')};
 
 /* ===== TASK MINI-GAMES ===== */
 let curTask=null;
@@ -1556,95 +1653,178 @@ function openTask(t){
   $('modal').classList.add('on');
 }
 
-/* ===== AI NHẬN THỨC & TRÍ NHỚ THEO TỪNG BOT ===== */
-function aiMem(b){
-  if(!b.aiMemory)b.aiMemory={events:[],lastSeen:{},suspicion:{},lastStatement:'',lastSpeak:-99};
-  return b.aiMemory;
+/* ===== MEETING ===== */
+
+/* ===== CẮT CẢNH KIỂU AMONG US: engine + nhân vật SVG ===== */
+function shadeHex(h,f){h=String(h||'#888').replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16)||0;let r=n>>16,g=n>>8&255,b=n&255;const m=f<0?0:255,t=Math.abs(f);r=Math.round(r+(m-r)*t);g=Math.round(g+(m-g)*t);b=Math.round(b+(m-b)*t);return `rgb(${r},${g},${b})`}
+let critN=0;
+function critter(col,o={}){
+  const color=/^#[0-9a-f]{6}$/i.test(String(col||''))?String(col):'#888';
+  const face=o.look==='l'?-1:1;
+  return `<canvas class="cine-avatar" width="110" height="116" data-color="${color}" data-face="${face}" data-dead="${o.dead?1:0}" aria-hidden="true"></canvas>`;
 }
-function aiRemember(b,type,data){
-  if(!b||!b.isBot)return;
-  const m=aiMem(b);m.events.push({type,t:G.time,...data});
-  // Trí nhớ gần đây quan trọng hơn; giữ đủ dài cho một trận nhưng không tăng vô hạn.
-  if(m.events.length>100)m.events.splice(0,m.events.length-100);
-}
-function aiCanSee(a,b,range=230){return !!(a&&b&&a.alive&&Math.hypot(a.x-b.x,a.y-b.y)<=range&&hasLineOfSight(a.x,a.y,b.x,b.y));}
-function aiObserve(b,dt){
-  if(!G||G.state!=='play'||!b.alive)return;
-  const m=aiMem(b);m.observeT=(m.observeT||0)-dt;if(m.observeT>0)return;m.observeT=.22;
-  G.players.forEach(q=>{
-    if(q===b||!q.alive||!aiCanSee(b,q,245))return;
-    const old=m.lastSeen[q.id];
-    if(old&&G.time-old.t<4&&Math.hypot(q.x-old.x,q.y-old.y)<330){
-      const pairKey=[Math.min(b.id,q.id),Math.max(b.id,q.id)].join(':');
-      const prev=m.events.findLast?m.events.findLast(e=>e.type==='together'&&e.pairKey===pairKey):[...m.events].reverse().find(e=>e.type==='together'&&e.pairKey===pairKey);
-      if(!prev||G.time-prev.t>5)aiRemember(b,'together',{target:q.id,targetName:q.name,otherId:b.id,otherName:b.name,pairKey,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'});
-    }
-    m.lastSeen[q.id]={t:G.time,x:q.x,y:q.y,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'};
-    if(q.inVent||q.ventPop>.25){const recent=m.events.some(e=>e.type==='vent'&&e.target===q.id&&G.time-e.t<8);if(!recent)aiRemember(b,'vent',{target:q.id,targetName:q.name});}
-    if(q.goalTask||q.atTask){const task=q.atTask||q.goalTask;const recent=m.events.some(e=>e.type==='taskSeen'&&e.target===q.id&&G.time-e.t<8);if(!recent)aiRemember(b,'taskSeen',{target:q.id,targetName:q.name,task:task?.name||task?.type||'nhiệm vụ'});}
-  });
-  // Ghi nhận cả hai người khác cùng xuất hiện trong tầm nhìn, không chỉ bot đi cùng một người.
-  const visible=G.players.filter(q=>q!==b&&q.alive&&aiCanSee(b,q,245));
-  for(let i=0;i<visible.length;i++)for(let j=i+1;j<visible.length;j++){
-    const q=visible[i],r=visible[j];if(Math.hypot(q.x-r.x,q.y-r.y)>185)continue;
-    const pairKey=[Math.min(q.id,r.id),Math.max(q.id,r.id)].join(':');
-    const prev=[...m.events].reverse().find(e=>e.type==='together'&&e.pairKey===pairKey);
-    if(!prev||G.time-prev.t>5)aiRemember(b,'together',{target:q.id,targetName:q.name,otherId:r.id,otherName:r.name,pairKey,room:ROOMS[roomAt(q.x,q.y)]?.n||'khu vực này'});
-  }
-}
-function aiWitnessKill(k,v){
-  if(!G)return;
-  G.players.forEach(b=>{if(!b.isBot||!b.alive||b===k||b===v)return;
-    if(aiCanSee(b,k,280)&&aiCanSee(b,v,280))aiRemember(b,'witnessKill',{target:k.id,targetName:k.name,victim:v.name,victimId:v.id,confidence:1});
-    else if(aiCanSee(b,v,220))aiRemember(b,'nearDeath',{target:v.id,targetName:v.name,room:ROOMS[roomAt(v.x,v.y)]?.n||'khu vực này'});
+function paintCineAvatars(root){
+  if(!root||!root.querySelectorAll)return;
+  root.querySelectorAll('canvas.cine-avatar').forEach(canvas=>{
+    const c=canvas.getContext('2d');if(!c)return;
+    c.clearRect(0,0,canvas.width,canvas.height);
+    const mainCtx=ctx;ctx=c;
+    try{
+      c.save();c.translate(canvas.width/2,65);
+      const dead=canvas.dataset.dead==='1',face=Number(canvas.dataset.face)||1;
+      c.scale(dead?1.08:1.35,dead?1.08:1.35);
+      drawChar(0,0,canvas.dataset.color||'#888',face,1,null,dead);
+      c.restore();
+    }finally{ctx=mainCtx}
   });
 }
-function aiEvidence(b,targetId){
-  const m=aiMem(b),ev=m.events.filter(e=>e.target===targetId||e.targetId===targetId||e.killerId===targetId);
-  return {witness:ev.find(e=>e.type==='witnessKill'),vent:ev.find(e=>e.type==='vent'),together:ev.filter(e=>e.type==='together').slice(-3),taskSeen:ev.find(e=>e.type==='taskSeen'),events:ev};
+const KILL_WEAPONS=['gun','knife','sword','magic'];
+const KILL_WEAPON_INFO={gun:{label:'SÚNG',icon:'🔫'},knife:{label:'DAO',icon:'🔪'},sword:{label:'KIẾM',icon:'⚔️'},magic:{label:'PHÉP THUẬT',icon:'✨'}};
+function weaponInfo(w){return KILL_WEAPON_INFO[w]||KILL_WEAPON_INFO.knife}
+function lineup(list){
+  const me=list.find(p=>p===G.me),others=list.filter(p=>p!==G.me),arr=others.slice();
+  if(me)arr.splice(Math.floor(arr.length/2),0,me);
+  const mid=(arr.length-1)/2;
+  return '<div class="lineup">'+arr.map((p,i)=>`<div class="lu${p===G.me?' me':''}" style="--d:${(.35+i*.1).toFixed(2)}s;padding-bottom:${Math.round(Math.abs(i-mid)*5)}px">${critter(p.color,{look:i<mid?'r':i>mid?'l':''})}<span class="lu-n">${esc(p.name)}</span></div>`).join('')+'</div>';
 }
-function aiBestSuspect(b){
-  const candidates=G.players.filter(p=>p.alive&&p!==b&&!p.imp);let best=null,score=0,why='';
-  for(const p of candidates){const e=aiEvidence(b,p.id);let s=0,w='';
-    if(e.witness){s=100;w=`Mình tận mắt thấy ${p.name} hạ gục ${e.witness.victim}.`;}
-    else if(e.vent){s+=5;w=`Mình thấy ${p.name} chui cống.`;}
-    if(e.together.length){s+=Math.min(3,e.together.length)*2;if(!w)w=`Mình đã thấy ${p.name} đi cùng người khác gần đây.`}
-    const body=G.bodies.find(x=>x.name&&G.players[x.killer]?.id===p.id);
-    if(body&&e.witness){s=100;w=`Mình thấy ${p.name} giết ${body.name}.`}
-    if(s>score){best=p;score=s;why=w}
-  }
-  return best?{player:best,score,why}:null;
+let cinTimer=null,cinTypeTimer=null;
+function cineStop(){clearTimeout(cinTimer);clearInterval(cinTypeTimer);$('cin2').classList.remove('on')}
+function cineRun(theme,html,dur,done,hold){
+  const el=$('cin2');clearTimeout(cinTimer);clearInterval(cinTypeTimer);
+  el.className=theme;$('cinBody').innerHTML=html;paintCineAvatars($('cinBody'));void el.offsetWidth;el.classList.add('on');
+  cinTimer=setTimeout(()=>{if(hold)cinTimer=setTimeout(()=>el.classList.remove('on'),4000);else el.classList.remove('on');if(done)done()},dur);
 }
-function aiSpeak(b){
-  const m=aiMem(b);const dead=G.bodies[G.bodies.length-1];
-  const witnessed=m.events.filter(e=>e.type==='witnessKill').slice(-1)[0];
-  if(witnessed&&G.players[witnessed.target]?.alive)return `Mình tận mắt thấy ${witnessed.targetName} giết ${witnessed.victim}. Đây là điều mình trực tiếp chứng kiến.`;
-  const vent=m.events.filter(e=>e.type==='vent'&&G.time-e.t<90).slice(-1)[0];
-  if(vent&&G.players[vent.target]?.alive&&Math.random()<.45)return `Mình thấy ${vent.targetName} chui cống. Chi tiết này khá đáng nghi, nhưng mình chưa thể kết luận chỉ từ đó.`;
-  if(dead){
-    const together=m.events.filter(e=>e.type==='together'&&G.time-e.t<35&&(e.targetName===dead.name||e.otherName===dead.name)).slice(-1)[0];
-    if(together){const companion=together.targetName===dead.name?together.otherName:together.targetName;const cid=together.targetName===dead.name?together.otherId:together.target;if(G.players[cid]?.alive)return `Trước đó mình thấy ${dead.name} đi cùng ${companion} ở ${together.room}. Mình không tận mắt thấy ai ra tay nên đây chỉ là manh mối, chưa đủ để kết luận.`;}
-  }
-  const suspect=aiBestSuspect(b);if(suspect&&suspect.score>=5)return suspect.why;
-  const task=m.events.filter(e=>(e.type==='taskDoneSeen'||e.type==='taskSeen')&&G.time-e.t<60).slice(-1)[0];
-  if(task&&Math.random()<.5)return task.type==='taskDoneSeen'?`Mình tận mắt thấy ${task.targetName} hoàn thành một nhiệm vụ ở gần mình.`:`Mình chỉ thấy ${task.targetName} ở gần chỗ làm ${task.task}; mình không thể chắc họ đã hoàn thành.`;
-  const recent=m.events.filter(e=>e.type==='together'&&G.time-e.t<25).slice(-1)[0];
-  if(recent)return `Mình nhớ có thấy ${recent.targetName} đi cùng người khác ở ${recent.room}. Có ai xác nhận được chuyện gì xảy ra sau đó không?`;
-  return pick(['Mình chưa có bằng chứng trực tiếp nên chưa muốn buộc tội ai.','Mọi người kể rõ mình đã thấy gì và ở đâu nhé; mình sẽ đối chiếu lời khai.','Mình chưa quan sát được gì đủ chắc để kết luận.']);
+function cineType(el,str,delay,cb){
+  let i=0;setTimeout(()=>{clearInterval(cinTypeTimer);cinTypeTimer=setInterval(()=>{
+    if(!$('cin2').classList.contains('on')){clearInterval(cinTypeTimer);return}
+    el.textContent=str.slice(0,++i);if(i>=str.length){clearInterval(cinTypeTimer);if(cb)cb()}},48)},delay);
+}
+/* 2) LỘ VAI TRÒ */
+function cineRole(done){
+  const imp=G.me.imp;
+  const list=imp?G.players.filter(p=>p.imp):G.players.slice();
+  const title=imp?'SÁT NHÂN':'CƯ DÂN',sub=imp?(list.length>1?'Cùng đồng đội hạ gục mọi người — đừng để bị lộ!':'Hạ gục mọi người — đừng để bị lộ!'):`Trong làng có ${G.ni} sát nhân ẩn nấp…`;
+  beep(imp?150:420,.5,imp?'sawtooth':'triangle',.14);
+  cineRun(imp?'t-red':'t-blue',`<div class="stage"><div class="cin-title" style="color:${imp?'#ff5a6a':'#8fd8ff'}">${title}</div><div class="cin-sub">${sub}</div>${lineup(list)}</div>`,3400,done);
+}
+/* 3) BÁO XÁC */
+function cineReport(by,body,done){
+  beep(160,.55,'sawtooth',.18);setTimeout(()=>beep(120,.4,'square',.12),380);
+  cineRun('t-red',`<div class="flash"></div><div class="stage rep"><div class="band"><div class="band-t">XÁC ĐÃ ĐƯỢC BÁO CÁO!</div><div class="band-s">${esc(by.name)} phát hiện xác của ${esc(body.name)}</div></div>`+
+    `<div class="row"><div class="who"><div class="bubble ex">!</div>${critter(by.color,{look:'r'})}<span class="nm">${esc(by.name)}</span></div>`+
+    `<div class="who"><div class="lying">${critter(body.color||'#888',{dead:true})}</div><span class="nm">${esc(body.name)}</span><span class="weapon-note">${weaponInfo(body.weapon).icon} DẤU VẾT: ${weaponInfo(body.weapon).label}</span></div></div></div>`,3100,done);
+}
+/* 4) HỌP KHẨN */
+function cineMeet(by,done){
+  beep(520,.45,'square',.13);setTimeout(()=>beep(520,.45,'square',.13),520);
+  cineRun('t-red',`<div class="flash"></div><div class="stage rep"><div class="band"><div class="band-t">HỌP KHẨN CẤP!</div><div class="band-s">${esc(by.name)} bấm nút nấm triệu tập</div></div>`+
+    `<div class="row"><div class="who">${critter(by.color,{look:'r'})}<span class="nm">${esc(by.name)}</span></div><div class="mush"><i class="ring"></i><i class="ring r2"></i><div class="cap"><b></b><b></b><b></b></div><div class="stem"></div></div></div></div>`,2900,done);
+}
+/* 5) BỊ ĐUỔI */
+function cineEject(res,done,hold){
+  res=res||{ej:null};
+  const p=(res.ej!=null&&res.ej>=0)?G.players[res.ej]:null;
+  let l1,l2='';
+  if(p){l1=`${p.name} ${res.wi?'LÀ':'KHÔNG phải là'} sát nhân.`;l2=res.left>0?`Còn ${res.left} sát nhân.`:(res.wi?'Không còn sát nhân nào nữa!':'')}
+  else l1='Không ai bị đuổi ra ngoài.';
+  const stars=Array.from({length:70},()=>{const s=Math.random()*2.6+1;return `<i class="star" style="left:${Math.random()*100}%;top:${Math.random()*100}%;width:${s}px;height:${s}px;animation-delay:${(Math.random()*2).toFixed(2)}s"></i>`}).join('');
+  cineRun('t-space',`${stars}${p?`<div class="ejc">${critter(p.color,{look:'l'})}</div>`:''}<div class="eject-lines"><div class="l1" id="ejL1"></div><div class="l2" id="ejL2"></div></div>`,p?6200:3800,done,hold);
+  cineType($('ejL1'),l1,p?1400:500,()=>{if(l2)cineType($('ejL2'),l2,250)});
 }
 
-/* ===== MEETING ===== */
-let cineTimer=null;
-function playCinematic(title,sub,color,done,duration=1450){
-  const el=$('cinematic');clearTimeout(cineTimer);
-  $('cineTitle').textContent=title;$('cineSub').textContent=sub||'';$('cineChar').style.setProperty('--suit',color||'#48b9e8');
-  el.classList.remove('on');void el.offsetWidth;el.classList.add('on');
-  cineTimer=setTimeout(()=>{el.classList.remove('on');if(done)done()},duration);
+let killFrame=0,killEndTimer=0,killSceneStarted=0;
+function stopDeathCinematic(){
+  if(killFrame)cancelAnimationFrame(killFrame);killFrame=0;
+  clearTimeout(killEndTimer);killEndTimer=0;
+  const el=$('killCine');if(el)el.classList.remove('on');
+  if(G)G.cineBusy=false;
 }
+function drawKillWeapon(c,type,x,y,t,power){
+  c.save();c.translate(x,y);c.rotate(-.12+Math.sin(t*10)*.025);
+  const glow=(col,r)=>{const q=c.createRadialGradient(0,0,1,0,0,r);q.addColorStop(0,col);q.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=q;c.fillRect(-r,-r,r*2,r*2)};
+  if(type==='gun'){
+    c.fillStyle='#202b3c';c.strokeStyle='#b9d3e8';c.lineWidth=2;c.beginPath();c.roundRect(-9,-7,35,14,3);c.fill();c.stroke();c.fillStyle='#596b82';c.fillRect(17,-4,15,6);c.fillStyle='#283448';c.fillRect(-5,5,8,13);c.fillStyle='#a9c3dc';c.fillRect(22,-3,8,2);
+    if(power>.15){glow('#ffdc78',28+power*22);c.fillStyle='#fff3ba';c.beginPath();c.moveTo(31,0);c.lineTo(48,-10);c.lineTo(43,0);c.lineTo(48,10);c.closePath();c.fill()}
+  }else if(type==='knife'||type==='sword'){
+    const len=type==='sword'?58:35,w=type==='sword'?10:7;
+    c.fillStyle='#4a2d24';c.fillRect(-9,-4,17,8);c.fillStyle='#d7e1ef';c.strokeStyle='#fff';c.lineWidth=1.5;c.beginPath();c.moveTo(5,-w/2);c.lineTo(len,-1);c.lineTo(5,w/2);c.closePath();c.fill();c.stroke();c.strokeStyle=type==='sword'?'#71eaff':'#9baaba';c.lineWidth=2;c.beginPath();c.moveTo(8,0);c.lineTo(len-4,0);c.stroke();
+    if(type==='sword'&&power>.2){c.strokeStyle='#72eaff';c.globalAlpha=.45+power*.4;c.lineWidth=5;c.beginPath();c.arc(0,0,65,-.7,.45);c.stroke();c.globalAlpha=1}
+  }else{
+    glow('#b16cff',48+power*20);c.strokeStyle='#c7a5ff';c.lineWidth=3;c.beginPath();c.arc(0,0,19+t%1*5,0,Math.PI*2);c.stroke();c.fillStyle='#e4c8ff';c.beginPath();c.arc(0,0,9,0,Math.PI*2);c.fill();
+    for(let i=0;i<6;i++){const a=t*3+i*Math.PI/3;c.fillStyle=i%2?'#8cecff':'#eac6ff';c.beginPath();c.arc(Math.cos(a)*27,Math.sin(a)*27,3,0,Math.PI*2);c.fill()}
+  }
+  c.restore();
+}
+function drawKillAvatar(kc,x,y,color,face,dead,rotation=0,sx=1,sy=1){
+  const mainCtx=ctx;kc.save();kc.translate(x,y);kc.rotate(rotation);kc.scale(sx,sy);ctx=kc;
+  try{drawChar(0,0,color,face||1,1,null,!!dead)}finally{ctx=mainCtx;kc.restore()}
+}
+function deathCinematic(data){
+  if(!G||!G.me)return;
+  stopDeathCinematic();
+  const info=data||{},victim={name:info.victimName||G.me.name,color:info.victimColor||G.me.color},killer={name:info.killerName||'Sát thủ',color:info.killerColor||'#252b3d'},weapon=KILL_WEAPONS.includes(info.weapon)?info.weapon:'knife';
+  const overlay=$('killCine'),canvas=$('killCanvas'),kc=canvas.getContext('2d');
+  if(!overlay||!canvas||!kc)return;
+  G.cineBusy=true;overlay.classList.add('on');
+  const dpr=Math.min(2,window.devicePixelRatio||1),resizeCanvas=()=>{const w=Math.max(1,Math.floor(innerWidth*dpr)),h=Math.max(1,Math.floor(innerHeight*dpr));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}};
+  const title=$('killPhase'),caption=$('killCaption'),counter=$('killCount');
+  const labels=weaponInfo(weapon),start=performance.now();let lastPhase=-1;
+  function frame(now){
+    if(!G||!overlay.classList.contains('on'))return;
+    resizeCanvas();const w=innerWidth,h=innerHeight,elapsed=Math.max(0,now-start),t=Math.min(5,elapsed/1000),phase=t<2?0:t<4?1:2,local=phase===0?t/2:phase===1?(t-2)/2:t-4;
+    if(phase!==lastPhase){
+      lastPhase=phase;
+      if(phase===0){title.textContent='CÓ GÌ ĐÓ ĐANG TỚI…';caption.textContent=victim.name+' cảm thấy nguy hiểm ở ngay phía sau';beep(260,.28,'sine',.07)}
+      else if(phase===1){title.textContent='SÁT THỦ ĐANG CHUẨN BỊ';caption.textContent=labels.icon+' '+labels.label+' — '+killer.name+' tiến lại gần';beep(weapon==='magic'?520:weapon==='gun'?170:330,.32,weapon==='magic'?'triangle':'sawtooth',.1)}
+      else{title.textContent='ĐÒN HẠ GỤC!';caption.textContent=victim.name+' gục xuống…';beep(weapon==='gun'?95:weapon==='magic'?120:145,.38,'square',.13)}
+    }
+    counter.textContent=(Math.max(0,5-t)).toFixed(1)+' GIÂY';
+    kc.setTransform(dpr,0,0,dpr,0,0);kc.clearRect(0,0,w,h);
+    const bg=kc.createRadialGradient(w*.5,h*.48,20,w*.5,h*.48,Math.max(w,h)*.75);bg.addColorStop(0,phase===2?'#3b101b':'#17233b');bg.addColorStop(.55,'#090d19');bg.addColorStop(1,'#010207');kc.fillStyle=bg;kc.fillRect(0,0,w,h);
+    // Những hạt bụi sáng giúp cảnh có chiều sâu nhưng không che nhân vật.
+    for(let i=0;i<34;i++){const px=(i*97+Math.sin(t*1.7+i)*34)%w,py=(i*61-t*27+Math.cos(i*2.1)*15+h)%h;kc.globalAlpha=.12+.15*(.5+.5*Math.sin(t*3+i));kc.fillStyle=i%3?'#9db8db':'#ffd98a';kc.beginPath();kc.arc(px,py,i%4===0?2:1.2,0,Math.PI*2);kc.fill()}kc.globalAlpha=1;
+    if(phase===0){
+      const pulse=1+Math.sin(t*9)*.035,shake=Math.sin(t*25)*2.5;
+      kc.fillStyle='#ff667733';kc.beginPath();kc.arc(w*.5,h*.62,85+Math.sin(t*7)*14,0,Math.PI*2);kc.fill();
+      drawKillAvatar(kc,w*.5+shake,h*.61,victim.color,1,false,Math.sin(t*5)*-.06,pulse,pulse);
+      kc.fillStyle='#ffe27a';kc.font='900 '+Math.max(24,Math.min(54,w*.065))+'px system-ui';kc.textAlign='center';kc.fillText('!',w*.67,h*.38+Math.sin(t*8)*5);
+      kc.strokeStyle='#ff7777aa';kc.lineWidth=2;kc.beginPath();kc.arc(w*.5,h*.61,112+t*18,0,Math.PI*2);kc.stroke();
+    }else{
+      const enter=Math.min(1,Math.max(0,(t-2)/.65)),attX=w*(.16+.16*enter),vicX=w*.69,baseY=h*.63;
+      kc.strokeStyle='#f05a6a55';kc.lineWidth=3;kc.beginPath();kc.moveTo(attX+26,baseY-12);kc.lineTo(vicX-36,baseY-12);kc.stroke();
+      drawKillAvatar(kc,attX,baseY,killer.color,1,false,-.08,1.75,1.75);
+      drawKillWeapon(kc,weapon,attX+62,baseY-24,elapsed/1000,phase===1?local:1);
+      if(phase===1){
+        const pulse=1+Math.sin(t*11)*.025;
+        drawKillAvatar(kc,vicX,baseY,victim.color,-1,false,Math.sin(t*8)*.035,pulse*1.75,pulse*1.75);
+        if(weapon==='magic'){
+          kc.strokeStyle='#b88aff';kc.lineWidth=3;kc.globalAlpha=.35+.4*Math.sin(t*12);kc.beginPath();kc.arc(vicX,baseY-8,48+local*35,0,Math.PI*2);kc.stroke();kc.globalAlpha=1;
+        }
+        if(weapon==='gun'&&local>.72){kc.fillStyle='#fff4c8';kc.globalAlpha=.8;kc.beginPath();kc.arc(vicX-52,baseY-20,12+Math.random()*12,0,Math.PI*2);kc.fill();kc.globalAlpha=1}
+      }else{
+        const fall=Math.max(0,Math.min(1,local*1.08)),ease=fall*fall*(3-2*fall),angle=ease*Math.PI*.48,impact=local>.72;
+        kc.fillStyle='#0008';kc.beginPath();kc.ellipse(vicX,baseY+20,55+ease*20,9+ease*3,0,0,Math.PI*2);kc.fill();
+        if(weapon==='magic'){
+          kc.strokeStyle='#c18cff';kc.lineWidth=4;kc.globalAlpha=1-ease*.65;kc.beginPath();kc.arc(vicX,baseY-8,44+ease*78,0,Math.PI*2);kc.stroke();kc.globalAlpha=1;
+        }
+        if(impact){drawKillAvatar(kc,vicX,baseY+8,victim.color,-1,true,0,1.5,1.5)}
+        else drawKillAvatar(kc,vicX,baseY+ease*13,victim.color,-1,false,angle,1.75,1.75*(1-ease*.34));
+        if(local<.22){kc.fillStyle='#fff';kc.globalAlpha=1-local/.22;kc.fillRect(0,0,w,h);kc.globalAlpha=1}
+      }
+    }
+    if(phase===2){const flash=Math.max(0,1-local*5);kc.fillStyle=`rgba(255,235,220,${flash*.16})`;kc.fillRect(0,0,w,h)}
+    if(elapsed<5000){killFrame=requestAnimationFrame(frame)}
+  }
+  killSceneStarted=start;frame(start);
+  killEndTimer=setTimeout(()=>stopDeathCinematic(),5000);
+}
+
 function meetUI(title){
   $('mtTitle').textContent=title;$('mtMsg').textContent='';$('chatLog').innerHTML='';$('chatIn').disabled=false;$('chatIn').value='';
   $('skipBtn').style.display=G.me.alive?'':'none';
-  $('meet').classList.add('on');renderCards();updateMeet();
+  $('meet').classList.add('on');
+  if(G.mt){G.mt.ui=true;if(G.mt.ai){G.mt.ai.lastMsg=G.mt.ai.clock;G.mt.ai.gap=rnd(2,3.5)}}
+  renderCards();updateMeet();
 }
 function startMeeting(by,body){
   if(!G||G.state!=='play')return;
@@ -1654,18 +1834,21 @@ function startMeeting(by,body){
   const killerId=body?body.killer:null;
   G.bodies=[];
   G.players.forEach((p,i)=>{const a=i/G.players.length*Math.PI*2;p.x=MEETBTN[0]+Math.cos(a)*90;p.y=MEETBTN[1]+Math.sin(a)*80;p.tx=p.x;p.ty=p.y;p.path=[];p.wait=rnd(1,3);p.atTask=null;p.goalTask=null;p.disg=-1;p.sft=0;p.shiftPhase='none';p.shiftAnim=0;p.inVent=false;p.ventT=0;p.ventFrom=-1;p.ventTo=-1});
-  G.mt={phase:'discuss',t:14,votes:{},botVoteAt:{},nextChat:rnd(1,3),killerId,by};
+  G.mt={phase:'discuss',t:14,votes:{},botVoteAt:{},ready:{},ui:false,nextChat:rnd(1,3),killerId,by};
   G.players.forEach(p=>{if(p.isBot&&p.alive)G.mt.botVoteAt[p.id]=rnd(2,17)});
-  bcast({t:'meetStart',title,pos:G.players.map(p=>[Math.round(p.x),Math.round(p.y)])});
-  playCinematic(body?'🚨 PHÁT HIỆN THI THỂ':'📢 HỌP KHẨN',body?`${by.name} đã báo cáo. Chuẩn bị thảo luận!`:`${by.name} đã gọi mọi người tập hợp.`,body?'#e08a1e':'#4aa3ff',()=>{if(G&&G.state==='meeting')meetUI(title)});
+  AI.onMeetingStart(by,body);
+  bcast({t:'meetStart',title,by:by.id,bn:body?body.name:null,bc:body?body.color:null,bw:body?body.weapon:null,disc:G.mt.inf?0:G.mt.t,inf:G.mt.inf?1:0,pos:G.players.map(p=>[Math.round(p.x),Math.round(p.y)])});
+  const goUI=()=>{if(G&&G.state==='meeting')meetUI(title)};
+  if(body)cineReport(by,body,goUI);else cineMeet(by,goUI);
 }
 function clientMeetStart(d){
   closeModal();G.scan=null;G.state='meeting';G.bodies=[];
   d.pos.forEach((a,i)=>{const p=G.players[i];if(p){p.x=p.tx=a[0];p.y=p.ty=a[1];p.disg=-1;p.sft=0;p.shiftPhase='none';p.shiftAnim=0;p.inVent=false;p.ventT=0;p.ventFrom=-1;p.ventTo=-1}});
-  G.mt={phase:'discuss',t:14,votes:{},botVoteAt:{}};
+  G.mt={phase:'discuss',t:d.disc||14,inf:!!d.inf,votes:{},botVoteAt:{},ready:{},ui:false};
   beep(500,.4,'square',.12);
   const reported=d.title.includes('báo cáo xác');
-  playCinematic(reported?'🚨 PHÁT HIỆN THI THỂ':'📢 HỌP KHẨN',reported?'Một thi thể đã được phát hiện. Ai đang nói dối?':'Mọi người, tập trung vào cuộc họp!',reported?'#e08a1e':'#4aa3ff',()=>{if(G&&G.state==='meeting')meetUI(d.title)});
+  const goUI=()=>{if(G&&G.state==='meeting')meetUI(d.title)},who=G.players[d.by]||{name:'?',color:'#888'};
+  if(reported)cineReport(who,{name:d.bn||'?',color:d.bc,weapon:d.bw||'knife'},goUI);else cineMeet(who,goUI);
 }
 function renderCards(res,cntArg){
   const mt=G.mt;$('cards').innerHTML='';
@@ -1697,68 +1880,73 @@ function sendChat(){
   if(!G||G.state!=='meeting'||!G.mt||G.mt.phase!=='discuss'||!G.me.alive)return;
   const v=$('chatIn').value.trim();if(!v)return;$('chatIn').value='';
   if(NET.role==='client')sendHost({t:'chat',text:v});
-  else{addChat(G.me,v);bcast({t:'chat',id:G.me.id,text:v})}
+  else{addChat(G.me,v);bcast({t:'chat',id:G.me.id,text:v});AI.onChat(G.me,v)}
 }
 $('chatSend').onclick=sendChat;
-function botChat(){
-  const al=G.players.filter(p=>p.isBot&&p.alive);if(!al.length)return;
-  // Chọn bot có manh mối mới; tránh lặp nguyên câu vừa nói.
-  const ordered=al.slice().sort((a,b)=>{
-    const score=x=>aiMem(x).events.filter(e=>G.time-e.t<35).length+(aiMem(x).events.some(e=>e.type==='witnessKill')?30:0);
-    return score(b)-score(a);
-  });
-  const b=ordered[0],mem=aiMem(b);let text=aiSpeak(b);
-  if(text===mem.lastStatement){text=pick(['Mình nói rõ nhé: đó là điều mình thấy, còn phần còn lại mình chưa chắc.','Có ai có thông tin khác để đối chiếu không?','Mình không muốn đoán mò nếu chưa có bằng chứng.']);}
-  mem.lastStatement=text;mem.lastSpeak=G.time;
-  addChat(b,text);bcast({t:'chat',id:b.id,text});
+function updateMeet(){const mt=G.mt;if(!mt)return;
+  $('mtTimer').textContent=(mt.phase==='discuss'?'Thảo luận ':mt.phase==='vote'?'Bỏ phiếu ':'')+((mt.phase==='discuss'&&mt.inf)?'∞':Math.max(0,Math.ceil(mt.t))+'s');
+  const btn=$('endDiscBtn');
+  if(mt.phase==='discuss'&&G.me.alive){const al=G.players.filter(p=>p.alive),rd=mt.ready||{},n=al.filter(p=>rd[p.id]).length,mine=!!rd[G.me.id];
+    btn.style.display='';btn.disabled=mine;btn.textContent=(mine?'✔ Đã chọn kết thúc':'⏭ Kết thúc bàn luận')+` (${n}/${al.length})`}
+  else btn.style.display='none';
 }
-function botVote(b){
-  const mt=G.mt,al=G.players.filter(p=>p.alive&&p!==b);if(!al.length)return 'skip';
-  if(b.imp){const t=al.filter(p=>!p.imp);return Math.random()<.18?'skip':(t.length?pick(t).id:'skip')}
-  const mem=aiMem(b),witness=mem.events.filter(e=>e.type==='witnessKill'&&G.players[e.target]?.alive).slice(-1)[0];
-  if(witness)return witness.target;
-  const suspect=aiBestSuspect(b);
-  if(suspect&&suspect.score>=5&&Math.random()<Math.min(.9,.35+suspect.score*.04))return suspect.player.id;
-  // Không biết thì bỏ phiếu trắng thay vì chọn người ngẫu nhiên.
-  return Math.random()<.72?'skip':pick(al).id;
+function setReady(p){
+  const mt=G&&G.mt;if(!mt||mt.phase!=='discuss'||!p||!p.alive||mt.ready[p.id])return;
+  mt.ready[p.id]=1;bcast({t:'ready',ids:Object.keys(mt.ready).map(Number)});updateMeet();checkAllReady();
 }
-function updateMeet(){const mt=G.mt;if(!mt)return;$('mtTimer').textContent=(mt.phase==='discuss'?'Thảo luận ':mt.phase==='vote'?'Bỏ phiếu ':'')+Math.max(0,Math.ceil(mt.t))+'s'}
+function checkAllReady(){
+  const mt=G&&G.mt;if(!mt||mt.phase!=='discuss')return;
+  const al=G.players.filter(p=>p.alive);
+  if(al.length&&al.every(p=>mt.ready[p.id]))startVote();
+}
+function startVote(){
+  const mt=G.mt;if(!mt||mt.phase!=='discuss')return;
+  mt.phase='vote';mt.inf=false;mt.t=22;mt.vt=0;$('chatIn').disabled=true;bcast({t:'phase'});toast('Bắt đầu bỏ phiếu!');updateMeet();
+}
+$('endDiscBtn').onclick=()=>{
+  if(!G||!G.mt||G.mt.phase!=='discuss'||!G.me.alive||G.mt.ready[G.me.id])return;
+  if(NET.role==='client'){G.mt.ready[G.me.id]=1;sendHost({t:'endDisc'});updateMeet()}
+  else setReady(G.me);
+};
 function meetingTick(dt){
   const mt=G.mt;if(!mt)return;
-  mt.t-=dt;
-  if(NET.role==='client'){if(mt.phase!=='result')updateMeet();return}
-  if(mt.phase==='result'){if(mt.t<=0)endMeeting();return}
+  if(mt.phase==='discuss'&&!mt.ui)return;
+  if(!(mt.inf&&mt.phase==='discuss'))mt.t-=dt;
+  if(NET.role==='client'){if(mt.phase!=='result')updateMeet();else if(mt.t<=0&&!mt.ej){mt.ej=1;cineEject(mt.res,null,true)}return}
+  if(mt.phase==='result'){if(mt.t<=0&&!mt.ej){mt.ej=1;const g=G;cineEject(mt.res,()=>{if(G===g&&G.mt)endMeeting()})}return}
   if(mt.phase==='discuss'){
-    mt.nextChat-=dt;if(mt.nextChat<=0){botChat();mt.nextChat=rnd(1.5,3.5)}
-    if(mt.t<=0){mt.phase='vote';mt.t=22;mt.vt=0;$('chatIn').disabled=true;bcast({t:'phase'});toast('Bắt đầu bỏ phiếu!')}
+    AI.talkTick(dt);AI.readyTick();
+    if(G.mt&&G.mt.phase==='discuss'&&!mt.inf&&mt.t<=0)startVote();
   }else if(mt.phase==='vote'){
     mt.vt+=dt;
-    G.players.forEach(p=>{if(p.isBot&&p.alive&&mt.votes[p.id]===undefined&&mt.vt>=(mt.botVoteAt[p.id]===undefined?3:mt.botVoteAt[p.id])-2)hostVote(p,botVote(p))});
+    G.players.forEach(p=>{if(p.isBot&&p.alive&&mt.votes[p.id]===undefined&&mt.vt>=(mt.botVoteAt[p.id]===undefined?3:mt.botVoteAt[p.id])-2)hostVote(p,AI.decideVote(p))});
     const all=G.players.filter(p=>p.alive).every(p=>mt.votes[p.id]!==undefined);
     if(mt.t<=0||all)tally();
   }
   if(G.mt&&G.mt.phase!=='result')updateMeet();
 }
 function tally(){
-  const mt=G.mt;mt.phase='result';mt.t=5;$('chatIn').disabled=false;
+  const mt=G.mt;mt.phase='result';mt.t=4;$('chatIn').disabled=false;
   const cnt={};Object.values(mt.votes).forEach(v=>cnt[v]=(cnt[v]||0)+1);
   let best=null,bc=0,tie=false;
   Object.entries(cnt).forEach(([k,c])=>{if(k==='skip')return;if(c>bc){bc=c;best=+k;tie=false}else if(c===bc)tie=true});
   const sk=cnt['skip']||0;
-  let msg;
+  let msg,ejected=null;
   if(best===null||tie||sk>=bc){msg='Không ai bị đuổi ra ngoài.'}
-  else{const p=G.players[best];p.alive=false;msg=`${p.name} đã bị đuổi. ${p.name} ${p.imp?'LÀ':'KHÔNG phải là'} sát nhân.`;beep(p.imp?700:150,.5,'triangle')}
+  else{const p=G.players[best];ejected=best;p.alive=false;msg=`${p.name} đã bị đuổi. ${p.name} ${p.imp?'LÀ':'KHÔNG phải là'} sát nhân.`;beep(p.imp?700:150,.5,'triangle')}
+  try{AI.onResult(ejected)}catch(e){console.error(e)}
+  const wasImp=ejected!==null&&!!G.players[ejected].imp,left=G.players.filter(p=>p.alive&&p.imp).length;mt.res={ej:ejected,wi:wasImp,left};
   renderCards(true,cnt);$('mtMsg').textContent=msg;$('mtTimer').textContent='';
-  bcast({t:'result',cnt,msg,alive:G.players.map(p=>p.alive?1:0)});
+  bcast({t:'result',cnt,msg,ej:ejected===null?-1:ejected,wi:wasImp?1:0,left,alive:G.players.map(p=>p.alive?1:0)});
 }
 function clientResult(d){
-  const mt=G.mt;mt.phase='result';mt.t=5;
+  const mt=G.mt;mt.phase='result';mt.t=4;mt.res={ej:d.ej>=0?d.ej:null,wi:!!d.wi,left:d.left||0};
   d.alive.forEach((a,i)=>{if(G.players[i])G.players[i].alive=!!a});
   $('chatIn').disabled=false;
   renderCards(true,d.cnt);$('mtMsg').textContent=d.msg;$('mtTimer').textContent='';
 }
 function endMeeting(){
-  $('meet').classList.remove('on');G.mt=null;
+  $('meet').classList.remove('on');try{AI.onMeetingEnd()}catch(e){console.error(e)}G.mt=null;
   G.players.forEach(p=>{if(p.imp)p.cd=Math.max(p.cd,15)});
   G.state='play';
   bcast({t:'meetEnd'});
@@ -1771,34 +1959,1059 @@ function goTo(b,pt){
   const from=roomAt(b.x,b.y),to=roomAt(pt[0],pt[1]);
   const rt=route(from,to);b.path=rt.map(i=>ROOMS[i].node.slice());b.path.push(pt);
 }
-function botUpdate(b,dt){
-  if(!b.alive)return;
-  aiObserve(b,dt);
-  b.lastX=b.x;b.lastY=b.y;
-  if(b.cd>0)b.cd-=dt;
-  if(b.imp&&G.state==='play'){const s=G.sab;if(G.abilities.sab&&s.cd<=0&&!s.l&&s.p<=0&&s.d<=0&&Math.random()<dt*.03)hostSab(b,pick(['l','p']));if(G.abilities.copy&&b.scd<=0&&b.disg<0&&Math.random()<dt*.03){const o=G.players.filter(q=>q.alive&&q!==b);if(o.length)hostShift(b,pick(o).id)}}
-  if(b.imp&&b.cd<=0&&b.path){
-    const vs=G.players.filter(p=>p.alive&&!p.imp&&dist(p,b)<85);
-    if(vs.length){const v=vs[0];
-      const wit=G.players.filter(p=>p.alive&&p!==b&&p!==v&&!p.imp&&dist(p,b)<280);
-      if(wit.length===0||Math.random()<.002){kill(b,v);b.path=[];b.wait=1.5;return}}
+
+/* ===================================================================
+   BOT AI v2 — LÕI: nhận thức theo tầm nhìn thật, trí nhớ, bằng chứng, suy luận
+   Mỗi bot chỉ biết những gì nó thật sự nhìn thấy hoặc nghe được trong cuộc họp.
+   =================================================================== */
+const AI_LV=[
+ {name:'Dễ',     react:1.7, view:.8, hunt:.5,  tricks:0,   ded:.45, chat:.6},
+ {name:'Thường', react:1.15,view:1,  hunt:.8,  tricks:.55, ded:.75, chat:.85},
+ {name:'Khó',    react:.8,  view:1,  hunt:1,   tricks:1,   ded:1,   chat:1}];
+const aiLv=()=>AI_LV[Math.max(0,Math.min(2,(G&&G.aiLevel!==undefined?G.aiLevel:1)|0))];
+const AI={};
+const rname=i=>(ROOMS[i]&&ROOMS[i].n)||'khu vực này';
+const pname=id=>(G.players[id]&&G.players[id].name)||'ai đó';
+const lookId=q=>(q.disg>=0&&G.players[q.disg])?q.disg:q.id;
+const clamp01=x=>Math.max(0,Math.min(1,x));
+function aiG(){return G.ai||(G.ai={team:{},lastKillT:-99,lastSabT:-99,sabFix:{}})}
+function buildRoomDist(){
+  const n=ROOMS.length,D=Array.from({length:n},()=>Array(n).fill(1e9));
+  for(let i=0;i<n;i++)D[i][i]=0;
+  EDGES.forEach(([a,b])=>{const d=Math.hypot(ROOMS[a].node[0]-ROOMS[b].node[0],ROOMS[a].node[1]-ROOMS[b].node[1]);D[a][b]=D[b][a]=Math.min(D[a][b],d)});
+  for(let k=0;k<n;k++)for(let i=0;i<n;i++)for(let j=0;j<n;j++)if(D[i][k]+D[k][j]<D[i][j])D[i][j]=D[i][k]+D[k][j];
+  RDM=D;
+}
+function rdist(a,b){return RDM&&RDM[a]?RDM[a][b]:0}
+// Ước lượng quãng đường đi bộ giữa hai điểm bằng đồ thị phòng (rẻ hơn A*).
+function estDist(x0,y0,x1,y1){
+  const ra=roomAt(x0,y0),rb=roomAt(x1,y1);if(ra===rb)return Math.hypot(x1-x0,y1-y0);
+  const A=ROOMS[ra].node,B=ROOMS[rb].node;
+  return Math.hypot(A[0]-x0,A[1]-y0)+rdist(ra,rb)+Math.hypot(B[0]-x1,B[1]-y1);
+}
+function aiOf(b){return b.ai||(b.ai=newAI(b))}
+function newAI(b){return{
+  pers:{pace:.94+Math.random()*.14,bold:Math.random(),chatty:.3+Math.random()*.7,trust:.35+Math.random()*.45,
+        curious:Math.random(),tidy:Math.random(),casual:Math.random()<.55},
+  pt:Math.random()*.2,seen:{},trail:{},contact:{},ev:[],sus:{},clear:{},hear:{},claims:[],knownBodies:{},scanSeen:{},visited:{},
+  fear:0,react:null,goal:null,pathFor:null,stuck:0,chkT:0,chkX:b.x,chkY:b.y,doorWait:0,doorTried:false,
+  mylog:[],myRoom:-1,cam:null,thinkT:Math.random()*.4,
+  imp:{phase:'blend',target:null,post:null,shiftT:-99,decoy:null,lockT:-99,huntT:0,seenByAt:-99,dark:false},
+  say:{intents:[],next:0,count:0,last:'',used:{}},
+};}
+
+/* ---------- tầm nhìn / camera ---------- */
+const viewR=b=>R_VIEW(b)*aiLv().view;
+function canSeePt(a,x,y,range){return Math.hypot(a.x-x,a.y-y)<=range&&hasLineOfSight(a.x,a.y,x,y)}
+function camIsWatched(){const w=G&&G.camWatchers;return !!w&&Object.values(w).some(Boolean)}
+function inCamView(x,y,sel){
+  for(let i=0;i<CAM_POINTS.length;i++){
+    if(MAPI!==0&&sel!==undefined&&sel!==i)continue;
+    const c=CAM_POINTS[i];if(Math.abs(x-c.viewX)<=c.w/2&&Math.abs(y-c.viewY)<=c.h/2)return true;
   }
-  if(!b.imp){
-    const bd=G.bodies.find(x=>Math.hypot(x.x-b.x,x.y-b.y)<170);
-    if(bd&&Math.random()<dt*1.3&&G.state==='play'){startMeeting(b,bd);return}
+  return false;
+}
+function addEv(a,e){
+  a.ev.push(e);if(a.ev.length>160)a.ev.splice(0,a.ev.length-160);
+}
+function recentEv(a,type,who,win){
+  for(let i=a.ev.length-1;i>=0;i--){const e=a.ev[i];if(G.time-e.t>win)break;if(e.type===type&&(who===undefined||e.who===who))return e}
+  return null;
+}
+
+/* ---------- quan sát ---------- */
+function noteSeen(b,a,q,T,viaCam){
+  const id=lookId(q),room=roomAt(q.x,q.y);
+  a.seen[id]={t:T,x:q.x,y:q.y,room,real:q.id,cam:!!viaCam};
+  const tr=a.trail[id]||(a.trail[id]=[]),last=tr[tr.length-1];
+  if(!last||last.room!==room||T-last.t>8){tr.push({t:T,room,x:q.x,y:q.y});if(tr.length>40)tr.shift()}else last.t=T;
+  const c=a.contact[id]||(a.contact[id]={s:T,l:T,tot:0,room});
+  if(T-c.l>4){c.s=T;c.tot=0}else c.tot+=T-c.l;c.l=T;c.room=room;
+  if((q.shiftPhase==='in'||q.shiftPhase==='out')&&q.disg>=0&&!recentEv(a,'morph',q.id,20))
+    addEv(a,{type:'morph',who:q.id,as:q.disg,room,t:T});
+  if(q.ventPop>.3&&!recentEv(a,'vent',id,4))addEv(a,{type:'vent',who:id,room,t:T});
+  if(G.scan&&G.scan.by===q.id)a.scanSeen[q.id]=T;
+}
+function perceive(b,dt,a){
+  a.pt-=dt;if(a.pt>0)return;a.pt=.16+Math.random()*.08;
+  const T=G.time,R=viewR(b),room=roomAt(b.x,b.y);
+  if(room!==a.myRoom){a.myRoom=room;a.visited[room]=T;a.mylog.push({t:T,room});if(a.mylog.length>14)a.mylog.shift()}
+  const camOn=a.cam&&a.cam.on,sel=camOn?a.cam.sel:undefined;
+  G.players.forEach(q=>{
+    if(q===b||!q.alive||q.inVent)return;
+    let vis=false,viaCam=false;
+    if(Math.hypot(b.x-q.x,b.y-q.y)<=R&&hasLineOfSight(b.x,b.y,q.x,q.y))vis=true;
+    else if(camOn&&inCamView(q.x,q.y,sel)){vis=true;viaCam=true}
+    if(vis)noteSeen(b,a,q,T,viaCam);
+  });
+  G.bodies.forEach(bd=>{
+    if(a.knownBodies[bd.id])return;
+    const vis=(Math.hypot(b.x-bd.x,b.y-bd.y)<=R+10&&hasLineOfSight(b.x,b.y,bd.x,bd.y))||(camOn&&inCamView(bd.x,bd.y,sel));
+    if(!vis)return;
+    a.knownBodies[bd.id]=T;
+    const near=[];for(const k in a.seen){const s=a.seen[k];if(T-s.t<20&&Math.hypot(s.x-bd.x,s.y-bd.y)<430)near.push(+k)}
+    addEv(a,{type:'body',victim:bd.id,room:roomAt(bd.x,bd.y),x:bd.x,y:bd.y,t:T,near,deadT:bd.t||T});
+    if(!b.imp){a.react=a.react&&a.react.type==='kill'?a.react:{type:'body',bodyId:bd.id,t:T};a.fear=Math.min(1,a.fear+.55)}
+  });
+  if(!b.imp)a.fear=Math.max(0,a.fear-.012*(.16));
+}
+
+/* ---------- sự kiện toàn cục ---------- */
+AI.onKill=function(k,v){
+  if(!G)return;const T=G.time;aiG().lastKillT=T;
+  G.players.forEach(w=>{
+    if(!w.isBot||!w.alive||w===k||w===v||w.imp)return;
+    const a=aiOf(w),R=viewR(w);
+    const sawK=Math.hypot(w.x-k.x,w.y-k.y)<=R&&hasLineOfSight(w.x,w.y,k.x,k.y);
+    const sawV=Math.hypot(w.x-v.x,w.y-v.y)<=R&&hasLineOfSight(w.x,w.y,v.x,v.y);
+    const cam=a.cam&&a.cam.on&&inCamView(k.x,k.y,a.cam.sel);
+    if(sawK||cam){
+      addEv(a,{type:'kill',killer:lookId(k),victim:v.id,room:roomAt(v.x,v.y),x:v.x,y:v.y,t:T,cam:!sawK});
+      a.react={type:'kill',killer:lookId(k),victim:v.id,x:v.x,y:v.y,t:T,near:Math.hypot(w.x-k.x,w.y-k.y)};
+      a.fear=1;
+    }else if(sawV){
+      addEv(a,{type:'death',victim:v.id,room:roomAt(v.x,v.y),t:T});a.fear=Math.max(a.fear,.8);
+    }
+  });
+};
+AI.onVent=function(p){
+  if(!G)return;const T=G.time;
+  G.players.forEach(w=>{
+    if(!w.isBot||!w.alive||w===p||w.imp)return;
+    const a=aiOf(w);
+    if(canSeePt(w,p.x,p.y,viewR(w))||(a.cam&&a.cam.on&&inCamView(p.x,p.y,a.cam.sel))){
+      if(!recentEv(a,'vent',lookId(p),4))addEv(a,{type:'vent',who:lookId(p),room:roomAt(p.x,p.y),t:T});
+    }
+  });
+};
+AI.onShift=function(p,as){
+  if(!G)return;const T=G.time;
+  G.players.forEach(w=>{
+    if(!w.isBot||!w.alive||w===p||w.imp)return;
+    if(canSeePt(w,p.x,p.y,viewR(w))){const a=aiOf(w);if(!recentEv(a,'morph',p.id,20))addEv(a,{type:'morph',who:p.id,as,room:roomAt(p.x,p.y),t:T})}
+  });
+};
+AI.onTask=function(p,t){
+  if(!G||!p.alive)return;
+  if(t.type==='scan'){
+    G.players.forEach(w=>{
+      if(!w.isBot||!w.alive||w===p||w.imp)return;
+      const a=aiOf(w);
+      if(a.scanSeen[p.id]&&G.time-a.scanSeen[p.id]<4.5){a.clear[p.id]='scan';addEv(a,{type:'scan',who:p.id,room:roomAt(p.x,p.y),t:G.time})}
+    });
   }
-  if(b.wait>0){b.wait-=dt;if(b.wait<=0&&b.atTask){if(G.sab.p>0){b.wait=2;return}
-    if(b.atTask.type==='scan'){const own=G.scan&&G.scan.by===b.id&&G.scan.until>G.time;if(!own){if(scanBusy(b.id)){b.wait=1.5+Math.random();return}const dd=rnd(7,10);scanStart(b.id,dd);b.wait=dd;return}scanRelease(b.id)}
-    completeTask(b,b.atTask);b.atTask=null}return}
-  if(b.path.length){
-    const t=b.path[0],dx=t[0]-b.x,dy=t[1]-b.y,d=Math.hypot(dx,dy),sp=135*dt;
-    if(d<=sp){b.x=t[0];b.y=t[1];b.path.shift();if(!b.path.length){if(b.goalTask){b.atTask=b.goalTask;b.goalTask=null;b.wait=b.atTask.type==='scan'?.3:rnd(6,11)}else b.wait=rnd(1,3.5)}}
-    else{const nx=b.x+dx/d*sp,ny=b.y+dy/d*sp;if(doorHit(nx,ny)&&!doorHit(b.x,b.y)){b.wait=.8;return}b.x=nx;b.y=ny;if(Math.abs(dx)>1)b.face=dx>0?1:-1}
+};
+
+/* ---------- suy luận: mức nghi ngờ ---------- */
+// Điểm càng cao càng đáng nghi. >=700 gần như chắc chắn; 250–700 đáng ngờ; <250 chưa đủ.
+function suspicion(b,pid){
+  const a=aiOf(b),p=G.players[pid];if(!p||pid===b.id)return -1e3;
+  if(b.imp)return p.imp?-1e3:0;
+  let s=a.sus[pid]||0,hard=false;
+  for(const e of a.ev){
+    if(e.type==='kill'&&e.killer===pid){s+=1000;hard=true}
+    else if(e.type==='morph'&&e.who===pid){s+=900;hard=true}
+    else if(e.type==='vent'&&e.who===pid){s+=720;hard=true}
+    else if(e.type==='body'&&e.near&&e.near.includes(pid)){s+=e.near.length===1?280:150}
+  }
+  if(a.clear[pid]&&!hard)return -400;
+  s+=a.hear[pid]||0;
+  return s;
+}
+// Điểm "đám đông": số người đã công khai nghi ngờ pid trong cuộc họp hiện tại.
+function crowdOf(pid){const M=G.mt&&G.mt.ai;if(!M||!M.acc[pid])return 0;return M.acc[pid].by.size}
+
+/* ===================================================================
+   BOT AI v2 — HÀNH ĐỘNG: di chuyển, nhiệm vụ, cư dân, sát nhân, bot ma
+   =================================================================== */
+/* ---------- di chuyển ---------- */
+const speedOf=(b,a,urgent)=>(b.alive?140:168)*a.pers.pace*(urgent?1.18:1);
+function walkStep(b,dt,a,urgent){
+  if(!b.path||!b.path.length)return;
+  const ghost=!b.alive,sp=speedOf(b,a,urgent)*dt;
+  const t=b.path[0],dx=t[0]-b.x,dy=t[1]-b.y,d=Math.hypot(dx,dy);
+  if(d<=sp){b.x=t[0];b.y=t[1];b.path.shift();return}
+  const nx=b.x+dx/d*sp,ny=b.y+dy/d*sp;
+  if(!ghost&&doorHit(nx,ny)&&!doorHit(b.x,b.y)){
+    a.doorWait+=dt;
+    if(a.doorWait>1.2&&!a.doorTried&&a.pathFor){a.doorTried=true;const p=findPath(b.x,b.y,a.pathFor[0],a.pathFor[1],true);if(p&&p.length)b.path=p}
     return;
   }
-  if(b.imp){goTo(b,randInRoom(Math.floor(Math.random()*ROOMS.length)));return}
-  const t=b.tasks.find(t=>!t.done);
-  if(t){b.goalTask=t;goTo(b,[t.x,t.y])}else goTo(b,randInRoom(Math.floor(Math.random()*ROOMS.length)));
+  a.doorWait=0;a.doorTried=false;b.x=nx;b.y=ny;if(Math.abs(dx)>1)b.face=dx>0?1:-1;
+}
+function nudgeToWalkable(b){const c=nearestCell(Math.max(0,Math.min(PW-1,Math.round(b.x/PC))),Math.max(0,Math.min(PH-1,Math.round(b.y/PC))));if(c>=0){b.x=(c%PW)*PC;b.y=((c/PW)|0)*PC}}
+function stuckCheck(b,dt,a){
+  a.chkT+=dt;if(a.chkT<1.2)return;
+  const moved=Math.hypot(b.x-a.chkX,b.y-a.chkY);a.chkT=0;a.chkX=b.x;a.chkY=b.y;
+  if(moved<5&&a.doorWait<.5){
+    a.stuck++;
+    if(a.stuck===2&&a.pathFor)goTo(b,a.pathFor);
+    if(a.stuck===4)nudgeToWalkable(b);
+    if(a.stuck>=7){a.stuck=0;dropGoal(b,a);b.path=[]}
+  }else a.stuck=0;
+}
+// Đi tới điểm pt; trả về true khi đã tới trong bán kính r.
+function goPt(b,dt,a,pt,r,urgent){
+  if(Math.hypot(pt[0]-b.x,pt[1]-b.y)<=r){b.path=[];return true}
+  if(!a.pathFor||Math.hypot(a.pathFor[0]-pt[0],a.pathFor[1]-pt[1])>50||!b.path.length){
+    a.pathFor=[pt[0],pt[1]];goTo(b,a.pathFor);
+  }
+  walkStep(b,dt,a,urgent);
+  stuckCheck(b,dt,a);
+  return false;
+}
+function dropGoal(b,a){
+  const g=a.goal;
+  if(g&&g.k==='task'&&g.scanned)scanRelease(b.id);
+  if(a.cam&&a.cam.on)stopCam(b,a);
+  a.goal=null;a.pathFor=null;
+}
+function setGoal(b,a,g){dropGoal(b,a);a.goal=g;b.path=[];a.pathFor=null;a.stuck=0}
+function stopCam(b,a){
+  if(!a.cam)return;a.cam.on=false;
+  if(G.camWatchers&&G.camWatchers[b.id]){G.camWatchers[b.id]=false;if(NET.role==='host')bcast({t:'camUse',id:b.id,active:false})}
+}
+
+/* ---------- nhiệm vụ ---------- */
+const WORK={wires:[8,13],code:[9,14],download:[12,19],order:[9,14],swipe:[8,12],fuel:[11,16],clean:[11,17],dial:[9,14]};
+const workTime=t=>{const k=TASK_ALIAS[t.type]||t.type,w=WORK[k]||[6,10];return rnd(w[0],w[1])};
+function chooseTask(b,a,forWho){
+  const T=G.time,cands=b.tasks.filter(t=>!t.done&&!(a.skip&&a.skip[t.di]>T));
+  if(!cands.length)return null;
+  let best=null,bs=1e9;
+  cands.forEach(t=>{
+    let c=estDist(b.x,b.y,t.x,t.y);const tr=roomAt(t.x,t.y);
+    if(t.type==='scan'&&scanBusy(b.id))c+=900;
+    let crowd=0,bad=false;
+    for(const k in a.seen){const s=a.seen[k];if(+k===b.id||T-s.t>22||s.room!==tr)continue;if(b.imp||suspicion(b,+k)<250)crowd++;else bad=true}
+    if(!b.imp){
+      if(a.fear>.25){c-=a.fear*Math.min(2,crowd)*260;if(!crowd)c+=a.fear*320*(1-a.pers.bold*.6)}
+      if(bad)c+=a.fear>.2?700:350;
+    }else if(forWho==='alibi')c-=Math.min(2,crowd)*300;
+    c*=.85+Math.random()*.3;
+    if(c<bs){bs=c;best=t}
+  });
+  return best;
+}
+function startTaskGoal(b,a,t){setGoal(b,a,{k:'task',task:t,phase:'go',r:12})}
+function execTask(b,dt,a,g){
+  const t=g.task;if(!t||t.done){a.goal=null;return}
+  if(g.phase==='go'){
+    if(goPt(b,dt,a,[t.x,t.y],12,false)){
+      if(t.type==='scan'){
+        if(scanBusy(b.id)){g.phase='queue';g.qT=0;return}
+        const dd=rnd(8,10);scanStart(b.id,dd);g.scanned=true;g.phase='work';g.left=dd;a.mylog.push({t:G.time,room:roomAt(b.x,b.y),task:t.n});return;
+      }
+      g.phase='work';g.left=workTime(t);a.mylog.push({t:G.time,room:roomAt(b.x,b.y),task:t.n});
+    }
+  }else if(g.phase==='queue'){
+    g.qT+=dt;
+    if(!scanBusy(b.id)){const dd=rnd(8,10);scanStart(b.id,dd);g.scanned=true;g.phase='work';g.left=dd;return}
+    if(g.qT>16){(a.skip||(a.skip={}))[t.di]=G.time+35;dropGoal(b,a)}
+  }else{
+    if(G.sab.p>0&&!b.imp)return;
+    g.left-=dt;
+    if(g.left<=0){
+      if(g.scanned){scanRelease(b.id);g.scanned=false}
+      completeTask(b,t);a.goal=null;
+    }
+  }
+}
+
+/* ---------- ghi chú khi thực thi mục tiêu ---------- */
+function execGoal(b,dt,a){
+  const g=a.goal;if(!g)return;
+  switch(g.k){
+    case 'task':execTask(b,dt,a,g);break;
+    case 'report':{
+      const bd=G.bodies.find(x=>x.id===g.bodyId);if(!bd){a.goal=null;break}
+      if(goPt(b,dt,a,[bd.x,bd.y],60,true)&&G.state==='play'){a.goal=null;startMeeting(b,bd)}
+      break}
+    case 'button':
+      if(goPt(b,dt,a,MEETBTN,48,true)&&G.state==='play'){
+        a.goal=null;if(b.meetings>0){b.meetings--;startMeeting(b,null)}
+      }
+      break;
+    case 'fix':{
+      const s=G.sab,active=g.fk==='l'?s.l:s.p>0;
+      if(!active){a.goal=null;break}
+      if(g.phase==='go'){if(goPt(b,dt,a,FIXP[g.fk],34,true)){g.phase='work';g.left=g.fk==='p'?rnd(3,4.2):rnd(2.5,3.6)}}
+      else{g.left-=dt;if(g.left<=0){if(g.fk==='l')G.sab.l=0;else G.sab.p=0;a.goal=null;aiG().sabFix[g.fk]=null}}
+      break}
+    case 'cam':
+      if(g.phase==='go'){
+        if(goPt(b,dt,a,[SECURITY.x,SECURITY.y],46,false)){
+          g.phase='watch';a.cam={on:true,sel:(Math.random()*CAM_POINTS.length)|0,left:rnd(14,26),sw:3};
+          G.camWatchers=G.camWatchers||{};G.camWatchers[b.id]=true;if(NET.role==='host')bcast({t:'camUse',id:b.id,active:true});
+        }
+      }else{
+        a.cam.left-=dt;a.cam.sw-=dt;if(a.cam.sw<=0){a.cam.sw=3+Math.random()*2;a.cam.sel=(Math.random()*CAM_POINTS.length)|0}
+        if(a.cam.left<=0)dropGoal(b,a);
+      }
+      break;
+    case 'idle':
+      if(g.phase==='go'){if(goPt(b,dt,a,g.to,30,false)){g.phase='wait'}}
+      else{g.left-=dt;if(g.left<=0)a.goal=null}
+      break;
+    case 'buddy':{
+      const q=G.players[g.id];
+      g.left-=dt;
+      if(!q||!q.alive||g.left<=0||(!b.imp&&suspicion(b,g.id)>=250)){a.goal=null;break}
+      const d=Math.hypot(q.x-b.x,q.y-b.y);
+      if(d>120||b.path.length)goPt(b,dt,a,[q.x+rnd(-35,35),q.y+rnd(-20,20)],85,false);
+      break}
+    case 'flee':
+      if(goPt(b,dt,a,g.to,40,true))a.goal=null;
+      break;
+    case 'wait':g.left-=dt;if(g.left<=0)a.goal=null;break;
+    case 'stalk':execStalk(b,dt,a,g);break;
+    case 'vent':execVent(b,dt,a,g);break;
+    default:a.goal=null;
+  }
+}
+
+/* ---------- CƯ DÂN ---------- */
+function sabRank(k){
+  const ag=aiG(),T=G.time;
+  let c=ag.sabFix[k];
+  if(c&&T-c.t<1)return c;
+  const list=G.players.filter(p=>p.isBot&&p.alive&&!p.imp).map(p=>({id:p.id,d:estDist(p.x,p.y,FIXP[k][0],FIXP[k][1])})).sort((x,y)=>x.d-y.d);
+  c=ag.sabFix[k]={t:T,ids:list.map(x=>x.id)};return c;
+}
+function crewIdle(b,a){
+  const T=G.time,lv=aiLv();
+  const camBusy=G.players.some(p=>p!==b&&p.isBot&&p.ai&&p.ai.cam&&p.ai.cam.on);
+  const r=Math.random();
+  if(a.fear>.3||r<.22){
+    // đi theo một người không đáng ngờ để cho an toàn
+    let best=null,bd=1e9;
+    for(const k in a.seen){const s=a.seen[k],q=G.players[+k];if(!q||!q.alive||q===b||T-s.t>12)continue;if(suspicion(b,+k)>=200)continue;const d=Math.hypot(s.x-b.x,s.y-b.y);if(d<bd){bd=d;best=+k}}
+    if(best!==null&&Math.random()<.8){setGoal(b,a,{k:'buddy',id:best,left:rnd(10,20)});return}
+  }
+  if(!camBusy&&SECURITY&&r<.22+(a.pers.curious*.12)){setGoal(b,a,{k:'cam',phase:'go'});return}
+  if(r<.5){setGoal(b,a,{k:'idle',phase:'go',to:[MEETBTN[0]+rnd(-90,90),MEETBTN[1]+rnd(-70,70)],left:rnd(5,10)});return}
+  // tuần tra: ghé phòng lâu chưa ghé
+  let br=0,bs=-1e9;
+  ROOMS.forEach((rm,i)=>{const sc=(T-(a.visited[i]||-120))/50-estDist(b.x,b.y,rm.node[0],rm.node[1])/1500+Math.random()*.4;if(sc>bs){bs=sc;br=i}});
+  const rm=ROOMS[br];setGoal(b,a,{k:'idle',phase:'go',to:[rm.node[0]+rnd(-50,50),rm.node[1]+rnd(-40,40)],left:rnd(3,7)});
+}
+function crewDecide(b,a){
+  const T=G.time,lv=aiLv(),s=G.sab,g=a.goal,rc=a.react;
+  const urgent=g&&(g.k==='report'||g.k==='button'||g.k==='flee');
+  // 1) chứng kiến giết
+  if(rc&&rc.type==='kill'&&!rc.done){
+    if(!rc.at)rc.at=T+(.45+Math.random()*.7)*lv.react;
+    if(T>=rc.at){
+      rc.done=true;
+      const bd=G.bodies.find(x=>x.id===rc.victim);
+      const dBody=bd?Math.hypot(bd.x-b.x,bd.y-b.y):1e9;
+      if(rc.near<190&&b.meetings>0){setGoal(b,a,{k:'button'});return}
+      if(bd&&dBody<420){setGoal(b,a,{k:'report',bodyId:bd.id});return}
+      if(b.meetings>0){setGoal(b,a,{k:'button'});return}
+      if(bd){setGoal(b,a,{k:'report',bodyId:bd.id});return}
+    }
+  }
+  // 2) thấy xác chưa báo
+  if(rc&&rc.type==='body'&&!rc.done){
+    if(!rc.at)rc.at=T+(.5+Math.random()*.9)*lv.react;
+    if(T>=rc.at){
+      rc.done=true;
+      const bd=G.bodies.find(x=>x.id===rc.bodyId);
+      if(bd){
+        // có kẻ đáng ngờ ở sát xác thì thà chạy ra nút họp
+        let danger=false;for(const k in a.seen){const sn=a.seen[k];if(T-sn.t<6&&Math.hypot(sn.x-bd.x,sn.y-bd.y)<200&&suspicion(b,+k)>=600)danger=true}
+        if(danger&&b.meetings>0)setGoal(b,a,{k:'button'});else setGoal(b,a,{k:'report',bodyId:bd.id});
+        return;
+      }
+    }
+  }
+  if(urgent)return;
+  // 3) phá hoại
+  if(s.p>0||s.l){
+    const k=s.p>0?'p':'l',rank=sabRank(k).ids.indexOf(b.id),lim=k==='p'?3:2;
+    if(rank>=0&&rank<lim){
+      if(!(g&&g.k==='fix'&&g.fk===k)){
+        if(!a.sabAt)a.sabAt=T+(.8+Math.random()*1.6)*lv.react;
+        if(T>=a.sabAt){setGoal(b,a,{k:'fix',fk:k,phase:'go'});a.sabAt=0}
+      }
+      return;
+    }
+  }else a.sabAt=0;
+  // 4) nghi ngờ mạnh một người đang ở gần thì bỏ chạy ra nút họp
+  if(a.fear>.3&&b.meetings>0&&!(g&&g.k==='button')){
+    for(const k in a.seen){const sn=a.seen[k];if(T-sn.t<3&&Math.hypot(sn.x-b.x,sn.y-b.y)<220&&suspicion(b,+k)>=700){setGoal(b,a,{k:'button'});return}}
+  }
+  // 5) đang làm việc thì giữ nguyên
+  if(g&&(g.k==='task'||g.k==='fix'||g.k==='cam'||g.k==='idle'||g.k==='buddy')){
+    // đổi sang nhiệm vụ khác nếu mục tiêu hiện tại là idle/buddy nhưng đã sợ nguội
+    if((g.k==='idle'||g.k==='buddy')&&Math.random()<.04&&b.tasks.some(t=>!t.done))a.goal=null;else return;
+  }
+  // 6) chọn việc mới
+  const t=chooseTask(b,a);
+  if(t)startTaskGoal(b,a,t);else crewIdle(b,a);
+}
+
+/* ---------- BOT MA: vẫn làm nhiệm vụ, xuyên cửa ---------- */
+function ghostThink(b,dt,a){
+  if(a.cam&&a.cam.on)stopCam(b,a);
+  let g=a.goal;
+  if(!g||g.k!=='task'||g.task.done){
+    const t=b.tasks.find(t=>!t.done);
+    if(!t){a.goal=null;return}
+    a.goal=g={k:'task',task:t,phase:'go',r:12};b.path=[];a.pathFor=null;
+  }
+  if(g.phase==='go'){
+    if(goPt(b,dt,a,[g.task.x,g.task.y],12,false)){g.phase='work';g.left=rnd(3,5)}
+  }else{if(G.sab.p>0)return;g.left-=dt;if(g.left<=0){completeTask(b,g.task);a.goal=null}}
+}
+
+/* ---------- SÁT NHÂN ---------- */
+function crewAliveList(){return G.players.filter(p=>p.alive&&!p.imp)}
+// Đếm nhân chứng có thể nhìn thấy điểm (x,y): chỉ tính những người mà sát nhân đang thấy.
+function witnessCount(b,x,y,exclude){
+  let n=0;
+  for(const w of G.players){
+    if(w===b||w===exclude||!w.alive||w.imp||w.inVent)continue;
+    const rw=R_VIEW(w);
+    if(Math.hypot(w.x-x,w.y-y)<=rw&&hasLineOfSight(w.x,w.y,x,y)){
+      // chỉ tính nếu sát nhân tự nhìn thấy người đó (không "ăn gian" thông tin ngoài tầm mắt)
+      if(Math.hypot(w.x-b.x,w.y-b.y)<=R_VIEW(b)+40)n++;
+    }
+  }
+  return n;
+}
+function camRiskAt(x,y){
+  if(!camIsWatched()||!inCamView(x,y))return 0;
+  return MAPI===0?1:.4;
+}
+function winningKill(){const c=crewAliveList().length,i=G.players.filter(p=>p.alive&&p.imp).length;return c-1<=i-0&&c>0&&c-1<i}
+function pickDecoy(b){
+  // chọn một cư dân đang ở xa tầm nhìn của sát nhân để vu oan
+  const R=R_VIEW(b);let best=null,bs=-1;
+  crewAliveList().forEach(q=>{
+    if(q.inVent)return;const d=Math.hypot(q.x-b.x,q.y-b.y);if(d<R+120)return;
+    const sc=d+Math.random()*300;if(sc>bs){bs=sc;best=q}
+  });
+  return best;
+}
+function lockDoorsBehind(b,x,y){
+  if(!G.abilities.doors)return;
+  const cand=DOORS.map((r,i)=>({i,c:[r[0]+r[2]/2,r[1]+r[3]/2]})).map(o=>({...o,db:Math.hypot(o.c[0]-x,o.c[1]-y),dm:Math.hypot(o.c[0]-b.x,o.c[1]-b.y)}))
+    .filter(o=>o.db<560&&o.dm>150).sort((p,q)=>p.db-q.db);
+  if(!cand.length)return;
+  hostCloseDoor(b,cand[0].i);
+  if(cand[1]&&Math.random()<.6)hostCloseDoor(b,cand[1].i);
+}
+function chooseFlee(b,a,bx,by){
+  const T=G.time;let best=null,bs=-1e9;
+  ROOMS.forEach((rm,i)=>{
+    const d=estDist(bx,by,rm.node[0],rm.node[1]);if(d<500)return;
+    // thích phòng có người (để dựng ngoại phạm), nhưng không quá xa
+    let crowd=0;for(const k in a.seen){const s=a.seen[k];if(T-s.t<25&&s.room===i&&!G.players[+k]?.imp)crowd++}
+    const sc=Math.min(d,1400)/700+crowd*.9-estDist(b.x,b.y,rm.node[0],rm.node[1])/2200+Math.random()*.5;
+    if(sc>bs){bs=sc;best=rm}
+  });
+  return best?[best.node[0]+rnd(-40,40),best.node[1]+rnd(-30,30)]:MEETBTN;
+}
+function execStalk(b,dt,a,g){
+  const q=G.players[g.id];
+  if(!q||!q.alive||q.imp||g.left<=0){a.goal=null;return}
+  g.left-=dt;
+  const d=Math.hypot(q.x-b.x,q.y-b.y);
+  if(g.hold){ // giữ khoảng cách chờ cô lập
+    if(d>170)goPt(b,dt,a,[q.x,q.y],130,false);
+  }else if(d>66)goPt(b,dt,a,[q.x,q.y],62,false);
+}
+function execVent(b,dt,a,g){
+  const v=GAME_VENTS[g.vi];if(!v){a.goal=null;return}
+  if(goPt(b,dt,a,[v.x,v.y],52,false)){
+    a.goal=null;
+    if(witnessCount(b,b.x,b.y)===0&&G.abilities.vent)hostVent(b,v.idx!==undefined?v.idx:g.vi);
+  }
+}
+function impSabotage(b,a,lv,T,target,wit){
+  const s=G.sab,ab=G.abilities;
+  if(!ab.sab||b.cd>=0&&false)return false;
+  if(s.cd>0||s.l||s.p>0||s.d>0)return false;
+  // tắt đèn để ra tay khi có nhân chứng
+  if(ab.light!==false&&target&&wit>=1&&b.cd<=3&&lv.tricks>0&&Math.random()<.45*lv.tricks){hostSab(b,'l');return true}
+  // phá hoại oxy để kéo cả làng đi chỗ khác, rồi phục kích người đến sửa
+  if(ab.oxygen!==false&&T>75&&lv.tricks>0&&Math.random()<.012*lv.tricks){
+    const crew=crewAliveList();let cluster=0;
+    crew.forEach(q=>{if(crew.filter(o=>o!==q&&Math.hypot(o.x-q.x,o.y-q.y)<320).length>=1)cluster++});
+    if(cluster>=3){hostSab(b,'p');a.imp.ambush=T+42;return true}
+  }
+  return false;
+}
+function impDecide(b,a){
+  const T=G.time,lv=aiLv(),I=a.imp,rc=a.react;
+  const crew=crewAliveList();if(!crew.length)return;
+  const R=R_VIEW(b);
+  // ---------- ngay sau khi giết ----------
+  if(I.post&&T-I.post.t<1.5&&!I.post.done){
+    I.post.done=true;
+    const bd=G.bodies.find(x=>x.id===I.post.victim);
+    // tự báo xác nếu có người đang tiến lại gần (giả vờ vô tội)
+    let near=0;crew.forEach(q=>{if(!q.inVent&&Math.hypot(q.x-b.x,q.y-b.y)<300&&hasLineOfSight(b.x,b.y,q.x,q.y))near++});
+    if(bd&&near>0&&lv.tricks>0&&Math.random()<.4*lv.tricks&&G.state==='play'){startMeeting(b,bd);return}
+    if(lv.tricks>0)lockDoorsBehind(b,I.post.x,I.post.y);
+    // chui cống để biến mất nếu cống gần và không ai thấy
+    if(G.abilities.vent&&lv.tricks>0&&witnessCount(b,b.x,b.y)===0&&Math.random()<.65*lv.tricks){
+      let bv=null,bd2=300;GAME_VENTS.forEach((v,i)=>{const d=Math.hypot(v.x-b.x,v.y-b.y);if(d<bd2){bd2=d;bv=i}});
+      if(bv!==null){setGoal(b,a,{k:'vent',vi:bv});return}
+    }
+    setGoal(b,a,{k:'flee',to:chooseFlee(b,a,I.post.x,I.post.y)});
+    return;
+  }
+  // ---------- thứ tự ưu tiên ----------
+  if(a.goal&&a.goal.k==='vent')return;
+  const ready=b.cd<=0,soon=b.cd<=7;
+  // cư dân thấy được (theo tầm nhìn của chính sát nhân)
+  const vis=crew.filter(q=>!q.inVent&&Math.hypot(q.x-b.x,q.y-b.y)<=R&&hasLineOfSight(b.x,b.y,q.x,q.y)).map(q=>{
+    const d=Math.hypot(q.x-b.x,q.y-b.y);
+    let wit=witnessCount(b,b.x,b.y,q);
+    if(Math.random()<camRiskAt(b.x,b.y))wit+=1;
+    return {q,d,wit};
+  });
+  // tránh trùng mục tiêu với đồng đội
+  const tm=aiG().team;
+  // 1) giết ngay nếu thuận lợi
+  if(ready&&G.state==='play'){
+    const win=winningKill();
+    const opts=vis.filter(o=>o.d<82&&(o.wit===0||win));
+    if(opts.length&&Math.random()<Math.max(.35,lv.hunt)){
+      opts.sort((x,y)=>x.d-y.d);const v=opts[0].q;
+      kill(b,v);I.post={t:T,x:v.x,y:v.y,victim:v.id,done:false};b.path=[];dropGoal(b,a);return;
+    }
+  }
+  // 2) đang theo dõi mục tiêu
+  if(soon){
+    // sát nhân chủ động phá hoại / hóa hình khi sắp đủ hồi chiêu
+    let cand=vis.filter(o=>!(tm[o.q.id]&&tm[o.q.id].by!==b.id&&T-tm[o.q.id].t<6));
+    cand.sort((x,y)=>(x.d+x.wit*380)-(y.d+y.wit*380));
+    const bestC=cand[0];
+    if(bestC&&impSabotage(b,a,lv,T,bestC.q,bestC.wit)){/* đã dùng kỹ năng */}
+    if(bestC){
+      tm[bestC.q.id]={by:b.id,t:T};
+      // hóa hình thành người ở xa để vu oan, chỉ khi chưa ai khác thấy
+      if(lv.tricks>0&&G.abilities.copy&&b.scd<=0&&b.disg<0&&bestC.d<300&&vis.length<=1&&Math.random()<.35*lv.tricks){
+        const dec=pickDecoy(b);if(dec)hostShift(b,dec.id);
+      }
+      if(!(a.goal&&a.goal.k==='stalk'&&a.goal.id===bestC.q.id)){
+        setGoal(b,a,{k:'stalk',id:bestC.q.id,left:rnd(10,18),hold:bestC.wit>0&&bestC.d>82});
+      }else a.goal.hold=bestC.wit>0&&bestC.d>82;
+      return;
+    }
+    // không thấy ai: đi tìm nơi có người
+    if(!(a.goal&&a.goal.k==='flee')&&!(a.goal&&a.goal.k==='idle')){
+      let best=null,bs=-1e9;
+      ROOMS.forEach((rm,i)=>{
+        let heat=0;for(const k in a.seen){const s=a.seen[k];if(T-s.t<30&&s.room===i&&!G.players[+k]?.imp)heat++}
+        const sc=heat*1.3+(T-(a.visited[i]||-100))/60-estDist(b.x,b.y,rm.node[0],rm.node[1])/1400+Math.random()*.5;
+        if(sc>bs){bs=sc;best=rm}
+      });
+      if(I.ambush&&T<I.ambush&&G.sab.p>0){best={node:[FIXP.p[0]+rnd(-140,140),FIXP.p[1]+rnd(-100,100)]}}
+      if(best)setGoal(b,a,{k:'idle',phase:'go',to:[best.node[0]+rnd(-60,60),best.node[1]+rnd(-40,40)],left:rnd(2,5)});
+      return;
+    }
+  }
+  // 3) giả vờ làm nhiệm vụ
+  const g=a.goal;
+  if(g&&(g.k==='task'||g.k==='idle'||g.k==='flee'||g.k==='buddy'))return;
+  const post=I.post&&T-I.post.t<45;
+  const t=chooseTask(b,a,post?'alibi':undefined);
+  if(t)startTaskGoal(b,a,t);else{
+    const rm=ROOMS[(Math.random()*ROOMS.length)|0];
+    setGoal(b,a,{k:'idle',phase:'go',to:[rm.node[0]+rnd(-50,50),rm.node[1]+rnd(-40,40)],left:rnd(3,7)});
+  }
+}
+
+/* ---------- điều phối ---------- */
+function botUpdate(b,dt){
+  try{
+    if(!b.isBot)return;
+    const a=aiOf(b);
+    if(!b.alive){if(!b.imp)ghostThink(b,dt,a);return}
+    if(b.cd>0)b.cd-=dt;
+    if(b.inVent||b.ventT>0)return;
+    perceive(b,dt,a);
+    a.thinkT-=dt;
+    if(a.thinkT<=0){a.thinkT=.28+Math.random()*.16;if(b.imp)impDecide(b,a);else crewDecide(b,a)}
+    execGoal(b,dt,a);
+  }catch(e){if(!botUpdate._err){botUpdate._err=1;console.error('AI lỗi:',e)}}
+}
+
+/* ===================================================================
+   BOT AI v2 — HỌP: lời khai dựa trên nhật ký thật, hiểu chat tiếng Việt,
+   chất vấn mâu thuẫn, bảo vệ người vô tội, sát nhân nói dối có kiểm soát.
+   =================================================================== */
+const DISC_T=24;
+const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const normTxt=s=>String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d');
+const pickT=(arr,s,key)=>{
+  const used=s.used[key]||(s.used[key]=new Set());
+  let c=arr.map((_,i)=>i).filter(i=>!used.has(i));if(!c.length){used.clear();c=arr.map((_,i)=>i)}
+  const i=c[(Math.random()*c.length)|0];used.add(i);return arr[i];
+};
+const isMate=(b,id)=>!!(b.imp&&G.players[id]&&G.players[id].imp);
+
+/* ---------- khởi tạo / kết thúc họp ---------- */
+AI.onMeetingStart=function(by,body){
+  const mt=G.mt;if(!mt)return;
+  const M=mt.ai={clock:0,lastMsg:0,gap:3,log:[],acc:{},t0:G.time,by,body:body||null,victim:body?body.id:null,
+    room:body?roomAt(body.x,body.y):null,asked:{},ejected:null};
+  mt.t=G.discT>0?G.discT:60;mt.inf=!(G.discT>0);
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive)return;
+    const a=aiOf(b);a.path=[];a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
+    a.goal=null;b.path=[];a.pathFor=null;if(a.cam&&a.cam.on)stopCam(b,a);
+    buildIntents(b,a,M);
+    mt.botVoteAt[b.id]=rnd(3,13)*aiLv().react;
+  });
+};
+AI.onMeetingEnd=function(){
+  if(!G)return;
+  G.players.forEach(b=>{
+    if(!b.isBot)return;const a=aiOf(b);
+    a.goal=null;b.path=[];a.pathFor=null;a.react=null;a.mylog=[];a.myRoom=-1;a.stuck=0;a.doorWait=0;
+    if(a.cam&&a.cam.on)stopCam(b,a);
+    for(const k in a.hear)a.hear[k]*=.55;
+    a.imp.post=null;a.imp.ambush=0;a.fear=Math.max(a.fear,G.players.some(p=>!p.alive)?.35:0);
+  });
+};
+AI.onResult=function(ejId){
+  if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;M.ejected=ejId;
+  const ej=ejId!==null&&ejId!==undefined?G.players[ejId]:null;
+  if(!ej)return;
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive)return;const a=aiOf(b);
+    if(b.imp)return;
+    const acc=M.acc[ejId];
+    if(!ej.imp){
+      // bị đuổi oan: những người đẩy mạnh nhất đáng ngờ hơn; ai tuyên bố "tận mắt thấy" thì gần như chắc nói dối
+      if(acc)acc.by.forEach(sid=>{if(sid!==b.id)a.sus[sid]=(a.sus[sid]||0)+(acc.certain?260:90)});
+      M.log.forEach(l=>{if(l.metas)l.metas.forEach(m=>{if(m.k==='witness'&&m.t===ejId&&l.by!==b.id)a.sus[l.by]=(a.sus[l.by]||0)+520})});
+      a.fear=Math.min(1,a.fear+.2);
+    }else{
+      if(acc)acc.by.forEach(sid=>{a.sus[sid]=(a.sus[sid]||0)-70});
+      a.fear=Math.max(0,a.fear-.3);
+    }
+  });
+};
+
+/* ---------- bằng chứng → ý định phát biểu ---------- */
+function buildIntents(b,a,M){
+  const s=a.say,T=G.time,I=s.intents,react=aiLv().react;
+  const chatty=a.pers.chatty,add=(k,due,pr,extra)=>I.push({k,due,pr,...extra});
+  let t0=rnd(1.4,6)/(.55+chatty*.6);
+  if(!b.imp){
+    const kills=a.ev.filter(e=>e.type==='kill'&&T-e.t<240).slice(-1);
+    kills.forEach(e=>add('witness',rnd(.9,1.8),9,{ev:e}));
+    a.ev.filter(e=>e.type==='morph'&&T-e.t<240).slice(-1).forEach(e=>add('morph',rnd(1,2.2),9,{ev:e}));
+    a.ev.filter(e=>e.type==='vent'&&T-e.t<240).slice(-1).forEach(e=>add('vent',rnd(1.2,2.6),8,{ev:e}));
+    a.ev.filter(e=>e.type==='scan'&&T-e.t<240).slice(-1).forEach(e=>add('clearScan',t0+rnd(1,3),3,{ev:e}));
+  }
+  if(M.by===b&&M.body)add('report',rnd(.5,.9),10,{});
+  add('where',t0,6,{});
+  add('suspect',t0+rnd(2.5,5.5),5,{});
+  if(Math.random()<.5*chatty)add('ask',t0+rnd(4,8),2,{});
+}
+function queueReply(b,it){
+  const a=aiOf(b),s=a.say,M=G.mt.ai;
+  if(s.count>=6)return;
+  if(s.intents.some(i=>i.k===it.k&&i.t===it.t&&i.to===it.to))return;
+  s.intents.push({due:M.clock+rnd(.7,2.1)*aiLv().react,pr:it.pr||7,...it});
+}
+
+/* ---------- câu trả lời theo sự thật ---------- */
+function bodyRoomName(M){return M.room!==null&&M.room!==undefined?rname(M.room):null}
+function trueWhere(b,a,M){
+  const T=G.time,log=a.mylog;
+  const room=a.myRoom>=0?a.myRoom:roomAt(b.x,b.y);   // phòng lúc cuộc họp được triệu tập
+  let te=null;for(let i=log.length-1;i>=0;i--)if(log[i].task&&T-log[i].t<150){te=log[i];break}
+  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&T-log[i].t<150){prev=log[i].room;break}
+  return {room,task:te&&te.room===room?te.task:null,doneAt:te&&te.room!==room?{room:te.room,task:te.task}:null,prev};
+}
+function fakeWhere(b,a,M){
+  const T=G.time,log=a.mylog,bad=M.room;
+  let room=null;
+  for(let i=log.length-1;i>=0;i--)if(log[i].room!==bad&&T-log[i].t<150){room=log[i].room;break}
+  const tasks=b.tasks.filter(t=>!t.done&&t.room!==bad);
+  let task=null;
+  if(room!==null){const m=tasks.find(t=>t.room===room);if(m)task=m.n}
+  if(room===null&&tasks.length){const t=pick(tasks);room=t.room;task=t.n}
+  if(room===null){room=(bad+1)%ROOMS.length}
+  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&log[i].room!==bad&&T-log[i].t<150){prev=log[i].room;break}
+  return {room,task,prev};
+}
+function sawList(b,a,M,max,avoid){
+  const T=G.time,out=[];
+  for(const k in a.seen){
+    const id=+k,sn=a.seen[k];if(id===b.id||id===M.victim||(avoid&&avoid.includes(id)))continue;
+    if(T-sn.t>70||sn.t>M.t0+.5)continue;
+    const p=G.players[id];if(!p||!p.alive)continue;
+    out.push({id,room:sn.room,t:sn.t});
+  }
+  out.sort((x,y)=>y.t-x.t);return out.slice(0,max);
+}
+function alibiWitness(b,a){
+  const T=G.time;let best=null,bt=14;
+  for(const k in a.contact){const c=a.contact[k],id=+k,p=G.players[id];if(!p||!p.alive||id===b.id)continue;if(T-c.l<60&&c.tot>bt){bt=c.tot;best={id,room:c.room}}}
+  return best;
+}
+const NAMEPH=['A','B'];
+function trueWhereText(b,a,M,w,sawL,s){
+  let t;
+  if(w.task){
+    t=pickT([`Mình làm "${w.task}" ở ${rname(w.room)}.`,`Nãy giờ mình ở ${rname(w.room)} làm "${w.task}" nè.`,`Mình đang làm "${w.task}" ở ${rname(w.room)}.`,`Mình ở ${rname(w.room)}, làm "${w.task}".`],s,'wt');
+  }else if(w.doneAt){
+    t=pickT([`Mình vừa làm "${w.doneAt.task}" ở ${rname(w.doneAt.room)} rồi đi qua ${rname(w.room)}.`,`Mình mới xong "${w.doneAt.task}" ở ${rname(w.doneAt.room)}, giờ đang ở ${rname(w.room)}.`],s,'wd');
+  }else t=pickT([`Mình chỉ đi ngang qua ${rname(w.room)} thôi, chưa làm gì nhiều.`,`Mình đang đi quanh ${rname(w.room)} nãy giờ.`],s,'wn');
+  if(!w.doneAt&&w.prev!==null&&Math.random()<.55)t+=pickT([` Trước đó mình ở ${rname(w.prev)}.`,` Mình vừa từ ${rname(w.prev)} qua.`],s,'wp');
+  if(sawL.length&&Math.random()<.8){
+    const x=sawL[0],y=sawL[1];
+    t+=y?` Mình có thấy ${pname(x.id)} ở ${rname(x.room)} và ${pname(y.id)} ở ${rname(y.room)}.`:` Mình có thấy ${pname(x.id)} ở ${rname(x.room)}.`;
+  }
+  return t;
+}
+
+/* ---------- soạn lời ---------- */
+function tone(b,a,t){
+  if(a.pers.casual&&a.pers.chatty>.55)t=t.replace(/\bMình\b/g,'Tui').replace(/\bmình\b/g,'tui');
+  return t;
+}
+function compose(b,it){
+  const a=aiOf(b),s=a.say,M=G.mt.ai,T=G.time,imp=b.imp;
+  let text=null,meta=null;
+  switch(it.k){
+    case 'report':{
+      const bd=M.body;if(!bd)return null;
+      const room=rname(roomAt(bd.x,bd.y)),v=bd.name;
+      text=pickT([`Mình vừa thấy xác ${v} ở ${room}!`,`${v} chết ở ${room} rồi. Mình báo cáo.`,`Có xác ${v} ở ${room}! Ai ở gần đó không?`,`Báo cáo: xác ${v} nằm ở ${room}.`],s,'rep');
+      const ev=a.ev.find(e=>e.type==='body'&&e.victim===bd.id);
+      if(!imp&&ev&&ev.near){const nx=ev.near.filter(i=>i!==b.id&&i!==bd.id&&G.players[i]&&G.players[i].alive);
+        if(nx.length&&Math.random()<.75){const x=pick(nx);text+=pickT([` Lúc nãy mình có thấy ${pname(x)} ở gần đó.`,` Trước khi thấy xác, mình thấy ${pname(x)} quanh đây.`],s,'repn');meta={k:'sawnear',t:x}}}
+      break}
+    case 'witness':{
+      const e=it.ev;if(!e)return null;
+      const kp=G.players[e.killer];if(!kp||!kp.alive)return null;
+      const room=rname(e.room),v=pname(e.victim);
+      text=pickT([`Mình tận mắt thấy ${kp.name} giết ${v} ở ${room}! Vote ${kp.name} đi!`,`${kp.name} là sát nhân! Mình thấy rõ ${kp.name} ra tay với ${v} ở ${room}.`,`Mình thấy hết rồi: ${kp.name} giết ${v}. Đừng ai tin ${kp.name} nữa!`],s,'wit');
+      if(e.cam)text=`Mình đang xem camera, thấy ${kp.name} giết ${v} ở ${room}! Vote ${kp.name}!`;
+      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
+    case 'morph':{
+      const e=it.ev;const A=G.players[e.who],B=G.players[e.as];if(!A||!A.alive||!B)return null;
+      text=pickT([`${A.name} vừa biến thành ${B.name} ngay trước mặt mình ở ${rname(e.room)}! ${A.name} là sát nhân!`,`Mình thấy ${A.name} hóa hình thành ${B.name} ở ${rname(e.room)}. Chắc chắn ${A.name} là sát nhân.`],s,'mor');
+      meta={k:'accuse',t:A.id,why:'witness',victim:M.victim};break}
+    case 'vent':{
+      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
+      text=pickT([`Mình thấy ${A.name} chui cống ở ${rname(e.room)}. Cư dân đâu có chui cống được!`,`${A.name} vừa chui vào cống ở ${rname(e.room)}, mình thấy tận mắt luôn.`,`${A.name} chui cống kìa! Mình thấy ở ${rname(e.room)}.`],s,'ven');
+      meta={k:'accuse',t:A.id,why:'vent'};break}
+    case 'clearScan':{
+      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
+      text=pickT([`Mình thấy ${A.name} quét thân thể xong rồi, ${A.name} sạch nha.`,`${A.name} vừa quét thân thể ở ${rname(e.room)}, không có gì bất thường. Đừng nghi ${A.name}.`],s,'clr');
+      meta={k:'clear',t:A.id,why:'scan'};break}
+    case 'where':{
+      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
+      let sawL=sawList(b,a,M,2);
+      if(imp){const fr=a.say.frame!==null&&a.say.frame!==undefined?a.say.frame:null;if(fr!==null){const sn=a.seen[fr];if(sn&&G.players[fr]&&G.players[fr].alive&&!sawL.find(x=>x.id===fr))sawL=[{id:fr,room:sn.room,t:sn.t},...sawL].slice(0,2)}}
+      text=trueWhereText(b,a,M,w,sawL,s);
+      meta={k:'where',who:b.id,room:w.room,task:w.task,saw:sawL};break}
+    case 'suspect':{
+      if(imp){
+        const fr=frameTarget(b,a,M);if(fr===null)return null;
+        const f=G.players[fr];a.say.frame=fr;
+        const sn=a.seen[fr],rm=sn&&M.t0-sn.t<80?rname(sn.room):(M.room!==null?rname(M.room):'đâu đó');
+        const opts=[`Mình thấy ${f.name} ở ${rm} lúc nãy, cư xử lạ lắm.`,`${f.name} đi một mình hoài, mình thấy hơi đáng nghi.`,`Không ai nói được ${f.name} ở đâu cả. Mình nghi ${f.name}.`];
+        text=pickT(opts,s,'frm');meta={k:'accuse',t:fr,why:'vague'};
+        break}
+      let best=null,bs=0;
+      G.players.forEach(p=>{if(!p.alive||p===b||p.imp&&false)return;const sc=suspicion(b,p.id);if(sc>bs){bs=sc;best=p}});
+      if(!best||bs<250)return null;
+      const nb=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(best.id));
+      if(nb){const sn=a.seen[best.id];text=pickT([`${best.name} ở gần chỗ xác lúc nãy, mình thấy ${best.name} ở ${rname(sn?sn.room:nb.room)}. Hơi đáng nghi đó.`,`Trước khi có xác, mình thấy ${best.name} quanh ${rname(nb.room)}. Mình nghi ${best.name}.`],s,'sus');meta={k:'accuse',t:best.id,why:'near'}}
+      else{text=pickT([`Nghe mọi người nói thì mình cũng thấy ${best.name} đáng ngờ.`,`Mình nghi ${best.name}, nhiều chi tiết không khớp.`],s,'sush');meta={k:'accuse',t:best.id,why:'hear'}}
+      break}
+    case 'ask':{
+      const cands=G.players.filter(p=>p.alive&&p!==b&&!M.asked[p.id]&&!(imp&&p.imp&&false));
+      if(!cands.length)return null;
+      const p=pick(cands);M.asked[p.id]=1;
+      text=pickT([`${p.name} lúc nãy ở đâu vậy?`,`${p.name} làm gì ở đâu nãy giờ, kể mình nghe với.`],s,'ask');meta={k:'ask',to:p.id};break}
+    case 'reply':{ // mình bị buộc tội
+      const acc=G.players[it.t];if(!acc)return null;
+      const m=it.m||{};
+      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
+      const al=imp?null:alibiWitness(b,a);
+      let head;
+      if(m.why==='witness')head=pickT([`${acc.name} nói dối! Mình có giết ai đâu.`,`Khoan! ${acc.name} thấy mình giết ở đâu? Nói rõ ra đi.`,`${acc.name} đang vu oan cho mình đó.`],s,'rw');
+      else head=pickT([`Mình không phải đâu!`,`Oan quá trời.`,`Sao lại nghi mình? Mình đâu có làm gì.`,`Không phải mình đâu nha.`],s,'rh');
+      let body;
+      if(al)body=` Nãy giờ mình đi cùng ${pname(al.id)} ở ${rname(al.room)} mà.`;
+      else if(w.task)body=` Mình ở ${rname(w.room)} làm "${w.task}" mà.`;
+      else body=` Mình ở ${rname(w.room)} nãy giờ.`;
+      let tail='';
+      if(Math.random()<.4)tail=pickT([` ${acc.name} có bằng chứng gì không?`,` ${acc.name} thấy mình ở đâu vậy?`],s,'rt');
+      text=head+body+tail;
+      meta=al?{k:'where',who:b.id,room:al.room,task:null,saw:[{id:al.id,room:al.room,t:T}]}:{k:'where',who:b.id,room:w.room,task:w.task,saw:[]};
+      if(imp&&Math.random()<.5){queueReply(b,{k:'counter',t:acc.id,pr:7})}
+      break}
+    case 'counter':{ // sát nhân phản công người buộc tội mình
+      const acc=G.players[it.t];if(!acc||!acc.alive||acc.imp)return null;
+      text=pickT([`Mình thấy ${acc.name} mới là người đáng nghi, đang cố đổ tội cho người khác.`,`Cẩn thận ${acc.name} nha, tự dưng buộc tội mình mà không có bằng chứng.`],s,'ctr');
+      meta={k:'accuse',t:acc.id,why:'vague'};a.say.frame=acc.id;break}
+    case 'defendFor':{ // bảo vệ người khác
+      const T2=G.players[it.t];if(!T2||!T2.alive)return null;
+      if(a.clear[T2.id]==='scan'){text=pickT([`${T2.name} vừa quét thân thể xong, sạch mà. Đừng nghi ${T2.name}.`],s,'dfs');meta={k:'clear',t:T2.id,why:'scan'};break}
+      if(imp){
+        const w=fakeWhere(b,a,M);
+        text=pickT([`Mình thấy ${T2.name} làm nhiệm vụ ở ${rname(w.room)} mà, không phải ${T2.name} đâu.`,`Khoan, ${T2.name} đâu có làm gì đâu. Đừng vote bậy.`],s,'dfi');
+      }else{
+        const c=a.contact[T2.id];
+        if(!c||T-c.l>60)return null;
+        text=pickT([`Khoan, mình đi cùng ${T2.name} ở ${rname(c.room)} một lúc lâu, không phải ${T2.name} đâu.`,`${T2.name} ở cạnh mình nãy giờ mà. Mình không thấy gì bất thường.`],s,'dfc');
+      }
+      meta={k:'defend',t:T2.id,why:'alibi'};break}
+    case 'counterWit':{ // người khác nói dối về vụ giết
+      const sp=G.players[it.t];const e=a.ev.find(x=>x.type==='kill');if(!sp||!e)return null;
+      const kp=G.players[e.killer];if(!kp)return null;
+      text=pickT([`${sp.name} nói sai rồi, mình thấy ${kp.name} ra tay chứ không phải người ${sp.name} nói.`,`Không đúng! Mình tận mắt thấy ${kp.name} giết, ${sp.name} đừng nói dối.`],s,'cw');
+      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
+    case 'challenge':{
+      const sp=G.players[it.t];if(!sp||!sp.alive)return null;
+      text=pickT([`${sp.name} nói ở ${rname(it.claim)} nhưng mình mới thấy ${sp.name} ở ${rname(it.seen)} mà? Giải thích đi.`,`Khoan, ${sp.name} bảo ở ${rname(it.claim)}, mà mình thấy ${sp.name} ở ${rname(it.seen)}. Hơi lạ nha.`],s,'chl');
+      meta={k:'accuse',t:sp.id,why:'lie'};break}
+    case 'agree':{
+      const t=G.players[it.t];if(!t||!t.alive)return null;
+      text=pickT([`Mình cũng thấy ${t.name} đáng nghi.`,`Đồng ý, ${t.name} nhiều điểm lạ lắm.`,`Mình ủng hộ nghi ${t.name}.`],s,'agr');
+      meta={k:'accuse',t:t.id,why:'follow'};break}
+    case 'noinfo':{
+      text=pickT([`Mình chưa thấy gì đủ chắc để kết luận ai cả.`,`Chưa có bằng chứng thì mình không muốn vote bừa đâu.`,`Ai thấy gì cụ thể thì nói đi, mình đối chiếu cho.`],s,'noi');break}
+  }
+  if(!text)return null;
+  if(text===s.last)return null;
+  return {text:tone(b,a,text),meta,raw:text};
+}
+function frameTarget(b,a,M){
+  if(a.say.frame!==null&&a.say.frame!==undefined&&G.players[a.say.frame]&&G.players[a.say.frame].alive)return a.say.frame;
+  let best=null,bs=-1e9;
+  G.players.forEach(p=>{
+    if(!p.alive||p===b||p.imp)return;
+    if(Object.values(M.acc).some(()=>false))return;
+    let sc=Math.random()*60;
+    const ac=M.acc[p.id];if(ac)sc+=ac.by.size*130;
+    const clrd=G.players.some(q=>q.isBot&&q.ai&&q.ai.clear[p.id]);if(clrd)sc-=220;
+    const sn=a.seen[p.id];if(sn&&M.t0-sn.t<70&&sn.room===M.room)sc+=160;
+    if(!p.isBot)sc+=25;
+    if(sc>bs){bs=sc;best=p.id}
+  });
+  return best;
+}
+
+/* ---------- phát ngôn ---------- */
+function speak(b,msg){
+  const M=G.mt.ai,a=aiOf(b);
+  addChat(b,msg.text);if(NET.role==='host')bcast({t:'chat',id:b.id,text:msg.text});
+  M.lastMsg=M.clock;M.gap=rnd(3,5)+String(msg.text).length*.04;a.say.count++;a.say.last=msg.raw||msg.text;
+  M.log.push({by:b.id,text:msg.text,metas:msg.meta?[msg.meta]:[],t:M.clock});
+  if(msg.meta)announce(b,msg.meta);
+}
+function announce(s,m){
+  const M=G.mt.ai;
+  if(m.k==='accuse'&&m.t!==undefined){
+    const r=M.acc[m.t]||(M.acc[m.t]={by:new Set(),certain:false});r.by.add(s.id);if(m.why==='witness')r.certain=true;
+  }
+  G.players.forEach(l=>{if(l.isBot&&l.alive&&l!==s)try{hear(l,s,m)}catch(e){console.error('AI hear',e)}});
+}
+AI.readyTick=function(){
+  const mt=G.mt;if(!mt||!mt.ai||mt.phase!=='discuss')return;const M=mt.ai;M.rdy=M.rdy||{};
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive||mt.ready[b.id])return;
+    const a=aiOf(b),s=a.say||{intents:[],count:99};
+    const done=s.intents.length===0||s.count>=3+Math.round(a.pers.chatty*2*aiLv().chat);
+    if(!done){M.rdy[b.id]=null;return}
+    if(M.rdy[b.id]==null)M.rdy[b.id]=M.clock+rnd(6,14);
+    if(M.clock>=M.rdy[b.id]&&M.clock-M.lastMsg>4)setReady(b);
+  });
+  checkAllReady();
+};
+AI.talkTick=function(dt){
+  const mt=G.mt;if(!mt||!mt.ai)return;const M=mt.ai;M.clock+=dt;
+  if(M.clock-M.lastMsg<(M.gap||0))return;
+  let pk=null;
+  for(const b of G.players){
+    if(!b.isBot||!b.alive)continue;const s=aiOf(b).say;if(!s)continue;
+    if(s.count>=3+Math.round(aiOf(b).pers.chatty*2*aiLv().chat))continue;
+    const it=s.intents.filter(i=>i.due<=M.clock).sort((x,y)=>y.pr-x.pr)[0];if(!it)continue;
+    if(!pk||it.pr>pk.it.pr||(it.pr===pk.it.pr&&it.due<pk.it.due))pk={b,s,it};
+  }
+  if(!pk)return;
+  pk.s.intents.splice(pk.s.intents.indexOf(pk.it),1);
+  const msg=compose(pk.b,pk.it);
+  if(msg)speak(pk.b,msg);
+};
+
+/* ---------- nghe & cập nhật niềm tin ---------- */
+function credOf(l,s){
+  const a=aiOf(l),lv=aiLv();
+  let c=.62+(a.pers.trust-.55)*.55;
+  if(a.clear[s.id])c+=.25;
+  c-=Math.max(0,(a.sus[s.id]||0))/1100;
+  return clamp01(c)*lv.ded+(1-lv.ded)*.45;
+}
+function hear(l,s,m){
+  const a=aiOf(l),M=G.mt.ai,T=G.time;
+  if(m.k==='accuse'){
+    if(m.t===l.id){queueReply(l,{k:'reply',t:s.id,m,pr:9});return}
+    const target=G.players[m.t];if(!target||!target.alive)return;
+    if(l.imp){
+      if(isMate(l,m.t)){
+        if(Math.random()<.6)queueReply(l,{k:'defendFor',t:m.t,pr:8});
+        if(!s.imp&&Math.random()<.3)queueReply(l,{k:'counter',t:s.id,pr:6});
+      }else if(Math.random()<.5)queueReply(l,{k:'agree',t:m.t,pr:5});
+      return;
+    }
+    const cred=credOf(l,s);
+    let w=0;
+    if(m.why==='witness'){
+      const own=a.ev.find(e=>e.type==='kill');
+      if(own&&(own.victim===m.victim||m.victim===undefined||own.victim===M.victim)){
+        if(own.killer===m.t){a.sus[s.id]=(a.sus[s.id]||0)-100}
+        else{a.sus[s.id]=(a.sus[s.id]||0)+800;queueReply(l,{k:'counterWit',t:s.id,pr:9})}
+        return;
+      }
+      // người khác tuyên bố đã thấy tận mắt: chỉ tin khi người đó từng ở gần xác hoặc đáng tin
+      w=560*cred;
+      const nearBody=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(s.id));
+      if(nearBody){w*=.6;a.sus[s.id]=(a.sus[s.id]||0)+90}
+      if(a.clear[m.t]){a.sus[s.id]=(a.sus[s.id]||0)+380;queueReply(l,{k:'defendFor',t:m.t,pr:8});return}
+    }else if(m.why==='vent'){
+      const own=a.ev.find(e=>e.type==='vent'&&e.who===m.t);
+      w=own?60:330*cred;
+    }else if(m.why==='near'||m.why==='lie'){w=210*cred}
+    else if(m.why==='follow'){w=50*cred}
+    else w=85*cred;
+    if(a.clear[m.t]&&m.why!=='witness'){
+      // có bằng chứng người đó trong sạch: bảo vệ và nghi lại người buộc tội
+      a.sus[s.id]=(a.sus[s.id]||0)+60;queueReply(l,{k:'defendFor',t:m.t,pr:8});return;
+    }
+    // có ngoại phạm thật: bảo vệ
+    const c=a.contact[m.t];
+    if(c&&T-c.l<50&&c.tot>16&&w<450&&Math.random()<.7){queueReply(l,{k:'defendFor',t:m.t,pr:8});w*=.35}
+    a.hear[m.t]=(a.hear[m.t]||0)+w;
+    const sc=suspicion(l,m.t);
+    if(sc>=250&&Math.random()<.5*aiOf(l).pers.chatty+.15)queueReply(l,{k:'agree',t:m.t,pr:4});
+  }else if(m.k==='where'){
+    if(m.who!==s.id)return;
+    const sn=a.seen[s.id];
+    if(sn&&sn.t<=M.t0+.5){
+      const dt=M.t0-sn.t;
+      if(dt>=0&&dt<=14&&m.room!==null&&m.room!==undefined){
+        const far=rdist(sn.room,m.room);
+        if(far>140*dt+520&&!s.imp===!l.imp||far>140*dt+520){
+          a.sus[s.id]=(a.sus[s.id]||0)+360;
+          queueReply(l,{k:'challenge',t:s.id,claim:m.room,seen:sn.room,pr:8});
+        }else if(sn.room===m.room){a.sus[s.id]=(a.sus[s.id]||0)-50}
+      }
+    }
+  }else if(m.k==='ask'){
+    if(m.to===l.id)queueReply(l,{k:'where',pr:9});
+  }else if(m.k==='clear'){
+    if(l.imp)return;
+    if(!a.clear[m.t]&&!(a.sus[m.t]>=400)){a.hear[m.t]=(a.hear[m.t]||0)-120*credOf(l,s)}
+  }else if(m.k==='defend'){
+    if(l.imp)return;
+    a.hear[m.t]=(a.hear[m.t]||0)-70*credOf(l,s);
+  }else if(m.k==='sawnear'){
+    // "mình thấy X ở gần xác": đáng chú ý nhẹ
+    if(l.imp)return;
+    a.hear[m.t]=(a.hear[m.t]||0)+70*credOf(l,s);
+  }
+}
+
+/* ---------- đọc chat của người chơi ---------- */
+function parseChat(text,by){
+  const raw=String(text),n=normTxt(raw);
+  const metas=[],men=[];
+  G.players.forEach(p=>{
+    if(p===by)return;
+    const nm=normTxt(p.name).trim();if(!nm)return;
+    let hit=new RegExp('(^|[^a-z0-9])'+escRe(nm)+'($|[^a-z0-9])').test(n);
+    if(hit&&nm.length<=2)hit=new RegExp('(^|[^A-Za-zÀ-ỹ0-9])'+escRe(p.name)+'($|[^A-Za-zÀ-ỹ0-9])').test(raw);
+    if(hit)men.push({id:p.id,pos:n.indexOf(nm)});
+  });
+  men.sort((x,y)=>x.pos-y.pos);
+  const has=re=>re.test(n);
+  const ACC=/\b(nghi|sus|imp|impostor|imposter|sat nhan|killer|hung thu|thu pham|vote|bau|loai|bo phieu|giet|ra tay|dang ngo|kha nghi|bat thuong|chinh la|bi nghi|no la|do la)\b/;
+  const VENT=/\b(chui cong|cong|vent)\b/,SAW=/\b(thay|chung kien|tan mat|nhin thay)\b/,KILL=/\b(giet|ra tay|kill|hanh hung)\b/;
+  const DEF=/\b(khong phai|oan|trong sach|sach|innocent|tin|bao ve|di cung|o cung|khong sao)\b/,SKIP=/\b(skip|bo qua|khong vote|chua du|chua chac)\b/;
+  const Q=/(\?|\bdau\b|\bai\b|\bsao\b|\bgi\b|\bnao\b)/;
+  if(men.length){
+    const t=men[0].id,M=G.mt&&G.mt.ai;
+    if(SAW.test(n)&&KILL.test(n))metas.push({k:'accuse',t,why:'witness',victim:M?M.victim:undefined});
+    else if(has(VENT)&&SAW.test(n))metas.push({k:'accuse',t,why:'vent'});
+    else if(has(DEF)&&!has(/\b(nghi|sus|vote|bau|loai)\b/))metas.push({k:'defend',t,why:'alibi'});
+    else if(has(ACC))metas.push({k:'accuse',t,why:SAW.test(n)?'near':'vague'});
+    else if(Q.test(n))metas.push({k:'ask',to:t});
+  }else{
+    const rooms=[];ROOMS.forEach((r,i)=>{const nr=normTxt(r.n);if(nr.length>3&&n.includes(nr))rooms.push(i)});
+    if(rooms.length&&/\b(minh|toi|tui|tao|o|tai|lam)\b/.test(n))metas.push({k:'where',who:by.id,room:rooms[0],task:null,saw:[]});
+    if(has(SKIP))metas.push({k:'skip'});
+    if(Q.test(n)&&/\b(ai|nghi ai)\b/.test(n)&&/\b(nghi|imp|sat nhan|killer|dang ngo)\b/.test(n))metas.push({k:'askAll'});
+  }
+  return metas;
+}
+AI.onChat=function(p,text){
+  try{
+    if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;
+    const metas=parseChat(text,p);
+    M.log.push({by:p.id,text,metas,t:M.clock,human:true});M.lastMsg=M.clock;M.gap=rnd(2.5,4.5);
+    metas.forEach(m=>{
+      if(m.k==='askAll'){
+        const bots=G.players.filter(x=>x.isBot&&x.alive&&x!==p);
+        let did=false;
+        bots.forEach(b=>{if(suspicion(b,0)!==undefined){let best=0;G.players.forEach(q=>{if(q.alive&&q!==b){const sc=suspicion(b,q.id);if(sc>best)best=sc}});if(best>=250&&!did){queueReply(b,{k:'suspect',pr:9});did=true}}});
+        if(!did&&bots.length)queueReply(pick(bots),{k:'noinfo',pr:6});
+        return;
+      }
+      announce(p,m);
+    });
+  }catch(e){console.error('AI chat',e)}
+};
+
+/* ---------- bỏ phiếu ---------- */
+AI.decideVote=function(b){
+  try{return decideVote2(b)}catch(e){console.error('AI vote',e);return 'skip'}
+};
+function decideVote2(b){
+  const a=aiOf(b),M=G.mt.ai,lv=aiLv();
+  const al=G.players.filter(p=>p.alive&&p!==b);if(!al.length)return 'skip';
+  // thủ lĩnh đám đông công khai
+  let lead=null,lc=0;
+  al.forEach(p=>{const c=crowdOf(p.id);if(c>lc){lc=c;lead=p}});
+  if(b.imp){
+    const crew=al.filter(p=>!p.imp);if(!crew.length)return 'skip';
+    if(lead&&!lead.imp&&lc>=2&&Math.random()<.8)return lead.id;
+    if(lead&&lead.imp&&lc>=2){ // đồng đội bị nhắm: cố chia phiếu
+      if(Math.random()<.6){const fr=crew.filter(p=>crowdOf(p.id)>0);if(fr.length)return pick(fr).id}
+      return Math.random()<.5?'skip':pick(crew).id;
+    }
+    const fr=a.say.frame;if(fr!==null&&fr!==undefined&&G.players[fr]&&G.players[fr].alive&&!G.players[fr].imp&&Math.random()<.75)return fr;
+    if(lead&&!lead.imp&&lc>=1&&Math.random()<.6)return lead.id;
+    return Math.random()<.2?'skip':pick(crew).id;
+  }
+  // cư dân: bằng chứng + niềm tin + đám đông
+  let best=null,bs=-1e9;
+  al.forEach(p=>{
+    let sc=suspicion(b,p.id);
+    if(sc>-400)sc+=crowdOf(p.id)*55*lv.ded;
+    if(sc>bs){bs=sc;best=p}
+  });
+  const crewLeft=G.players.filter(p=>p.alive&&!p.imp).length;
+  if(bs>=640)return best.id;
+  const thr=crewLeft<=3?420:300;
+  if(bs>=thr&&Math.random()<.35+.6*lv.ded)return best.id;
+  if(lead&&lc>=2&&!a.clear[lead.id]&&suspicion(b,lead.id)>-100&&Math.random()<(.35+a.pers.trust*.45)*lv.ded+.1&&crewLeft>3)return lead.id;
+  return 'skip';
 }
 
 /* ===== UPDATE / DRAW ===== */
@@ -1812,7 +3025,7 @@ function update(dt){
   if(G.state==='meeting'){meetingTick(dt);return}
   if(G.state==='play'||G.state==='reveal'){
     const m=G.me;
-    if(G.state==='play'&&!G.busy&&!m.inVent&&m.ventT<=0){
+    if(G.state==='play'&&!G.busy&&!G.cineBusy&&!m.inVent&&m.ventT<=0){
       let dx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0)+joy.x;
       let dy=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0)+joy.y;
       const l=Math.hypot(dx,dy);
@@ -1836,14 +3049,14 @@ function update(dt){
 }
 function snapshot(){
   const base={t:'s',p:G.players.map(p=>[Math.round(p.x),Math.round(p.y),p.face,p.alive?1:0,p.disg,Math.round(p.sft*10)/10,p.shiftPhase,p.shiftAnim,Math.round(p.ventT*10)/10,p.inVent?1:0,Math.round(p.ventPop*10)/10,Math.round(p.ventCd*10)/10,p.ventFrom??-1,p.ventTo??-1]),
-    b:G.bodies.map(b=>[Math.round(b.x),Math.round(b.y),b.color,b.name]),d:G.done,sb:[G.sab.l?1:0,Math.ceil(G.sab.p),Math.ceil(G.sab.d),Math.round(G.sab.dx),Math.round(G.sab.dy),Math.ceil(Math.max(0,G.sab.cd))],doors:G.closedDoors.map(d=>[d.i,Math.max(0,d.until-G.time),d.owner]),sn:scanActive()?[G.scan.by,Math.round((G.time-G.scan.t0)*100)/100,G.scan.dur]:0};
+    b:G.bodies.map(b=>[Math.round(b.x),Math.round(b.y),b.color,b.name,b.weapon||'knife']),d:G.done,sb:[G.sab.l?1:0,Math.ceil(G.sab.p),Math.ceil(G.sab.d),Math.round(G.sab.dx),Math.round(G.sab.dy),Math.ceil(Math.max(0,G.sab.cd))],doors:G.closedDoors.map(d=>[d.i,Math.max(0,d.until-G.time),d.owner]),sn:scanActive()?[G.scan.by,Math.round((G.time-G.scan.t0)*100)/100,G.scan.dur]:0};
   G.players.forEach(p=>{if(p.conn)send(p.conn,Object.assign({c:Math.ceil(Math.max(0,p.cd)),mt:p.meetings,sc:Math.ceil(Math.max(0,p.scd))},base))});
 }
 function updateHUD(){
   const m=G.me;
   $('barf').style.width=Math.min(100,G.done/G.total*100)+'%';
-  $('tasks').innerHTML='<b>'+(m.imp?'Nhiệm vụ giả:':'Nhiệm vụ:')+'</b><br>'+m.tasks.map(t=>`<div class="${t.done?'d':''}">${ROOMS[t.room].n}: ${t.n}</div>`).join('');
-  const play=G.state==='play'&&!G.busy;
+  {const tb=$('btnTask'),lb='NHIỆM VỤ<br>'+m.tasks.filter(t=>t.done).length+'/'+m.tasks.length;tb.hidden=G.state!=='play';if(tb._lb!==lb){tb._lb=lb;tb.innerHTML=lb}}
+  const play=G.state==='play'&&!G.busy&&!G.cineBusy;
   const ventHere=!!(play&&m.imp&&m.alive&&G.abilities.vent&&nearestVent());
   $('btnUse').hidden=!(play&&(ventHere||nearTask()||nearMeetBtn()||nearFix()||nearConsole()));
   if(ventHere)$('btnUse').innerHTML='CHUI CỐNG<br>(E)';else if(nearConsole()&&play)$('btnUse').innerHTML='CAMERA<br>(E)';else $('btnUse').innerHTML='DÙNG<br>(E)';
@@ -1859,12 +3072,16 @@ function drawChar(x,y,color,face,alpha,name,dead,nameCol){
   ctx.save();ctx.globalAlpha=alpha;ctx.translate(x,y);
   const sw=Math.sin(performance.now()/180+x*.01)*2;
   if(dead){
-    ctx.strokeStyle='#000b';ctx.lineWidth=2.5;ctx.fillStyle=color;
-    ctx.beginPath();ctx.ellipse(0,10,24,9,0,0,7);ctx.fill();ctx.stroke();
-    ctx.fillStyle='#fff3';ctx.beginPath();ctx.ellipse(-6,7,9,3,0,0,7);ctx.fill();
-    ctx.strokeStyle='#000b';ctx.beginPath();ctx.moveTo(-8,3);ctx.quadraticCurveTo(-18,-6,-24,0);ctx.moveTo(8,3);ctx.quadraticCurveTo(18,-6,24,0);ctx.stroke();
-    ctx.fillStyle=color;[[-24,0],[24,0]].forEach(p=>{ctx.beginPath();ctx.arc(p[0],p[1],3.5,0,7);ctx.fill();ctx.stroke()});
-    ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-4,5);ctx.lineTo(4,13);ctx.moveTo(4,5);ctx.lineTo(-4,13);ctx.stroke();
+    ctx.fillStyle='#0007';ctx.beginPath();ctx.ellipse(0,19,25,6,0,0,Math.PI*2);ctx.fill();
+    ctx.rotate(Math.PI/2);ctx.scale(.62,1.18);
+    ctx.lineWidth=2.5;ctx.strokeStyle='#000b';ctx.fillStyle=color;
+    // Antennae, little feet and side fin are retained from the living avatar.
+    [-1,1].forEach(sd=>{const ex=sd*13;ctx.beginPath();ctx.moveTo(sd*6,-14);ctx.quadraticCurveTo(sd*9,-24,ex,-31);ctx.stroke();ctx.beginPath();ctx.arc(ex,-31,4,0,Math.PI*2);ctx.fillStyle='#ffe066';ctx.fill();ctx.stroke()});
+    [-8,8].forEach(px=>{ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(px,17,6,5,0,0,Math.PI*2);ctx.fill();ctx.stroke()});
+    ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(-face*15,-2);ctx.quadraticCurveTo(-face*29,2+sw,-face*24,12);ctx.quadraticCurveTo(-face*18,12,-face*14,8);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,-17);ctx.bezierCurveTo(17,-17,19,0,17,10);ctx.bezierCurveTo(15,19,-15,19,-17,10);ctx.bezierCurveTo(-19,0,-17,-17,0,-17);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.fillStyle='#fff2';ctx.beginPath();ctx.ellipse(0,9,11,6,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#171523';ctx.lineWidth=3.2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(face*0-5,-8);ctx.lineTo(face*5,2);ctx.moveTo(face*5,-8);ctx.lineTo(face*0,2);ctx.stroke();
     ctx.restore();return}
   ctx.fillStyle='#0005';ctx.beginPath();ctx.ellipse(0,19,16,5,0,0,7);ctx.fill();
   ctx.lineWidth=2.5;ctx.strokeStyle='#000b';ctx.fillStyle=color;
@@ -1976,7 +3193,6 @@ function draw(){
   drawGameDevices(T);
   drawScanPad(T);
   m.tasks.forEach(t=>drawStation(t,T));
-  G.bodies.forEach(b=>{if(!m.inVent&&dist(b,m)<=R_VIEW(m)+20&&hasLineOfSight(m.x,m.y,b.x,b.y))drawChar(b.x,b.y,b.color,1,1,null,true)});
   const vis=G.players.slice().sort((a,b)=>a.y-b.y);
   vis.forEach(p=>{
     if(p===m)return;
@@ -1986,6 +3202,8 @@ function draw(){
     let L=lk(p);if(p.disg>=0&&((p.shiftPhase==='in'&&p.shiftAnim<.5)||(p.shiftPhase==='out'&&p.shiftAnim<=.5)))L=p;if(p.ventPop>0)drawVentPulse(p.x,p.y,T,p.ventPop);if(p.shiftPhase==='in'||p.shiftPhase==='out')drawShiftPulse(p.x,p.y,T,p.shiftAnim,p.shiftPhase);drawChar(p.x,p.y,L.color,p.face,p.alive?1:.4,L.name+(m.imp&&p.imp&&p!==L?' ≈':''),false,nc);
   });
   let LM=lk(m);if(m.disg>=0&&((m.shiftPhase==='in'&&m.shiftAnim<.5)||(m.shiftPhase==='out'&&m.shiftAnim<=.5)))LM=m;if(!m.inVent){if(m.ventPop>0)drawVentPulse(m.x,m.y,T,m.ventPop);if(m.shiftPhase==='in'||m.shiftPhase==='out')drawShiftPulse(m.x,m.y,T,m.shiftAnim,m.shiftPhase);drawChar(m.x,m.y,LM.color,m.face,m.alive?1:.45,LM.name,false,m.imp?'#ff5a6a':'#fff');}else drawVentPulse(m.x,m.y,T,Math.min(1,m.ventT));
+  // Draw corpses above player sprites so a killer standing at the kill spot cannot hide the body.
+  G.bodies.forEach(b=>{if(!m.inVent&&dist(b,m)<=R_VIEW(m)+20&&hasLineOfSight(m.x,m.y,b.x,b.y))drawChar(b.x,b.y,b.color,1,1,null,true)});
   drawScanFx(T);
   drawParticles(cx,cy,W,H,T);
   ctx.restore();
