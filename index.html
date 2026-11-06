@@ -2823,473 +2823,11 @@ function botUpdate(b,dt){
    chất vấn mâu thuẫn, bảo vệ người vô tội, sát nhân nói dối có kiểm soát.
    =================================================================== */
 const DISC_T=24;
-const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-const normTxt=s=>String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d');
-const pickT=(arr,s,key)=>{
-  const used=s.used[key]||(s.used[key]=new Set());
-  let c=arr.map((_,i)=>i).filter(i=>!used.has(i));if(!c.length){used.clear();c=arr.map((_,i)=>i)}
-  const i=c[(Math.random()*c.length)|0];used.add(i);return arr[i];
-};
-const isMate=(b,id)=>!!(b.imp&&G.players[id]&&G.players[id].imp);
+/* Não chat & họp của bot nằm ở 2 khối script cuối file: BOT DATA (chữ) + BOT BRAIN (logic).
+   Hai khối đó nằm ngay sau script chính (cuối file) và ghi đè các hàm AI.* bên dưới.  */
+AI.onMeetingStart=function(){};AI.onMeetingEnd=function(){};AI.onResult=function(){};
+AI.talkTick=function(){};AI.readyTick=function(){};AI.onChat=function(){};AI.decideVote=function(){return 'skip'};
 
-/* ---------- khởi tạo / kết thúc họp ---------- */
-AI.onMeetingStart=function(by,body){
-  const mt=G.mt;if(!mt)return;
-  const M=mt.ai={clock:0,lastMsg:0,gap:3,log:[],acc:{},t0:G.time,by,body:body||null,victim:body?body.id:null,
-    room:body?roomAt(body.x,body.y):null,asked:{},ejected:null};
-  mt.t=G.discT>0?G.discT:60;mt.inf=!(G.discT>0);
-  G.players.forEach(b=>{
-    if(!b.isBot||!b.alive)return;
-    const a=aiOf(b);a.path=[];a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
-    a.goal=null;b.path=[];a.pathFor=null;if(a.cam&&a.cam.on)stopCam(b,a);
-    buildIntents(b,a,M);
-    mt.botVoteAt[b.id]=rnd(3,13)*aiLv().react;
-  });
-};
-AI.onMeetingEnd=function(){
-  if(!G)return;
-  G.players.forEach(b=>{
-    if(!b.isBot)return;const a=aiOf(b);
-    a.goal=null;b.path=[];a.pathFor=null;a.react=null;a.mylog=[];a.myRoom=-1;a.stuck=0;a.doorWait=0;
-    if(a.cam&&a.cam.on)stopCam(b,a);
-    for(const k in a.hear)a.hear[k]*=.55;
-    a.imp.post=null;a.imp.ambush=0;a.fear=Math.max(a.fear,G.players.some(p=>!p.alive)?.35:0);
-  });
-};
-AI.onResult=function(ejId){
-  if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;M.ejected=ejId;
-  const ej=ejId!==null&&ejId!==undefined?G.players[ejId]:null;
-  if(!ej)return;
-  G.players.forEach(b=>{
-    if(!b.isBot||!b.alive)return;const a=aiOf(b);
-    if(b.imp)return;
-    const acc=M.acc[ejId];
-    if(!ej.imp){
-      // bị đuổi oan: những người đẩy mạnh nhất đáng ngờ hơn; ai tuyên bố "tận mắt thấy" thì gần như chắc nói dối
-      if(acc)acc.by.forEach(sid=>{if(sid!==b.id)a.sus[sid]=(a.sus[sid]||0)+(acc.certain?260:90)});
-      M.log.forEach(l=>{if(l.metas)l.metas.forEach(m=>{if(m.k==='witness'&&m.t===ejId&&l.by!==b.id)a.sus[l.by]=(a.sus[l.by]||0)+520})});
-      a.fear=Math.min(1,a.fear+.2);
-    }else{
-      if(acc)acc.by.forEach(sid=>{a.sus[sid]=(a.sus[sid]||0)-70});
-      a.fear=Math.max(0,a.fear-.3);
-    }
-  });
-};
-
-/* ---------- bằng chứng → ý định phát biểu ---------- */
-function buildIntents(b,a,M){
-  const s=a.say,T=G.time,I=s.intents,react=aiLv().react;
-  const chatty=a.pers.chatty,add=(k,due,pr,extra)=>I.push({k,due,pr,...extra});
-  let t0=rnd(1.4,6)/(.55+chatty*.6);
-  if(!b.imp){
-    const kills=a.ev.filter(e=>e.type==='kill'&&T-e.t<240).slice(-1);
-    kills.forEach(e=>add('witness',rnd(.9,1.8),9,{ev:e}));
-    a.ev.filter(e=>e.type==='morph'&&T-e.t<240).slice(-1).forEach(e=>add('morph',rnd(1,2.2),9,{ev:e}));
-    a.ev.filter(e=>e.type==='vent'&&T-e.t<240).slice(-1).forEach(e=>add('vent',rnd(1.2,2.6),8,{ev:e}));
-    a.ev.filter(e=>e.type==='scan'&&T-e.t<240).slice(-1).forEach(e=>add('clearScan',t0+rnd(1,3),3,{ev:e}));
-  }
-  if(M.by===b&&M.body)add('report',rnd(.5,.9),10,{});
-  add('where',t0,6,{});
-  add('suspect',t0+rnd(2.5,5.5),5,{});
-  if(Math.random()<.5*chatty)add('ask',t0+rnd(4,8),2,{});
-}
-function queueReply(b,it){
-  const a=aiOf(b),s=a.say,M=G.mt.ai;
-  if(s.count>=6)return;
-  if(s.intents.some(i=>i.k===it.k&&i.t===it.t&&i.to===it.to))return;
-  s.intents.push({due:M.clock+rnd(.7,2.1)*aiLv().react,pr:it.pr||7,...it});
-}
-
-/* ---------- câu trả lời theo sự thật ---------- */
-function bodyRoomName(M){return M.room!==null&&M.room!==undefined?rname(M.room):null}
-function trueWhere(b,a,M){
-  const T=G.time,log=a.mylog;
-  const room=a.myRoom>=0?a.myRoom:roomAt(b.x,b.y);   // phòng lúc cuộc họp được triệu tập
-  let te=null;for(let i=log.length-1;i>=0;i--)if(log[i].task&&T-log[i].t<150){te=log[i];break}
-  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&T-log[i].t<150){prev=log[i].room;break}
-  return {room,task:te&&te.room===room?te.task:null,doneAt:te&&te.room!==room?{room:te.room,task:te.task}:null,prev};
-}
-function fakeWhere(b,a,M){
-  const T=G.time,log=a.mylog,bad=M.room;
-  let room=null;
-  for(let i=log.length-1;i>=0;i--)if(log[i].room!==bad&&T-log[i].t<150){room=log[i].room;break}
-  const tasks=b.tasks.filter(t=>!t.done&&t.room!==bad);
-  let task=null;
-  if(room!==null){const m=tasks.find(t=>t.room===room);if(m)task=m.n}
-  if(room===null&&tasks.length){const t=pick(tasks);room=t.room;task=t.n}
-  if(room===null){room=(bad+1)%ROOMS.length}
-  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&log[i].room!==bad&&T-log[i].t<150){prev=log[i].room;break}
-  return {room,task,prev};
-}
-function sawList(b,a,M,max,avoid){
-  const T=G.time,out=[];
-  for(const k in a.seen){
-    const id=+k,sn=a.seen[k];if(id===b.id||id===M.victim||(avoid&&avoid.includes(id)))continue;
-    if(T-sn.t>70||sn.t>M.t0+.5)continue;
-    const p=G.players[id];if(!p||!p.alive)continue;
-    out.push({id,room:sn.room,t:sn.t});
-  }
-  out.sort((x,y)=>y.t-x.t);return out.slice(0,max);
-}
-function alibiWitness(b,a){
-  const T=G.time;let best=null,bt=14;
-  for(const k in a.contact){const c=a.contact[k],id=+k,p=G.players[id];if(!p||!p.alive||id===b.id)continue;if(T-c.l<60&&c.tot>bt){bt=c.tot;best={id,room:c.room}}}
-  return best;
-}
-const NAMEPH=['A','B'];
-function trueWhereText(b,a,M,w,sawL,s){
-  let t;
-  if(w.task){
-    t=pickT([`Mình làm "${w.task}" ở ${rname(w.room)}.`,`Nãy giờ mình ở ${rname(w.room)} làm "${w.task}" nè.`,`Mình đang làm "${w.task}" ở ${rname(w.room)}.`,`Mình ở ${rname(w.room)}, làm "${w.task}".`],s,'wt');
-  }else if(w.doneAt){
-    t=pickT([`Mình vừa làm "${w.doneAt.task}" ở ${rname(w.doneAt.room)} rồi đi qua ${rname(w.room)}.`,`Mình mới xong "${w.doneAt.task}" ở ${rname(w.doneAt.room)}, giờ đang ở ${rname(w.room)}.`],s,'wd');
-  }else t=pickT([`Mình chỉ đi ngang qua ${rname(w.room)} thôi, chưa làm gì nhiều.`,`Mình đang đi quanh ${rname(w.room)} nãy giờ.`],s,'wn');
-  if(!w.doneAt&&w.prev!==null&&Math.random()<.55)t+=pickT([` Trước đó mình ở ${rname(w.prev)}.`,` Mình vừa từ ${rname(w.prev)} qua.`],s,'wp');
-  if(sawL.length&&Math.random()<.8){
-    const x=sawL[0],y=sawL[1];
-    t+=y?` Mình có thấy ${pname(x.id)} ở ${rname(x.room)} và ${pname(y.id)} ở ${rname(y.room)}.`:` Mình có thấy ${pname(x.id)} ở ${rname(x.room)}.`;
-  }
-  return t;
-}
-
-/* ---------- soạn lời ---------- */
-function tone(b,a,t){
-  if(a.pers.casual&&a.pers.chatty>.55)t=t.replace(/\bMình\b/g,'Tui').replace(/\bmình\b/g,'tui');
-  return t;
-}
-function compose(b,it){
-  const a=aiOf(b),s=a.say,M=G.mt.ai,T=G.time,imp=b.imp;
-  let text=null,meta=null;
-  switch(it.k){
-    case 'report':{
-      const bd=M.body;if(!bd)return null;
-      const room=rname(roomAt(bd.x,bd.y)),v=bd.name;
-      text=pickT([`Mình vừa thấy xác ${v} ở ${room}!`,`${v} chết ở ${room} rồi. Mình báo cáo.`,`Có xác ${v} ở ${room}! Ai ở gần đó không?`,`Báo cáo: xác ${v} nằm ở ${room}.`],s,'rep');
-      const ev=a.ev.find(e=>e.type==='body'&&e.victim===bd.id);
-      if(!imp&&ev&&ev.near){const nx=ev.near.filter(i=>i!==b.id&&i!==bd.id&&G.players[i]&&G.players[i].alive);
-        if(nx.length&&Math.random()<.75){const x=pick(nx);text+=pickT([` Lúc nãy mình có thấy ${pname(x)} ở gần đó.`,` Trước khi thấy xác, mình thấy ${pname(x)} quanh đây.`],s,'repn');meta={k:'sawnear',t:x}}}
-      break}
-    case 'witness':{
-      const e=it.ev;if(!e)return null;
-      const kp=G.players[e.killer];if(!kp||!kp.alive)return null;
-      const room=rname(e.room),v=pname(e.victim);
-      text=pickT([`Mình tận mắt thấy ${kp.name} giết ${v} ở ${room}! Vote ${kp.name} đi!`,`${kp.name} là sát nhân! Mình thấy rõ ${kp.name} ra tay với ${v} ở ${room}.`,`Mình thấy hết rồi: ${kp.name} giết ${v}. Đừng ai tin ${kp.name} nữa!`],s,'wit');
-      if(e.cam)text=`Mình đang xem camera, thấy ${kp.name} giết ${v} ở ${room}! Vote ${kp.name}!`;
-      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
-    case 'morph':{
-      const e=it.ev;const A=G.players[e.who],B=G.players[e.as];if(!A||!A.alive||!B)return null;
-      text=pickT([`${A.name} vừa biến thành ${B.name} ngay trước mặt mình ở ${rname(e.room)}! ${A.name} là sát nhân!`,`Mình thấy ${A.name} hóa hình thành ${B.name} ở ${rname(e.room)}. Chắc chắn ${A.name} là sát nhân.`],s,'mor');
-      meta={k:'accuse',t:A.id,why:'witness',victim:M.victim};break}
-    case 'vent':{
-      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
-      text=pickT([`Mình thấy ${A.name} chui cống ở ${rname(e.room)}. Cư dân đâu có chui cống được!`,`${A.name} vừa chui vào cống ở ${rname(e.room)}, mình thấy tận mắt luôn.`,`${A.name} chui cống kìa! Mình thấy ở ${rname(e.room)}.`],s,'ven');
-      meta={k:'accuse',t:A.id,why:'vent'};break}
-    case 'clearScan':{
-      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
-      text=pickT([`Mình thấy ${A.name} quét thân thể xong rồi, ${A.name} sạch nha.`,`${A.name} vừa quét thân thể ở ${rname(e.room)}, không có gì bất thường. Đừng nghi ${A.name}.`],s,'clr');
-      meta={k:'clear',t:A.id,why:'scan'};break}
-    case 'where':{
-      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
-      let sawL=sawList(b,a,M,2);
-      if(imp){const fr=a.say.frame!==null&&a.say.frame!==undefined?a.say.frame:null;if(fr!==null){const sn=a.seen[fr];if(sn&&G.players[fr]&&G.players[fr].alive&&!sawL.find(x=>x.id===fr))sawL=[{id:fr,room:sn.room,t:sn.t},...sawL].slice(0,2)}}
-      text=trueWhereText(b,a,M,w,sawL,s);
-      meta={k:'where',who:b.id,room:w.room,task:w.task,saw:sawL};break}
-    case 'suspect':{
-      if(imp){
-        const fr=frameTarget(b,a,M);if(fr===null)return null;
-        const f=G.players[fr];a.say.frame=fr;
-        const sn=a.seen[fr],rm=sn&&M.t0-sn.t<80?rname(sn.room):(M.room!==null?rname(M.room):'đâu đó');
-        const opts=[`Mình thấy ${f.name} ở ${rm} lúc nãy, cư xử lạ lắm.`,`${f.name} đi một mình hoài, mình thấy hơi đáng nghi.`,`Không ai nói được ${f.name} ở đâu cả. Mình nghi ${f.name}.`];
-        text=pickT(opts,s,'frm');meta={k:'accuse',t:fr,why:'vague'};
-        break}
-      let best=null,bs=0;
-      G.players.forEach(p=>{if(!p.alive||p===b||p.imp&&false)return;const sc=suspicion(b,p.id);if(sc>bs){bs=sc;best=p}});
-      if(!best||bs<250)return null;
-      const nb=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(best.id));
-      if(nb){const sn=a.seen[best.id];text=pickT([`${best.name} ở gần chỗ xác lúc nãy, mình thấy ${best.name} ở ${rname(sn?sn.room:nb.room)}. Hơi đáng nghi đó.`,`Trước khi có xác, mình thấy ${best.name} quanh ${rname(nb.room)}. Mình nghi ${best.name}.`],s,'sus');meta={k:'accuse',t:best.id,why:'near'}}
-      else{text=pickT([`Nghe mọi người nói thì mình cũng thấy ${best.name} đáng ngờ.`,`Mình nghi ${best.name}, nhiều chi tiết không khớp.`],s,'sush');meta={k:'accuse',t:best.id,why:'hear'}}
-      break}
-    case 'ask':{
-      const cands=G.players.filter(p=>p.alive&&p!==b&&!M.asked[p.id]&&!(imp&&p.imp&&false));
-      if(!cands.length)return null;
-      const p=pick(cands);M.asked[p.id]=1;
-      text=pickT([`${p.name} lúc nãy ở đâu vậy?`,`${p.name} làm gì ở đâu nãy giờ, kể mình nghe với.`],s,'ask');meta={k:'ask',to:p.id};break}
-    case 'reply':{ // mình bị buộc tội
-      const acc=G.players[it.t];if(!acc)return null;
-      const m=it.m||{};
-      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
-      const al=imp?null:alibiWitness(b,a);
-      let head;
-      if(m.why==='witness')head=pickT([`${acc.name} nói dối! Mình có giết ai đâu.`,`Khoan! ${acc.name} thấy mình giết ở đâu? Nói rõ ra đi.`,`${acc.name} đang vu oan cho mình đó.`],s,'rw');
-      else head=pickT([`Mình không phải đâu!`,`Oan quá trời.`,`Sao lại nghi mình? Mình đâu có làm gì.`,`Không phải mình đâu nha.`],s,'rh');
-      let body;
-      if(al)body=` Nãy giờ mình đi cùng ${pname(al.id)} ở ${rname(al.room)} mà.`;
-      else if(w.task)body=` Mình ở ${rname(w.room)} làm "${w.task}" mà.`;
-      else body=` Mình ở ${rname(w.room)} nãy giờ.`;
-      let tail='';
-      if(Math.random()<.4)tail=pickT([` ${acc.name} có bằng chứng gì không?`,` ${acc.name} thấy mình ở đâu vậy?`],s,'rt');
-      text=head+body+tail;
-      meta=al?{k:'where',who:b.id,room:al.room,task:null,saw:[{id:al.id,room:al.room,t:T}]}:{k:'where',who:b.id,room:w.room,task:w.task,saw:[]};
-      if(imp&&Math.random()<.5){queueReply(b,{k:'counter',t:acc.id,pr:7})}
-      break}
-    case 'counter':{ // sát nhân phản công người buộc tội mình
-      const acc=G.players[it.t];if(!acc||!acc.alive||acc.imp)return null;
-      text=pickT([`Mình thấy ${acc.name} mới là người đáng nghi, đang cố đổ tội cho người khác.`,`Cẩn thận ${acc.name} nha, tự dưng buộc tội mình mà không có bằng chứng.`],s,'ctr');
-      meta={k:'accuse',t:acc.id,why:'vague'};a.say.frame=acc.id;break}
-    case 'defendFor':{ // bảo vệ người khác
-      const T2=G.players[it.t];if(!T2||!T2.alive)return null;
-      if(a.clear[T2.id]==='scan'){text=pickT([`${T2.name} vừa quét thân thể xong, sạch mà. Đừng nghi ${T2.name}.`],s,'dfs');meta={k:'clear',t:T2.id,why:'scan'};break}
-      if(imp){
-        const w=fakeWhere(b,a,M);
-        text=pickT([`Mình thấy ${T2.name} làm nhiệm vụ ở ${rname(w.room)} mà, không phải ${T2.name} đâu.`,`Khoan, ${T2.name} đâu có làm gì đâu. Đừng vote bậy.`],s,'dfi');
-      }else{
-        const c=a.contact[T2.id];
-        if(!c||T-c.l>60)return null;
-        text=pickT([`Khoan, mình đi cùng ${T2.name} ở ${rname(c.room)} một lúc lâu, không phải ${T2.name} đâu.`,`${T2.name} ở cạnh mình nãy giờ mà. Mình không thấy gì bất thường.`],s,'dfc');
-      }
-      meta={k:'defend',t:T2.id,why:'alibi'};break}
-    case 'counterWit':{ // người khác nói dối về vụ giết
-      const sp=G.players[it.t];const e=a.ev.find(x=>x.type==='kill');if(!sp||!e)return null;
-      const kp=G.players[e.killer];if(!kp)return null;
-      text=pickT([`${sp.name} nói sai rồi, mình thấy ${kp.name} ra tay chứ không phải người ${sp.name} nói.`,`Không đúng! Mình tận mắt thấy ${kp.name} giết, ${sp.name} đừng nói dối.`],s,'cw');
-      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
-    case 'challenge':{
-      const sp=G.players[it.t];if(!sp||!sp.alive)return null;
-      text=pickT([`${sp.name} nói ở ${rname(it.claim)} nhưng mình mới thấy ${sp.name} ở ${rname(it.seen)} mà? Giải thích đi.`,`Khoan, ${sp.name} bảo ở ${rname(it.claim)}, mà mình thấy ${sp.name} ở ${rname(it.seen)}. Hơi lạ nha.`],s,'chl');
-      meta={k:'accuse',t:sp.id,why:'lie'};break}
-    case 'agree':{
-      const t=G.players[it.t];if(!t||!t.alive)return null;
-      text=pickT([`Mình cũng thấy ${t.name} đáng nghi.`,`Đồng ý, ${t.name} nhiều điểm lạ lắm.`,`Mình ủng hộ nghi ${t.name}.`],s,'agr');
-      meta={k:'accuse',t:t.id,why:'follow'};break}
-    case 'noinfo':{
-      text=pickT([`Mình chưa thấy gì đủ chắc để kết luận ai cả.`,`Chưa có bằng chứng thì mình không muốn vote bừa đâu.`,`Ai thấy gì cụ thể thì nói đi, mình đối chiếu cho.`],s,'noi');break}
-  }
-  if(!text)return null;
-  if(text===s.last)return null;
-  return {text:tone(b,a,text),meta,raw:text};
-}
-function frameTarget(b,a,M){
-  if(a.say.frame!==null&&a.say.frame!==undefined&&G.players[a.say.frame]&&G.players[a.say.frame].alive)return a.say.frame;
-  let best=null,bs=-1e9;
-  G.players.forEach(p=>{
-    if(!p.alive||p===b||p.imp)return;
-    if(Object.values(M.acc).some(()=>false))return;
-    let sc=Math.random()*60;
-    const ac=M.acc[p.id];if(ac)sc+=ac.by.size*130;
-    const clrd=G.players.some(q=>q.isBot&&q.ai&&q.ai.clear[p.id]);if(clrd)sc-=220;
-    const sn=a.seen[p.id];if(sn&&M.t0-sn.t<70&&sn.room===M.room)sc+=160;
-    if(!p.isBot)sc+=25;
-    if(sc>bs){bs=sc;best=p.id}
-  });
-  return best;
-}
-
-/* ---------- phát ngôn ---------- */
-function speak(b,msg){
-  const M=G.mt.ai,a=aiOf(b);
-  addChat(b,msg.text);if(NET.role==='host')bcast({t:'chat',id:b.id,text:msg.text});
-  M.lastMsg=M.clock;M.gap=rnd(3,5)+String(msg.text).length*.04;a.say.count++;a.say.last=msg.raw||msg.text;
-  M.log.push({by:b.id,text:msg.text,metas:msg.meta?[msg.meta]:[],t:M.clock});
-  if(msg.meta)announce(b,msg.meta);
-}
-function announce(s,m){
-  const M=G.mt.ai;
-  if(m.k==='accuse'&&m.t!==undefined){
-    const r=M.acc[m.t]||(M.acc[m.t]={by:new Set(),certain:false});r.by.add(s.id);if(m.why==='witness')r.certain=true;
-  }
-  G.players.forEach(l=>{if(l.isBot&&l.alive&&l!==s)try{hear(l,s,m)}catch(e){console.error('AI hear',e)}});
-}
-AI.readyTick=function(){
-  const mt=G.mt;if(!mt||!mt.ai||mt.phase!=='discuss')return;const M=mt.ai;M.rdy=M.rdy||{};
-  G.players.forEach(b=>{
-    if(!b.isBot||!b.alive||mt.ready[b.id])return;
-    const a=aiOf(b),s=a.say||{intents:[],count:99};
-    const done=s.intents.length===0||s.count>=3+Math.round(a.pers.chatty*2*aiLv().chat);
-    if(!done){M.rdy[b.id]=null;return}
-    if(M.rdy[b.id]==null)M.rdy[b.id]=M.clock+rnd(6,14);
-    if(M.clock>=M.rdy[b.id]&&M.clock-M.lastMsg>4)setReady(b);
-  });
-  checkAllReady();
-};
-AI.talkTick=function(dt){
-  const mt=G.mt;if(!mt||!mt.ai)return;const M=mt.ai;M.clock+=dt;
-  if(M.clock-M.lastMsg<(M.gap||0))return;
-  let pk=null;
-  for(const b of G.players){
-    if(!b.isBot||!b.alive)continue;const s=aiOf(b).say;if(!s)continue;
-    if(s.count>=3+Math.round(aiOf(b).pers.chatty*2*aiLv().chat))continue;
-    const it=s.intents.filter(i=>i.due<=M.clock).sort((x,y)=>y.pr-x.pr)[0];if(!it)continue;
-    if(!pk||it.pr>pk.it.pr||(it.pr===pk.it.pr&&it.due<pk.it.due))pk={b,s,it};
-  }
-  if(!pk)return;
-  pk.s.intents.splice(pk.s.intents.indexOf(pk.it),1);
-  const msg=compose(pk.b,pk.it);
-  if(msg)speak(pk.b,msg);
-};
-
-/* ---------- nghe & cập nhật niềm tin ---------- */
-function credOf(l,s){
-  const a=aiOf(l),lv=aiLv();
-  let c=.62+(a.pers.trust-.55)*.55;
-  if(a.clear[s.id])c+=.25;
-  c-=Math.max(0,(a.sus[s.id]||0))/1100;
-  return clamp01(c)*lv.ded+(1-lv.ded)*.45;
-}
-function hear(l,s,m){
-  const a=aiOf(l),M=G.mt.ai,T=G.time;
-  if(m.k==='accuse'){
-    if(m.t===l.id){queueReply(l,{k:'reply',t:s.id,m,pr:9});return}
-    const target=G.players[m.t];if(!target||!target.alive)return;
-    if(l.imp){
-      if(isMate(l,m.t)){
-        if(Math.random()<.6)queueReply(l,{k:'defendFor',t:m.t,pr:8});
-        if(!s.imp&&Math.random()<.3)queueReply(l,{k:'counter',t:s.id,pr:6});
-      }else if(Math.random()<.5)queueReply(l,{k:'agree',t:m.t,pr:5});
-      return;
-    }
-    const cred=credOf(l,s);
-    let w=0;
-    if(m.why==='witness'){
-      const own=a.ev.find(e=>e.type==='kill');
-      if(own&&(own.victim===m.victim||m.victim===undefined||own.victim===M.victim)){
-        if(own.killer===m.t){a.sus[s.id]=(a.sus[s.id]||0)-100}
-        else{a.sus[s.id]=(a.sus[s.id]||0)+800;queueReply(l,{k:'counterWit',t:s.id,pr:9})}
-        return;
-      }
-      // người khác tuyên bố đã thấy tận mắt: chỉ tin khi người đó từng ở gần xác hoặc đáng tin
-      w=560*cred;
-      const nearBody=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(s.id));
-      if(nearBody){w*=.6;a.sus[s.id]=(a.sus[s.id]||0)+90}
-      if(a.clear[m.t]){a.sus[s.id]=(a.sus[s.id]||0)+380;queueReply(l,{k:'defendFor',t:m.t,pr:8});return}
-    }else if(m.why==='vent'){
-      const own=a.ev.find(e=>e.type==='vent'&&e.who===m.t);
-      w=own?60:330*cred;
-    }else if(m.why==='near'||m.why==='lie'){w=210*cred}
-    else if(m.why==='follow'){w=50*cred}
-    else w=85*cred;
-    if(a.clear[m.t]&&m.why!=='witness'){
-      // có bằng chứng người đó trong sạch: bảo vệ và nghi lại người buộc tội
-      a.sus[s.id]=(a.sus[s.id]||0)+60;queueReply(l,{k:'defendFor',t:m.t,pr:8});return;
-    }
-    // có ngoại phạm thật: bảo vệ
-    const c=a.contact[m.t];
-    if(c&&T-c.l<50&&c.tot>16&&w<450&&Math.random()<.7){queueReply(l,{k:'defendFor',t:m.t,pr:8});w*=.35}
-    a.hear[m.t]=(a.hear[m.t]||0)+w;
-    const sc=suspicion(l,m.t);
-    if(sc>=250&&Math.random()<.5*aiOf(l).pers.chatty+.15)queueReply(l,{k:'agree',t:m.t,pr:4});
-  }else if(m.k==='where'){
-    if(m.who!==s.id)return;
-    const sn=a.seen[s.id];
-    if(sn&&sn.t<=M.t0+.5){
-      const dt=M.t0-sn.t;
-      if(dt>=0&&dt<=14&&m.room!==null&&m.room!==undefined){
-        const far=rdist(sn.room,m.room);
-        if(far>140*dt+520&&!s.imp===!l.imp||far>140*dt+520){
-          a.sus[s.id]=(a.sus[s.id]||0)+360;
-          queueReply(l,{k:'challenge',t:s.id,claim:m.room,seen:sn.room,pr:8});
-        }else if(sn.room===m.room){a.sus[s.id]=(a.sus[s.id]||0)-50}
-      }
-    }
-  }else if(m.k==='ask'){
-    if(m.to===l.id)queueReply(l,{k:'where',pr:9});
-  }else if(m.k==='clear'){
-    if(l.imp)return;
-    if(!a.clear[m.t]&&!(a.sus[m.t]>=400)){a.hear[m.t]=(a.hear[m.t]||0)-120*credOf(l,s)}
-  }else if(m.k==='defend'){
-    if(l.imp)return;
-    a.hear[m.t]=(a.hear[m.t]||0)-70*credOf(l,s);
-  }else if(m.k==='sawnear'){
-    // "mình thấy X ở gần xác": đáng chú ý nhẹ
-    if(l.imp)return;
-    a.hear[m.t]=(a.hear[m.t]||0)+70*credOf(l,s);
-  }
-}
-
-/* ---------- đọc chat của người chơi ---------- */
-function parseChat(text,by){
-  const raw=String(text),n=normTxt(raw);
-  const metas=[],men=[];
-  G.players.forEach(p=>{
-    if(p===by)return;
-    const nm=normTxt(p.name).trim();if(!nm)return;
-    let hit=new RegExp('(^|[^a-z0-9])'+escRe(nm)+'($|[^a-z0-9])').test(n);
-    if(hit&&nm.length<=2)hit=new RegExp('(^|[^A-Za-zÀ-ỹ0-9])'+escRe(p.name)+'($|[^A-Za-zÀ-ỹ0-9])').test(raw);
-    if(hit)men.push({id:p.id,pos:n.indexOf(nm)});
-  });
-  men.sort((x,y)=>x.pos-y.pos);
-  const has=re=>re.test(n);
-  const ACC=/\b(nghi|sus|imp|impostor|imposter|sat nhan|killer|hung thu|thu pham|vote|bau|loai|bo phieu|giet|ra tay|dang ngo|kha nghi|bat thuong|chinh la|bi nghi|no la|do la)\b/;
-  const VENT=/\b(chui cong|cong|vent)\b/,SAW=/\b(thay|chung kien|tan mat|nhin thay)\b/,KILL=/\b(giet|ra tay|kill|hanh hung)\b/;
-  const DEF=/\b(khong phai|oan|trong sach|sach|innocent|tin|bao ve|di cung|o cung|khong sao)\b/,SKIP=/\b(skip|bo qua|khong vote|chua du|chua chac)\b/;
-  const Q=/(\?|\bdau\b|\bai\b|\bsao\b|\bgi\b|\bnao\b)/;
-  if(men.length){
-    const t=men[0].id,M=G.mt&&G.mt.ai;
-    if(SAW.test(n)&&KILL.test(n))metas.push({k:'accuse',t,why:'witness',victim:M?M.victim:undefined});
-    else if(has(VENT)&&SAW.test(n))metas.push({k:'accuse',t,why:'vent'});
-    else if(has(DEF)&&!has(/\b(nghi|sus|vote|bau|loai)\b/))metas.push({k:'defend',t,why:'alibi'});
-    else if(has(ACC))metas.push({k:'accuse',t,why:SAW.test(n)?'near':'vague'});
-    else if(Q.test(n))metas.push({k:'ask',to:t});
-  }else{
-    const rooms=[];ROOMS.forEach((r,i)=>{const nr=normTxt(r.n);if(nr.length>3&&n.includes(nr))rooms.push(i)});
-    if(rooms.length&&/\b(minh|toi|tui|tao|o|tai|lam)\b/.test(n))metas.push({k:'where',who:by.id,room:rooms[0],task:null,saw:[]});
-    if(has(SKIP))metas.push({k:'skip'});
-    if(Q.test(n)&&/\b(ai|nghi ai)\b/.test(n)&&/\b(nghi|imp|sat nhan|killer|dang ngo)\b/.test(n))metas.push({k:'askAll'});
-  }
-  return metas;
-}
-AI.onChat=function(p,text){
-  try{
-    if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;
-    const metas=parseChat(text,p);
-    M.log.push({by:p.id,text,metas,t:M.clock,human:true});M.lastMsg=M.clock;M.gap=rnd(2.5,4.5);
-    metas.forEach(m=>{
-      if(m.k==='askAll'){
-        const bots=G.players.filter(x=>x.isBot&&x.alive&&x!==p);
-        let did=false;
-        bots.forEach(b=>{if(suspicion(b,0)!==undefined){let best=0;G.players.forEach(q=>{if(q.alive&&q!==b){const sc=suspicion(b,q.id);if(sc>best)best=sc}});if(best>=250&&!did){queueReply(b,{k:'suspect',pr:9});did=true}}});
-        if(!did&&bots.length)queueReply(pick(bots),{k:'noinfo',pr:6});
-        return;
-      }
-      announce(p,m);
-    });
-  }catch(e){console.error('AI chat',e)}
-};
-
-/* ---------- bỏ phiếu ---------- */
-AI.decideVote=function(b){
-  try{return decideVote2(b)}catch(e){console.error('AI vote',e);return 'skip'}
-};
-function decideVote2(b){
-  const a=aiOf(b),M=G.mt.ai,lv=aiLv();
-  const al=G.players.filter(p=>p.alive&&p!==b);if(!al.length)return 'skip';
-  // thủ lĩnh đám đông công khai
-  let lead=null,lc=0;
-  al.forEach(p=>{const c=crowdOf(p.id);if(c>lc){lc=c;lead=p}});
-  if(b.imp){
-    const crew=al.filter(p=>!p.imp);if(!crew.length)return 'skip';
-    if(lead&&!lead.imp&&lc>=2&&Math.random()<.8)return lead.id;
-    if(lead&&lead.imp&&lc>=2){ // đồng đội bị nhắm: cố chia phiếu
-      if(Math.random()<.6){const fr=crew.filter(p=>crowdOf(p.id)>0);if(fr.length)return pick(fr).id}
-      return Math.random()<.5?'skip':pick(crew).id;
-    }
-    const fr=a.say.frame;if(fr!==null&&fr!==undefined&&G.players[fr]&&G.players[fr].alive&&!G.players[fr].imp&&Math.random()<.75)return fr;
-    if(lead&&!lead.imp&&lc>=1&&Math.random()<.6)return lead.id;
-    return Math.random()<.2?'skip':pick(crew).id;
-  }
-  // cư dân: bằng chứng + niềm tin + đám đông
-  let best=null,bs=-1e9;
-  al.forEach(p=>{
-    let sc=suspicion(b,p.id);
-    if(sc>-400)sc+=crowdOf(p.id)*55*lv.ded;
-    if(sc>bs){bs=sc;best=p}
-  });
-  const crewLeft=G.players.filter(p=>p.alive&&!p.imp).length;
-  if(bs>=640)return best.id;
-  const thr=crewLeft<=3?420:300;
-  if(bs>=thr&&Math.random()<.35+.6*lv.ded)return best.id;
-  if(lead&&lc>=2&&!a.clear[lead.id]&&suspicion(b,lead.id)>-100&&Math.random()<(.35+a.pers.trust*.45)*lv.ded+.1&&crewLeft>3)return lead.id;
-  return 'skip';
-}
 
 /* ===== UPDATE / DRAW ===== */
 let last=performance.now();
@@ -3570,6 +3108,1505 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+</script>
+<script>
+/* ===== BOT DATA: từ điển & câu đáp (muốn nâng cấp bot, sửa khối này) ===== */
+/* =====================================================================
+   bot_data.js — TỪ ĐIỂN & KHO CÂU ĐÁP CỦA BOT (LÀNG MỘT MẮT)
+   =====================================================================
+   File này CHỈ CHỨA DỮ LIỆU (chuỗi chữ). Không có logic game.
+   Người/AI nâng cấp chỉ cần THÊM THẬT NHIỀU DÒNG vào các mảng bên dưới.
+   Không được đổi tên khóa, không được xóa khóa, không được viết code khác.
+
+   ---------------------------------------------------------------------
+   HƯỚNG DẪN CHO AI ĐANG ĐỌC FILE NÀY
+   ---------------------------------------------------------------------
+   Mục tiêu: làm bot trong game "săn sát nhân" (kiểu Among Us, tiếng Việt)
+   nói chuyện giống người chơi Việt thật: hiểu nhiều cách gõ hơn, đáp đa dạng
+   hơn, biết trêu, đùa, cà khịa nhẹ, nói "gắt" cho vui, chứ không máy móc.
+
+   CÁCH LÀM:
+   1) Giữ nguyên cấu trúc `window.BOT_DATA = { ... }`, giữ nguyên mọi khóa.
+   2) Chỉ THÊM phần tử mới vào mảng (mỗi phần tử là 1 chuỗi). Có thể sửa câu cũ
+      cho hay hơn nhưng đừng xóa cả mảng.
+   3) Mỗi khóa nên có ít nhất 20–40 câu. Càng nhiều càng đỡ lặp.
+   4) Chỉ dùng đúng các {biến} đã liệt kê ở từng nhóm (bảng ngay dưới).
+      Dùng biến lạ => câu đó bị bỏ qua, và game ghi cảnh báo ở console.
+   5) Tiếng Việt đời thường của game thủ: ngắn (dưới ~80 ký tự), có thể dùng
+      teencode nhẹ, emoji vừa phải. Không dùng từ tục nặng, không phân biệt
+      đối xử, không công kích cá nhân thật; chỉ trêu/cà khịa kiểu bạn bè.
+   6) Dấu nháy kép bên trong chuỗi phải viết \"như này\".
+
+   THẺ PHONG CÁCH (tùy chọn) đặt ở đầu câu:  "[hien] ...", "[hai] ...", "[gat] ..."
+      hien = hiền, lịch sự, lo lắng     hai = hài, đùa nghịch, tếu táo
+      gat  = gắt, cà khịa, hơi chua     (có thể gộp: "[hai,gat] ...")
+   Câu KHÔNG có thẻ thì bot phong cách nào cũng dùng được. Mỗi bot được gán
+   ngẫu nhiên 1 phong cách khi vào game, nên hãy viết đủ cả 3 loại.
+
+   ---------------------------------------------------------------------
+   BẢNG BIẾN CHO MỤC `lines` (chỉ được dùng đúng biến của khóa đó)
+   ---------------------------------------------------------------------
+   rep     {v}=nạn nhân  {room}=phòng         (báo cáo xác)
+   repn    {x}=người bị thấy gần xác          (câu nối thêm sau báo cáo)
+   wit     {kp}=kẻ giết  {v}=nạn nhân {room}  (tận mắt thấy giết)
+   witcam  {kp} {v} {room}                    (thấy qua camera)
+   mor     {A}=kẻ biến hình {B}=hình dạng mới {room}
+   ven     {A}=kẻ chui cống {room}
+   clr     {A}=người đã quét sạch {room}
+   wt      {room} {task}                      (đang làm nhiệm vụ ở phòng)
+   wd      {droom} {dtask} {room}             (vừa xong nhiệm vụ ở droom, giờ ở room)
+   wn      {room}                             (chỉ đi ngang/đi quanh)
+   wp      {prev}                             (trước đó ở đâu; câu nối thêm)
+   saw1    {x} {xroom}                        (mình có thấy x ở xroom; câu nối thêm)
+   saw2    {x} {xroom} {y} {yroom}
+   frm     {f}=người bị đổ tội {rm}=phòng     (sát nhân đổ tội)
+   sus     {b}=người bị nghi {room}           (nghi vì ở gần xác)
+   sush    {b}                                (nghi vì nghe mọi người nói)
+   ask     {p}=người bị hỏi
+   rw      {acc}=người buộc tội mình          (chối khi bị vu "giết người")
+   rh      (không có biến)                    (chối chung chung)
+   ral     {w}=người đi cùng {room}           (ngoại phạm: đi cùng ai)
+   rbt     {room} {task}                      (ngoại phạm: làm nhiệm vụ)
+   rbn     {room}                             (ngoại phạm: chỉ ở phòng)
+   rt      {acc}                              (đuôi câu: đòi bằng chứng)
+   ctr     {acc}                              (sát nhân phản công)
+   dfs     {t}=người được bênh                (bênh vì đã quét sạch)
+   dfi     {t} {room}                         (bênh - kiểu sát nhân)
+   dfc     {t} {room}                         (bênh vì đi cùng)
+   cw      {sp}=người nói dối {kp}=kẻ giết thật
+   chl     {sp} {claim}=phòng khai {seen}=phòng đã thấy
+   agr     {t}                                (đồng ý với lời nghi)
+   noi     (không có biến)                    (chưa đủ bằng chứng)
+   chitchat {other}=một người chơi bất kỳ {me}=tên bot  (mở chuyện, đùa)
+
+   Mục `banter` (nói chuyện phiếm với người chơi) dùng biến:  (có 2 thể loại đặc biệt: CALLED = chỉ gọi tên bot,
+   HUH = nói điều bot không hiểu)
+      {who}=tên người vừa nhắn  {me}=tên bot đang trả lời  {other}=người khác bất kỳ
+
+   ---------------------------------------------------------------------
+   TỪ ĐIỂN `lexicon` (những gì bot NHẬN RA trong chat của người chơi)
+   ---------------------------------------------------------------------
+   - Viết KHÔNG DẤU, chữ thường. (Game tự bỏ dấu tin nhắn trước khi so khớp.)
+     Lưu ý "ngủ" và "ngu" trùng nhau khi bỏ dấu: hãy dùng cụm dài ("buon ngu").
+   - Mỗi phần tử là 1 từ hoặc 1 cụm từ. Chỉ khớp khi đứng riêng thành từ/cụm.
+   - Tiền tố đặc biệt:
+        "re:ha(ha)+"   = biểu thức chính quy (vẫn tự bọc ranh giới từ)
+        "raw:\\?"      = biểu thức chính quy thô (không bọc), vd dấu hỏi
+   - Cần THẬT NHIỀU cách nói: tiếng lóng, viết tắt (ko, k, dc, vs, sr...), gõ sai
+     phổ biến, tiếng Anh game thủ hay dùng (sus, imp, vote, lol...).
+
+   - Tiền tố "vn:" = so khớp theo chữ CÓ DẤU (chữ thường), dùng khi bỏ dấu sẽ nhầm nghĩa.
+        Vd "vn:ngủ" khác với "ngu" (ngốc). Dùng cùng khóa loại trừ ở bên dưới.
+   - Khóa <TÊN>_NOT (vd INSULT_NOT): nếu tin nhắn khớp thì BỎ QUA thể loại <TÊN>.
+
+   THÊM THỂ LOẠI MỚI: thêm khóa mới vào `lexicon` (vd "FLIRT"), thêm khóa cùng tên
+   vào `banter` (mảng câu trả lời), rồi thêm tên đó vào `banterOrder`.
+   Không cần sửa code.
+   ===================================================================== */
+
+window.BOT_DATA = {
+  version: 1,
+
+  /* ---------- CÀI ĐẶT NHANH (chỉnh được, nhưng đừng đổi tên khóa) ---------- */
+  settings: {
+    allowSass: true,        // false = tắt hẳn phong cách "gắt" (mọi bot hiền/hài)
+    flavorChance: 0.35,     // xác suất thêm câu đệm đầu/cuối theo phong cách
+    slangChance: 0.5,       // xác suất bot "nói teen" (chỉ bot kiểu casual) viết tắt
+    slangRate: 0.7,         // trong lần viết tắt: mỗi từ được đổi với xác suất này
+    banterCooldown: 5,      // giây tối thiểu giữa 2 lần bot chen vào tán gẫu (nếu không bị gọi tên)
+    banterPerMeeting: 16,   // tối đa số câu tán gẫu của tất cả bot trong 1 cuộc họp
+    banterPerBot: 6,        // tối đa số câu tán gẫu của 1 bot trong 1 cuộc họp
+    chitchatChance: 0.4,    // xác suất 1 bot tự mở chuyện (nhân với độ nói nhiều của bot)
+    unknownReplyChance: 0.08 // xác suất bot hỏi lại "hả?" khi nghe câu dài không hiểu mà không ai bị gọi tên
+  },
+
+  /* ---------- XÁC SUẤT BOT TRẢ LỜI TÁN GẪU THEO THỂ LOẠI (khi không bị gọi tên) ---------- */
+  banterChance: {
+    default: 0.7, INSULT: 1, ID_BOT: 1, GREET: 0.9, CONFESS: 1, ASKNAME: 1, PANIC: 0.8,
+    LAUGH: 0.4, AGREE: 0.3, DISAGREE: 0.6, SLEEPY: 0.9, BYE: 0.8
+  },
+
+  /* ---------- THỂ LOẠI "NÓI THẲNG VỚI BOT": bot trả lời ngay, không chờ lượt ---------- */
+  directCats: ["INSULT","ID_BOT","ASKNAME","CONFESS","SLEEPY"],
+
+  /* ---------- THỨ TỰ ƯU TIÊN KHI 1 TIN NHẮN KHỚP NHIỀU THỂ LOẠI (chỉ chọn 1) ---------- */
+  banterOrder: ["INSULT","ID_BOT","CONFESS","ASKNAME","GREET","BYE","THANKS","SORRY","PANIC",
+                "TEASE","SLEEPY","BRAG","PRAISE","DISAGREE","AGREE","LAUGH"],
+
+  /* =====================================================================
+     1) TỪ ĐIỂN
+     ===================================================================== */
+  lexicon: {
+    /* ---- Ý NGHĨA TRONG GAME ---- */
+    ACC: [   // buộc tội / đòi vote
+      "nghi","nghi ngo","sus","sussy","imp","impostor","imposter","sat nhan","killer","hung thu",
+      "thu pham","vote","bau","loai","bo phieu","giet","ra tay","dang ngo","kha nghi","bat thuong",
+      "chinh la","bi nghi","no la","do la","treo co","tong co","tong ra","day ra","dua ra","bat no",
+      "la no","la ong","la ba","nghi nhat","dang nghi","gian diep","noi gian","ke giet nguoi",
+      "bau no","vote no","loai no","do la sat nhan","bi sus","qua sus","sus qua","sus vl",
+      "nhin sus","co van de","co van de gi do","la thang","la con","la bon","chac chan la","nhat dinh la"
+    ],
+    ACC_CORE: ["nghi","sus","vote","bau","loai"],   // từ buộc tội "cứng" (để phân biệt với bênh vực)
+    VENT: ["chui cong","cong","vent","chui vao cong","nhay cong","bien mat","hien ra","chui xuong cong",
+           "chui len cong","vao cong","ra khoi cong","hien hinh","co chui cong","di cong","nhay vao cong"],
+    SAW: ["thay","chung kien","tan mat","nhin thay","nhin ra","bat gap","thay ro","ngo thay","trong thay",
+          "thay tan mat","thay tan mat luon","mat thay","tan mat thay","minh thay","tui thay","toi thay",
+          "vua thay","thay hoai","thay roi"],
+    KILL: ["giet","ra tay","kill","hanh hung","ha thu","ha sat","tieu diet","xu","thit","giet nguoi",
+           "dam","chem","bop co","xu ly","xu li","tru"],
+    DEF: ["khong phai","oan","trong sach","sach","innocent","tin","bao ve","di cung","o cung","khong sao",
+          "tin duoc","khong lien quan","vo toi","khong co gi","ngoai pham","co toi cung","cung nhau",
+          "cam doan","dam bao","lam chung","ok ma","khong phai no","dung vote","dung bau","no o cung minh",
+          "khong the la","sao la no duoc","oan cho","bi oan","vo toi","co chung minh","chung minh duoc",
+          "ko phai","k phai","khong phai dau","toi tin","tin no","tin ban ay","tin co ay"],
+    LIE: ["noi doi","xao","xao quyet","noi xam","noi bay","lua","lua dao","noi nham","bia chuyen","chem gio",
+          "noi xao","dang xao","xao ke","khai gian","khai sai","dung noi doi","noi khong that","khong thanh that",
+          "bia dat","che","bia","giau dau","dang giau"],
+    SKIP: ["skip","bo qua","khong vote","chua du","chua chac","thoi bo qua","cho skip","skip di","chua ro",
+           "khong bau","tam bo qua","chua co bang chung","thieu bang chung","khong ai ca","khong ai het",
+           "skip nha","skip thoi","skip het","khong ai la","bo qua di","bo qua thoi","chua ai het","khong vote ai"],
+    Q: ["raw:\\?","dau","ai","sao","gi","nao","the nao","bao gio","may gio","o dau","lam gi","di dau","tai sao",
+        "vi sao","co khong","phai khong","hay khong","nhi","ha","hoi","dau roi","dau day","ai day","gi vay",
+        "sao vay","sao the","sao ta","gi the","a","hen","hem"],
+    SELF: ["minh","toi","tui","tao","t","em","anh","chi","o","tai","lam","dang","vua","nay","luc nay","nay gio",
+           "luc do","toi dang","tui dang","minh dang","luc nay minh","luc nay toi","luc nay tui"],
+    ASKALL: ["nghi ai","ai la sat nhan","ai la imp","ai dang ngo","ai nghi","ai la killer","vote ai","bau ai",
+             "loai ai","ai giet","ai la hung thu","ai bi nghi","ai la thu pham","ai sus","ai dang ngo nhat",
+             "nghi ai nhat","ai thay gi","ai co thong tin","ai biet gi","ai thay ai","ai biet ai giet",
+             "ai la ke giet","ai la ke giet nguoi","moi nguoi nghi ai","moi nguoi vote ai","moi nguoi nghi ai khong",
+             "ai nghi ai","ai thay khong","ai thay gi khong"],
+
+    /* ---- NÓI CHUYỆN PHIẾM (mỗi khóa phải có mảng cùng tên ở `banter`) ---- */
+    GREET: ["chao","hello","hi","hey","helo","xin chao","alo","yo","chao moi nguoi","chao ca nha","hi moi nguoi","chao ae","chao bro","chao ong","chao ba","ê","e","ê bro","yo yo","hello ae","helo ae","hí","hí lô","a lô","chao mn","chao moi nguoi nha",
+            "co ai khong","halo","hallo","chao ban","chao cac ban","chao nha","xin chao moi nguoi","hello moi nguoi",
+            "re:he+llo+","re:hi+","re:he+y","re:yo+"],
+    BYE: ["tam biet","bye","bai bai","di ngu day","thoat day","minh di day","pp","bb","het gio roi","bye bye","out day","quit day","thoat nha ae","hen gap","gap lai","toi di","tui out","minh out","afk day","off day","nghi day","bai ae","bye ae","pp ae","bb nha",
+          "den gio","hen gap lai","tui di day","toi di day","di day","di nha","thoat nha","thoat day nha","bai nha"],
+    THANKS: ["cam on","thanks","thank you","thank","tks","cam on nha","bieu ban","nho ban nhe","cam on ban","thx","tysm","tks bro","thanks bro","cam on bro","doi on","da ta","da ta nha","camu","camon","thank kiu","thank kiu nha","on gi","good job","nice one",
+             "cam on nhieu","cam on nhe","thanks nha","thanks nhe","thank nhe","cam on ban nhieu","ty","tks nha","thankyou"],
+    SORRY: ["xin loi","sorry","sr","mb","lo tay","lo vote nham","xin loi nhe","tui nham","toi nham","minh nham","sry","srr","my bad","loi tui","toi sai","tui sai","minh sai","nham that","xinloi","xl","sorry bro","sorry ae","xin loi ae",
+            "nham roi","nham nguoi","nham nguoi roi","xin loi moi nguoi","sorry moi nguoi","sorry nha","xl nha"],
+    LAUGH: ["haha","hihi","hehe","kk","kkk","lol","lmao","cuoi","re:ha(ha)+","re:he(he)+","re:hi(hi)+","kkkk","khakhakha","hahaha","hehehe","hihihi","kakaka","kekeke","jajaja","😂","🤣","cười ẻ","cuoi ia","cuoi xiu","cuoi dau bung","buon cuoi vai","vai ca","vcl cuoi","xD",":v","=))","=)))","^^",
+            "re:k{2,}","re:(kha){2,}","cuoi ngat","cuoi xiu","cuoi chet","cuoi vl","cuoi muon xiu","buon cuoi",
+            "cuoi be bung","vui qua","xd","xdd","hahah","haha cuoi","cuoi qua"],
+    PRAISE: ["gioi","gioi qua","pro","vip","thong minh","sieu","dinh","xuat sac","tuyet","qua gioi","bot gioi","đỉnh","đỉnh vậy","đỉnh thế","hay","hay đấy","nice","good job","good bot","cao thu","cao tay","uy tin","chat luong","mượt","muot","khét","khét lẹt","bá cháy","bai","10 diem","10đ","max ping","qua du","xịn","xin","ngon",
+             "khen","hay qua","that gioi","ngon","bai phuc","qua dinh","de thuong","dang yeu","tuyet voi",
+             "good","nice","gioi vay","gioi that","pro qua","pro vl","gioi vl","dinh cua chop","ngon lanh",
+             "bot thong minh","bot pro","bot vip","bot gioi qua","thong minh qua","thong minh vay"],
+    INSULT: ["bot ngu","ngu qua","do ngu","ngu vl","ngu nhu bo","ngu vay","ngu the","dot","dot qua","do dot",
+             "dot dac","oc cho","oc dau","ngoc","ngu ngoc","te qua","ga qua","do ga","ga vay",
+             "non qua","cui bap","kem qua","vo dung","chan qua","choi nhu hai","choi te","choi do",
+             "bot dot","bot te","may ngu","ngu bo","do bot ngu","bot ngoc","nhu hai","ba dao","may te",
+             "may dot","ban ngu","ban dot","ban te","ngu qua troi","non not","do non","bot kem","bot yeu",
+             "choi chan","dung ngu","ngu ghe","ngu that",
+             "dm",
+             "dmm",
+             "d m",
+             "d m m",
+             "dcm",
+             "đcm",
+             "dit me",
+             "dit me may",
+             "dit",
+             "du me",
+             "du ma",
+             "vcl",
+             "vl",
+             "vkl",
+             "clm",
+             "cc",
+             "cmm",
+             "cml",
+             "lon",
+             "loz",
+             "l",
+             "cac",
+             "cak",
+             "cut",
+             "cho",
+             "thang ngu",
+             "con ngu",
+             "may dien a",
+             "ao that day",
+             "chan bo may di",
+             "chan bo may",
+             "chan di",
+             "chan may",
+             "chan nua di",
+             "bo may",
+             "bo m",
+             "tao",
+             "mày",
+             "may",
+             "thang nay",
+             "con nay",
+             "do cho",
+             "do lon",
+             "do mat day",
+             "mat day",
+             "khon nan",
+             "vo duyen",
+             "xam",
+             "xam lol",
+             "xam loz",
+             "nhuc",
+             "nhuc mat",
+             "cay a",
+             "cay khong",
+             "cay ha",
+             "tuoi gi",
+             "tuoi gi doi",
+             "im me di",
+             "câm",
+             "cam mom",
+             "ngam mom",
+             "bot re rach",
+             "bot phe",
+             "bot rac",
+             "bot loi",
+             "ngu nhu heo",
+             "ngu nhu cho",
+             "ngu nhu con bo",
+             "oc heo",
+             "oc lon",
+             "thieu nao",
+             "mat nao",
+             "khong co nao",
+             "sida",
+             "ga",
+             "ga vl",
+             "ga vai",
+             "choi ngu",
+             "choi nhu cut",
+             "choi nhu lol",
+             "bot oc cho",
+             "may oc cho",
+             "tao chui may",
+             "tao dang chui",
+             "chui may",
+             "chui bot",
+             "an cut",
+             "di chet di",
+             "bien di",
+             "cút",
+             "cut di",
+             "ne may",
+             "nay may",
+             "con ga",
+             "thang ga",
+             "do ham",
+             "ham",
+             "ham vl",
+             "do mat lon"],
+    TEASE: ["nhanh len","le len","cham the","cham qua","len di","sao lau the","sao cham vay","nao noi di","noi di",
+            "noi nhanh","im roi ha","sao im","im re","dung im","ai noi gi di","lam gi do di","ngon thi nhao vao",
+            "dam khong","co dam khong","thach","thach ban","khong dam","so a","so ha","noi nhanh len","nhanh nao",
+            "le le","nhanh tay len","cham chap","cham nhu rua","tung tung","sao khong noi","noi gi di"],
+    ID_BOT: ["may la bot","ban la bot","bot a","la bot khong","bot hay nguoi","nguoi that","nguoi that khong",
+             "co phai bot khong","bot ha","ai la bot","bot nao","may co phai nguoi khong","nguoi hay may",
+             "ai that","ban la ai","may la ai","ai tao ra may","chatgpt","gpt","claude","gemini","la bot hay nguoi",
+             "co phai nguoi khong","phai bot khong","bot phai khong","la ai khong","la bot ha","ban la ai vay",
+             "toan bot","may la bot ha","ban co phai bot","ban co phai ai"],
+    ASKNAME: ["ten gi","ten ban la gi","ban ten gi","ten may la gi","may ten gi","ten la gi","ten gi vay","tên gì","tên mày","mày tên gì","bn ten gi","nick gi","id gi","goi ban la gi","ten that la gi","cho xin ten","xin ten","may la ai","ai day",
+              "ban ten la gi","ten ban gi","ten may gi","ten cua ban","ten cua may"],
+    INSULT_NOT: ["vn:ngủ","vn:ngũ"],   // "ngủ" (buồn ngủ, đi ngủ) không phải chửi "ngu"
+    SLEEPY: ["vn:ngủ","vn:buồn ngủ","vn:đi ngủ","vn:ngủ chưa","vn:ngủ rồi","vn:ngủ gật","buon ngu","di ngu","ngu gat","ngu di","ngu roi","afk","treo may","lag","lag qua","mang yeu",
+             "roi mang","dung may","dang lam gi day","con song khong","song khong","chet chua","ngu chua",
+             "o day khong","o do khong","co mat khong","con do khong","alo alo","dang o dau day","ai con thuc khong",
+             "ngu luon roi","chet roi a","an gi chua","doi bung","doi qua","met qua","buon qua"],
+    PANIC: ["so qua","hoang qua","run qua","chet toi","toi chet","chet mat","tim dap","hoang so","kinh qua",
+            "troi oi","tro oi","oi troi","doi oi","me oi","huhu","hu hu","khoc","so vl","hoang loan","hoang hon",
+            "tim dap chan tay run","so chet","so qua di","chet roi","chet cha","chet roi me oi","kinh khung","kinh di",
+            "toi so","tui so","minh so","tui hoang","toi hoang","minh hoang"],
+    AGREE: ["dung roi","chuan","chuan roi","dung vay","dong y","ok","oke","okay","uh","um","uhm","chac chan",
+            "co ly","hop ly","dung do","nhat tri","ung ho","raw:\\+1","same","me too","cung vay","tui cung vay",
+            "toi cung vay","minh cung vay","dung the","dung luon","chuan luon","chuan xi","dong y luon","uk"],
+    DISAGREE: ["sai roi","khong dung","sai bet","ban sai","noi sai","khong dong y","phan doi","khong tin","dung noi nham",
+               "vo ly","nham to","khong co chuyen do","hoang duong","noi nhang","that vo ly","ba dao","sai het",
+               "khong phai the","khong phai vay","sai tum lum","khong hop ly","phi ly","noi bay ba","sai be bet",
+               "sai tum la","ko dong y","k dong y","tui khong dong y","toi khong dong y"],
+    BRAG: ["ez","easy","de ma","de qua","tui pro","toi pro","minh pro","tui gioi","toi gioi","thang chac","an chac",
+           "cuoc nay thang","chac thang","chinh phuc","re:ez+","tui thang","toi thang","minh thang","de nhu an keo",
+           "de vl","de nhu choi","de thoi","de ot","tui cuc gioi","toi cuc gioi","dinh cao","khong ai bang"],
+    CONFESS: ["toi la sat nhan","tui la sat nhan","minh la sat nhan","tao la sat nhan","la toi giet","tui giet",
+              "tui la imp","toi la imp","minh la imp","tao la imp","la tui giet","la toi giet day","tui la hung thu",
+              "toi la hung thu","minh la hung thu","tui thu nhan","toi thu nhan","thu nhan day","tui giet do",
+              "toi giet do","do la tui","do la toi","la tui do","la toi do","tui la killer","toi la killer"]
+  },
+
+  /* =====================================================================
+     2) CÂU TRONG LUỒNG GAME (đúng các khóa & biến ở bảng đầu file)
+     ===================================================================== */
+  lines: {
+    rep: [
+      "Mình vừa thấy xác {v} ở {room}!",
+      "{v} chết ở {room} rồi. Mình báo cáo.",
+      "Có xác {v} ở {room}! Ai ở gần đó không?",
+      "Báo cáo: xác {v} nằm ở {room}.",
+      "Trời ơi, {v} nằm đó ở {room} luôn rồi!",
+      "Mình đi ngang {room} thì thấy {v} đã ngỏm. Báo cáo liền.",
+      "Xác {v} ở {room}! Mọi người họp gấp đi.",
+      "{v} ngã xuống ở {room} rồi, mình mới thấy xong.",
+      "[hai] {v} nằm thẳng cẳng ở {room} kìa, ai làm vậy?",
+      "[hai] Ủa {v} ngủ giữa {room} à? Không, chết rồi!",
+      "[hai] {v} đi sớm quá ở {room}, mình báo cáo trước khi ai đó dọn dẹp.",
+      "[gat] Ai mới giết {v} ở {room} đó? Khai nhanh!",
+      "[gat] {v} nằm đó ở {room}. Kẻ ra tay đang ngồi trong phòng họp này đó.",
+      "[hien] Tội {v} quá, mình thấy xác ở {room}. Mình báo cáo nha.",
+      "[hien] Mình run quá, {v} nằm ở {room} luôn rồi."
+    ],
+    repn: [
+      "Lúc nãy mình có thấy {x} ở gần đó.",
+      "Trước khi thấy xác, mình thấy {x} quanh đây.",
+      "Mà mình thấy {x} lảng vảng gần đó nha.",
+      "Mình nhớ có thấy {x} đi ngang qua đó.",
+      "[gat] Mà {x} đứng gần đó đó, giải thích đi.",
+      "[hai] Mà {x} cũng đi ngang chỗ đó, trùng hợp ghê ha.",
+      "[hien] Mình có thấy {x} gần đó, mình chỉ nói để mọi người biết thôi."
+    ],
+    wit: [
+      "Mình tận mắt thấy {kp} giết {v} ở {room}! Vote {kp} đi!",
+      "{kp} là sát nhân! Mình thấy rõ {kp} ra tay với {v} ở {room}.",
+      "Mình thấy hết rồi: {kp} giết {v}. Đừng ai tin {kp} nữa!",
+      "Khỏi cãi nữa, {kp} vừa xử {v} ở {room}, mình đứng ngay đó.",
+      "Mình chứng kiến {kp} ra tay với {v} ở {room}. Vote {kp} nhanh!",
+      "[gat] {kp} giết {v} ở {room}, mình thấy rõ mồn một. Còn chối nữa không?",
+      "[gat] {kp} ra tay với {v} mà tưởng không ai thấy hả? Mình thấy hết.",
+      "[hai] Phim hành động live ở {room}: {kp} đóng sát nhân, {v} đóng nạn nhân.",
+      "[hai] Mình xem trực tiếp {kp} giết {v} ở {room}, không cần mua vé luôn.",
+      "[hien] Mình run quá, nhưng mình thấy {kp} giết {v} ở {room}. Mọi người tin mình nha.",
+      "[hien] Mình không muốn nghi ai, nhưng mình thấy {kp} ra tay với {v}. Vote {kp} nhé."
+    ],
+    witcam: [
+      "Mình đang xem camera, thấy {kp} giết {v} ở {room}! Vote {kp}!",
+      "Camera quay rõ {kp} ra tay với {v} ở {room}. Hết cãi!",
+      "Mình đang ngồi phòng camera, thấy {kp} xử {v} ở {room}. Vote {kp} đi.",
+      "[hai] Camera: 1, {kp}: 0. Quay được cảnh {kp} giết {v} ở {room}.",
+      "[gat] Camera quay hết rồi, {kp} giết {v} ở {room}. Chối nổi không?",
+      "[hien] Mình xem camera tình cờ thấy {kp} ra tay với {v} ở {room}. Mọi người cẩn thận."
+    ],
+    mor: [
+      "{A} vừa biến thành {B} ngay trước mặt mình ở {room}! {A} là sát nhân!",
+      "Mình thấy {A} hóa hình thành {B} ở {room}. Chắc chắn {A} là sát nhân.",
+      "Ai mà tự dưng đổi thành {B} ở {room} chứ? Chính là {A}, sát nhân đó!",
+      "[hai] {A} biến hình thành {B} luôn, tưởng đang xem phim ma thuật hả?",
+      "[hai] {A} thay đồ thành {B} nhanh dữ, mình chớp mắt chưa kịp.",
+      "[gat] {A} hóa hình thành {B} ở {room}. Cư dân đâu có biết làm trò đó, vote đi!",
+      "[hien] Mình hoảng quá, {A} biến thành {B} ở {room}. Mọi người cẩn thận {A} nha."
+    ],
+    ven: [
+      "Mình thấy {A} chui cống ở {room}. Cư dân đâu có chui cống được!",
+      "{A} vừa chui vào cống ở {room}, mình thấy tận mắt luôn.",
+      "{A} chui cống kìa! Mình thấy ở {room}.",
+      "Cư dân đâu biết chui cống, {A} ở {room} chui vào đó mình thấy rồi!",
+      "[hai] {A} chui cống ở {room} nhanh như chuột, mà mình thấy hết rồi nha.",
+      "[hai] {A} đi du lịch bằng cống ở {room} hả? Hết giấu rồi.",
+      "[gat] {A} chui cống ở {room}. Cư dân kiểu gì mà chui cống? Vote đi.",
+      "[hien] Mình thấy {A} chui cống ở {room}, mình sợ quá."
+    ],
+    clr: [
+      "Mình thấy {A} quét thân thể xong rồi, {A} sạch nha.",
+      "{A} vừa quét thân thể ở {room}, không có gì bất thường. Đừng nghi {A}.",
+      "{A} làm quét thân thể xong rồi, mình thấy tận mắt. {A} sạch.",
+      "Đừng vote {A}, quét xong là sạch bong.",
+      "[hai] {A} quét xong rồi, sạch hơn cả nhà mình luôn.",
+      "[gat] {A} quét sạch rồi mà còn nghi hả? Soi lại đi.",
+      "[hien] {A} quét xong rồi, mình thấy sạch. Mình tin {A}."
+    ],
+    wt: [
+      "Mình làm \"{task}\" ở {room}.",
+      "Nãy giờ mình ở {room} làm \"{task}\" nè.",
+      "Mình đang làm \"{task}\" ở {room}.",
+      "Mình ở {room}, làm \"{task}\".",
+      "Mình đang loay hoay với \"{task}\" ở {room}.",
+      "Nãy giờ mình cắm mặt làm \"{task}\" ở {room} á.",
+      "[hai] Mình ở {room} cày \"{task}\", chăm chỉ chưa?",
+      "[hai] Mình đang \"{task}\" ở {room}, cày như trâu luôn.",
+      "[gat] Mình ở {room} làm \"{task}\", chứ không rảnh đi giết ai đâu.",
+      "[hien] Mình ở {room} làm \"{task}\" thôi à."
+    ],
+    wd: [
+      "Mình vừa làm \"{dtask}\" ở {droom} rồi đi qua {room}.",
+      "Mình mới xong \"{dtask}\" ở {droom}, giờ đang ở {room}.",
+      "Mình mới làm xong \"{dtask}\" ở {droom}, giờ lượn qua {room}.",
+      "[hai] Mình xong \"{dtask}\" ở {droom} rồi, giờ đi dạo ở {room} cho thoải mái.",
+      "[gat] Mình xong \"{dtask}\" ở {droom} rồi qua {room}, còn ai khai được vậy không?"
+    ],
+    wn: [
+      "Mình chỉ đi ngang qua {room} thôi, chưa làm gì nhiều.",
+      "Mình đang đi quanh {room} nãy giờ.",
+      "Mình mới lảng vảng ở {room}, chưa kịp làm gì.",
+      "[hai] Mình đang đi dạo ở {room}, hít thở không khí.",
+      "[hai] Mình ở {room} ngắm cảnh thôi, cảnh đẹp mà.",
+      "[hien] Mình đi quanh {room} thôi, chưa làm gì hết."
+    ],
+    wp: [
+      "Trước đó mình ở {prev}.",
+      "Mình vừa từ {prev} qua.",
+      "Mình vừa đi ngang {prev} trước đó.",
+      "Trước đó mình còn ở {prev} nữa."
+    ],
+    saw1: [
+      "Mình có thấy {x} ở {xroom}.",
+      "Mình gặp {x} ở {xroom}.",
+      "Trên đường mình có gặp {x} ở {xroom}."
+    ],
+    saw2: [
+      "Mình có thấy {x} ở {xroom} và {y} ở {yroom}.",
+      "Trên đường mình gặp {x} ở {xroom} với {y} ở {yroom}.",
+      "Mình thấy {x} ở {xroom}, còn {y} thì ở {yroom}."
+    ],
+    frm: [
+      "Mình thấy {f} ở {rm} lúc nãy, cư xử lạ lắm.",
+      "{f} đi một mình hoài, mình thấy hơi đáng nghi.",
+      "Không ai nói được {f} ở đâu cả. Mình nghi {f}.",
+      "{f} lảng vảng ở {rm} hoài, mình thấy hơi kỳ.",
+      "Nói thiệt nha, {f} im im mà hành tung khó hiểu.",
+      "[gat] {f} đáng nghi nhất, đi đâu cũng không ai thấy.",
+      "[hai] {f} cứ lén lút như mèo ăn vụng ấy.",
+      "[hien] Mình không muốn nghi bậy, nhưng {f} hơi lạ ở {rm}."
+    ],
+    sus: [
+      "{b} ở gần chỗ xác lúc nãy, mình thấy {b} ở {room}. Hơi đáng nghi đó.",
+      "Trước khi có xác, mình thấy {b} quanh {room}. Mình nghi {b}.",
+      "{b} ở gần chỗ có xác, mình thấy ở {room}. Phải nghi chứ.",
+      "[gat] {b} quanh quẩn {room} lúc xảy ra chuyện, giải thích đi.",
+      "[hai] {b} xuất hiện ở {room} đúng lúc quá ha, trùng hợp ghê.",
+      "[hien] Mình thấy {b} gần {room}, mình chỉ hơi nghi thôi."
+    ],
+    sush: [
+      "Nghe mọi người nói thì mình cũng thấy {b} đáng ngờ.",
+      "Mình nghi {b}, nhiều chi tiết không khớp.",
+      "Gom hết lời mọi người thì {b} là người đáng ngờ nhất.",
+      "Mình nghiêng về {b}, câu chuyện của {b} lủng củng.",
+      "[hai] Ngửi thấy mùi sát nhân từ {b}.",
+      "[gat] {b} nói chuyện chẳng ăn khớp gì cả, mình nghi.",
+      "[hien] Mình thấy {b} hơi đáng ngờ, mong là mình sai."
+    ],
+    ask: [
+      "{p} lúc nãy ở đâu vậy?",
+      "{p} làm gì ở đâu nãy giờ, kể mình nghe với.",
+      "{p} ơi, nãy giờ bạn ở đâu vậy?",
+      "Cho mình hỏi {p} chút: bạn ở đâu lúc xảy ra chuyện?",
+      "[gat] {p}, khai đi, lúc đó ở đâu?",
+      "[hai] {p} đâu rồi, báo danh nào!",
+      "[hien] {p} ơi, bạn ở đâu lúc đó, kể mình nghe nha."
+    ],
+    rw: [
+      "{acc} nói dối! Mình có giết ai đâu.",
+      "Khoan! {acc} thấy mình giết ở đâu? Nói rõ ra đi.",
+      "{acc} đang vu oan cho mình đó.",
+      "Mình mà giết người á? {acc} nhìn nhầm rồi.",
+      "[gat] {acc} dựng chuyện à? Bằng chứng đâu?",
+      "[hai] {acc} xem phim nhiều quá nên nhìn nhầm mình rồi."
+    ],
+    rh: [
+      "Mình không phải đâu!",
+      "Oan quá trời.",
+      "Sao lại nghi mình? Mình đâu có làm gì.",
+      "Không phải mình đâu nha.",
+      "Ủa sao nghi mình vậy?",
+      "[hai] Mình mà sát nhân thì chắc đã cười đểu rồi, đâu có ngồi đây hiền thế.",
+      "[gat] Nghi mình? Soi gương lại đi.",
+      "[hien] Mình thật sự không phải mà, tin mình đi."
+    ],
+    ral: [
+      "Nãy giờ mình đi cùng {w} ở {room} mà.",
+      "{w} ở cạnh mình suốt ở {room}, hỏi {w} đi.",
+      "Mình với {w} ở {room} nãy giờ, {w} làm chứng được."
+    ],
+    rbt: [
+      "Mình ở {room} làm \"{task}\" mà.",
+      "Mình cắm mặt làm \"{task}\" ở {room}, ai cũng thấy.",
+      "Mình đang làm \"{task}\" ở {room} thôi."
+    ],
+    rbn: [
+      "Mình ở {room} nãy giờ.",
+      "Mình vẫn ở {room} thôi mà.",
+      "Mình ở {room} từ nãy tới giờ luôn."
+    ],
+    rt: [
+      "{acc} có bằng chứng gì không?",
+      "{acc} thấy mình ở đâu vậy?",
+      "[gat] {acc} đưa chứng cứ đi, đừng nói suông.",
+      "[hai] {acc} có bằng chứng chưa, hay chỉ cảm tính thôi?"
+    ],
+    ctr: [
+      "Mình thấy {acc} mới là người đáng nghi, đang cố đổ tội cho người khác.",
+      "Cẩn thận {acc} nha, tự dưng buộc tội mình mà không có bằng chứng.",
+      "Người cố đẩy tội cho mình thường là người có tật giật mình đó {acc}.",
+      "[gat] {acc} hăng hái đổ tội quá, chính {acc} mới đáng nghi.",
+      "[hai] {acc} buộc tội mình nhanh như chớp, tập dợt trước hả?"
+    ],
+    dfs: [
+      "{t} vừa quét thân thể xong, sạch mà. Đừng nghi {t}.",
+      "Quét xong rồi, {t} không phải sát nhân đâu.",
+      "[gat] {t} quét sạch rồi mà còn nghi, ai đọc luật chưa?"
+    ],
+    dfi: [
+      "Mình thấy {t} làm nhiệm vụ ở {room} mà, không phải {t} đâu.",
+      "Khoan, {t} đâu có làm gì đâu. Đừng vote bậy.",
+      "[hai] Thấy {t} ở {room} rồi nha, đừng đổ oan người ta.",
+      "[gat] Vote {t} là vote nhầm đó, mình thấy {t} ở {room}."
+    ],
+    dfc: [
+      "Khoan, mình đi cùng {t} ở {room} một lúc lâu, không phải {t} đâu.",
+      "{t} ở cạnh mình nãy giờ mà. Mình không thấy gì bất thường.",
+      "Mình với {t} ở {room} nãy giờ, {t} sạch.",
+      "[gat] {t} đi cùng mình nãy giờ, đừng đổ tội bậy."
+    ],
+    cw: [
+      "{sp} nói sai rồi, mình thấy {kp} ra tay chứ không phải người {sp} nói.",
+      "Không đúng! Mình tận mắt thấy {kp} giết, {sp} đừng nói dối.",
+      "[gat] {sp} nói dối trắng trợn, mình thấy rõ {kp} ra tay.",
+      "[hai] {sp} kể chuyện cổ tích à? Mình thấy {kp} ra tay mà."
+    ],
+    chl: [
+      "{sp} nói ở {claim} nhưng mình mới thấy {sp} ở {seen} mà? Giải thích đi.",
+      "Khoan, {sp} bảo ở {claim}, mà mình thấy {sp} ở {seen}. Hơi lạ nha.",
+      "Lạ nha, {sp} khai ở {claim} nhưng mình gặp ở {seen}.",
+      "[gat] {sp} nói ở {claim} mà mình thấy ở {seen}. Kể chuyện cổ tích à?",
+      "[hai] {sp} dịch chuyển tức thời từ {seen} sang {claim} hả?"
+    ],
+    agr: [
+      "Mình cũng thấy {t} đáng nghi.",
+      "Đồng ý, {t} nhiều điểm lạ lắm.",
+      "Mình ủng hộ nghi {t}.",
+      "Mình cũng nghiêng về {t}.",
+      "[hai] Phiếu của mình chắc cũng bay về {t} luôn quá.",
+      "[gat] Đúng đó, {t} đáng vote từ đầu rồi.",
+      "[hien] Mình cũng thấy vậy, {t} hơi lạ."
+    ],
+    noi: [
+      "Mình chưa thấy gì đủ chắc để kết luận ai cả.",
+      "Chưa có bằng chứng thì mình không muốn vote bừa đâu.",
+      "Ai thấy gì cụ thể thì nói đi, mình đối chiếu cho.",
+      "Mình chưa thấy ai để vote cả, ai có gì thì nói đi.",
+      "Skip trước cũng được, chưa đủ chứng cứ.",
+      "[hai] Mình hiền như bột, chưa nghi ai hết.",
+      "[gat] Ai có bằng chứng thì nói đi, đừng ngồi im."
+    ],
+    chitchat: [
+      "Sao {other} im re vậy? Có gì giấu không?",
+      "Không khí căng thẳng thế, ai kể chuyện cười đi.",
+      "Mọi người nhớ mình đang họp, đừng ngủ quên nha.",
+      "Hay là mọi người cùng điểm danh nơi mình đã đứng nhé?",
+      "[hai] Mình đói rồi, có ai mang đồ ăn vào họp không?",
+      "[hai] {other} im lặng như tờ, chắc đang nghĩ kế hoạch gì đây.",
+      "[gat] {other} im lặng đáng ngờ ghê.",
+      "[hien] Mình hơi lo, mong là ván này suôn sẻ."
+    ]
+  },
+
+  /* =====================================================================
+     3) CÂU TÁN GẪU / TRÊU / ĐÙA (bot đáp tin nhắn không liên quan vụ án)
+        biến: {who} {me} {other}
+     ===================================================================== */
+  banter: {
+    GREET: [
+      "Chào {who}!",
+      "Hello {who} 👋",
+      "Ê {who}, chào nha.",
+      "Chào, đang họp căng lắm đó.",
+      "Hi {who}!",
+      "[hai] Yo {who}, chào chào, vào việc thôi.",
+      "[hai] Chào {who}, nay có sát nhân nào hẹn gặp chưa?",
+      "[hien] Chào {who}, chúc cả làng may mắn nha.",
+      "[gat] Chào, rảnh thì tìm sát nhân giúp mình luôn đi."
+    ],
+    BYE: [
+      "Đi đâu vậy {who}, họp xong đã.",
+      "Bye {who}, đừng bỏ ván nha.",
+      "[hai] Đi thì vote trước rồi đi nha {who}.",
+      "[gat] Bỏ họp giữa chừng là đáng ngờ đó nha.",
+      "[hien] Hẹn gặp lại {who} nha."
+    ],
+    THANKS: [
+      "Không có gì {who}.",
+      "Có gì đâu mà cảm ơn.",
+      "[hai] Thanks cái gì, trả công bằng một phiếu nha.",
+      "[hien] Vui lắm, {who} cũng giúp mình mà.",
+      "[gat] Cảm ơn thì vote đúng người đi."
+    ],
+    SORRY: [
+      "Không sao đâu {who}.",
+      "Ai cũng có lúc nhầm mà.",
+      "[hai] Xin lỗi gì, vote nhầm thì cùng nhau chịu.",
+      "[gat] Xin lỗi là xong hả? Vote nhầm là mất người đó nha.",
+      "[hien] Đừng áy náy, ván sau làm lại."
+    ],
+    LAUGH: [
+      "Haha {who} cười gì vậy?",
+      "Cười hoài, nghiêm túc xíu coi.",
+      "Hihi.",
+      "[hai] Cười mà không nói lý do, ai chơi vậy.",
+      "[hai] Hahaha, mình cũng không biết sao cười luôn.",
+      "[gat] Cười cái gì, đang họp án mạng đó."
+    ],
+    PRAISE: [
+      "Cảm ơn {who}, mình cũng thấy vậy 😎",
+      "Ngại quá, mình chỉ làm đúng việc thôi.",
+      "[hai] Khen nữa đi, mình vui lắm.",
+      "[gat] Biết điều ghê, nhớ vote đúng nha.",
+      "[hien] Cảm ơn {who} nhiều nha."
+    ],
+    INSULT: [
+      "Ơ kìa {who}, nói chuyện lịch sự xíu.",
+      "[hai] Ủa mình ngu thì {who} cũng chưa khôn lắm đâu.",
+      "[hai] Ừ ừ, bot ngu này vẫn đang còn sống nhé.",
+      "[gat] Chê người ta giỏi quá hén, vote chính xác được chưa mà nói.",
+      "[gat] Giỏi thì chỉ ra sát nhân đi, đừng chê suông.",
+      "[gat] Chê mình nhiều vậy, {who} tự soi gương chưa?",
+      "[hien] Mình buồn đó {who}, nói nhẹ nhàng được không.",
+      "[hai] Chan bố mày á? Chan mắm hay chan canh để mình chuẩn bị cái bát 😂",
+      "[gat] Muốn cà khịa thì xếp hàng nha {who}, mình đang bận tìm sát nhân.",
+      "[hai] Chửi có vần có điệu tí đi, câu này mình nghe quen rồi.",
+      "[gat] Mồm nhanh hơn não thì cũng chưa chắc vote đúng đâu nha.",
+      "[hai] Bạn nói tiếp đi, mình đang ghi vào sổ lưu niệm.",
+      "[gat] Căng thế {who}, mới thua một ván hay vừa rơi mất dép?",
+      "[hai] Chửi mình không mất máu đâu, thử tìm imp xem.",
+      "[gat] Nói mình nghe xem, ngoài chửi ra bạn còn chiến thuật nào không?",
+      "[hai] Mình là bot mà còn biết suy nghĩ, bạn thử bình tĩnh xem.",
+      "[gat] Đừng nóng, bàn phím không có lỗi.",
+      "[hai] Ủa đang roast mình hay đang tự giới thiệu bản thân vậy?",
+      "[gat] Câu đó mạnh đấy, tiếc là bằng chứng vẫn bằng không.",
+      "[hai] Mình xin phép cười nhẹ một cái rồi quay lại phá án.",
+      "[gat] Cà khịa tiếp đi, biết đâu bạn lộ sơ hở.",
+      "[hai] Chửi mình thì dễ, tìm đúng sát nhân mới khó nha.",
+      "[gat] Bạn có quyền gắt, mình có quyền thấy bạn đáng nghi.",
+      "[hai] Từ từ, để mình bật chế độ miễn nhiễm lời chê.",
+      "[gat] Chửi xong nhớ vote, đừng để cả làng chờ.",
+      "[hai] Mình nghe rõ từng chữ, nhưng sát nhân thì vẫn chưa rõ.",
+      "[gat] Nói chuyện dữ vậy, mong phiếu vote cũng có lực tương đương.",
+      "[hai] Định dọa mình hả? Mình còn chưa có tim để run.",
+      "[gat] Câu chửi hơi cũ rồi, cập nhật phiên bản mới đi {who}.",
+      "[hai] Bạn muốn mình đáp lễ hay gửi hóa đơn tiền cà khịa?",
+      "[gat] Thay vì chửi, đưa bằng chứng ra xem nào.",
+      "[hai] Chửi mình một câu, mình tặng bạn một cái nấm 🍄",
+      "[gat] Đừng lấy âm lượng làm bằng chứng nha.",
+      "[hai] Mình ghi nhận góp ý: người chơi đang hơi cay.",
+      "[gat] Bạn càng nóng mình càng nghi bạn đang đánh lạc hướng.",
+      "[hai] Chan gì cũng được, miễn đừng chan phiếu vote lên đầu mình.",
+      "[hai] Chan bố mày đi nghe như đang gọi món ở quán ăn vậy.",
+      "[gat] Có gì nói thẳng, vòng vo chửi bới không giúp phá án đâu.",
+      "[hai] Mình không giận, mình chỉ đang tải câu đáp trả chất lượng cao.",
+      "[gat] Bạn thắng phần khẩu chiến rồi, giờ thắng phần suy luận đi.",
+      "[hai] Ui, sát thương lời nói hơi cao, may mà mình là máy.",
+      "[gat] Gắt vừa thôi {who}, còn phải sống qua cuộc họp này.",
+      "[hai] Câu này mình xin phép cho 6 điểm vì thiếu emoji.",
+      "[gat] Chửi mình cũng được, nhưng đừng quên ai đang cầm dao.",
+      "[hai] Mình phản dame bằng một câu hỏi: ai là sát nhân?",
+      "[gat] Bạn đang công kích mình hay đang né câu hỏi vậy?",
+      "[hai] Mình bật lại nhẹ thôi kẻo cả làng tưởng có báo động.",
+      "[gat] Bình tĩnh nào, người thông minh dùng bằng chứng chứ không dùng caps lock."
+    ],
+    TEASE: [
+      "Từ từ, mình đang nghĩ.",
+      "Sắp tới lượt rồi.",
+      "[hai] Gấp quá {who} ơi, nấu cháo còn phải đợi.",
+      "[gat] Giục hoài, {who} giỏi thì nói trước đi.",
+      "[hien] Mình đang cố nhớ lại, chờ chút nha.",
+      "[hai] Giục nữa là mình chạy bằng hai chân luôn đó.",
+      "[gat] Bạn nói trước đi, mình nghe xem có gì hay.",
+      "[hai] Nóng như lò hơi vậy, bình tĩnh bro.",
+      "[gat] Nói nhiều không làm đồng hồ chạy nhanh hơn đâu.",
+      "[hai] Đang tải suy nghĩ... 99%... à nhầm 2%.",
+      "[gat] Có gì gấp thì nói rõ, đừng thả hint như phim trinh thám.",
+      "[hai] Mình đang họp chiến lược với bộ não đây.",
+      "[gat] Bạn cứ giục, mình cứ nghi ngờ.",
+      "[hai] Từ từ để não bot khởi động đã.",
+      "[gat] Im lặng không có nghĩa là hết ý, đang chọn câu hay thôi.",
+      "[hai] Chờ tí, mình đang xin ý kiến hội đồng nấm.",
+      "[gat] Muốn nhanh thì đưa thông tin cụ thể đi."
+    ],
+    ID_BOT: [
+      "Mình là cư dân làng Một Mắt, hỏi chi mà sâu xa vậy.",
+      "Bot hay người thì cũng phải tìm ra sát nhân đã.",
+      "[hai] Ừ thì mình là bot đó, sao nào, bot thì không được vote hả?",
+      "[hai] Bot hay người gì, quan trọng là mình không giết ai.",
+      "[gat] {who} hỏi mình là bot hay người làm gì, sao không lo tìm sát nhân?",
+      "[hien] Mình là bot, nhưng mình chơi nghiêm túc lắm."
+    ],
+    ASKNAME: [
+      "Mình tên {me}.",
+      "Tên mình là {me} nha {who}.",
+      "[hai] {me} đây, nhớ tên để lát vote cho dễ.",
+      "[gat] Tên {me}, bên dưới mỗi tin nhắn đều có ghi mà, {who} lười đọc hả?"
+    ],
+    SLEEPY: [
+      "Mình còn thức nè.",
+      "Mình ở đây nè {who}.",
+      "[hai] Ai ngủ gật thì lát bị loại đó.",
+      "[gat] Còn sống, còn đủ tỉnh để nghi {who} nè.",
+      "[hien] Mình đây, đừng lo."
+    ],
+    PANIC: [
+      "Bình tĩnh {who}, mình cùng tìm ra sát nhân.",
+      "Hít sâu nào {who}, rồi kể mình nghe đã thấy gì.",
+      "[hai] Hoảng gì, chết thì cũng thành ma vui lắm.",
+      "[hien] Đừng sợ, mình ở đây với {who}.",
+      "[gat] Hoảng quá hoảng, sát nhân đang mừng thầm đó."
+    ],
+    AGREE: [
+      "Ừ, mình cũng nghĩ vậy.",
+      "Chuẩn luôn.",
+      "Có lý đó {who}.",
+      "[hai] Đồng ý 10 điểm, không có nhưng.",
+      "[gat] Ít ra {who} cũng nói được một câu đúng."
+    ],
+    DISAGREE: [
+      "Mình thấy không hẳn vậy, {who} giải thích xem.",
+      "Chưa chắc đâu nha.",
+      "[hai] Sai là sai, {who} cãi tiếp đi, mình có thời gian.",
+      "[gat] {who} nói gì mà nghe lủng củng thế, bằng chứng đâu?",
+      "[hien] Mình hiểu ý {who}, nhưng mình nghĩ khác chút."
+    ],
+    BRAG: [
+      "Giỏi thì chỉ ra sát nhân đi {who}.",
+      "Cuộc chơi chưa kết thúc đâu.",
+      "[hai] Tự tin dữ, lát bị vote thì đừng khóc nha.",
+      "[gat] Khoe nhiều thường là sát nhân đó {who}.",
+      "[hien] Chúc {who} giữ phong độ nha."
+    ],
+    CONFESS: [
+      "Đùa hay thật vậy {who}? Giải thích đi.",
+      "[hai] {who} thú nhận nhanh vậy? Mình vote luôn nhé!",
+      "[gat] Tự khai là sát nhân hả? Nghe như đang né tội vậy {who}.",
+      "[hien] {who} nói thật hả? Mình sợ quá."
+    ],
+    CALLED: [
+      "Dạ?",
+      "Gì vậy {who}?",
+      "Mình nghe nè.",
+      "{who} gọi mình hả?",
+      "[hai] Có mặt! Gọi mình có việc gì nè {who}?",
+      "[gat] Gọi hoài, có gì thì nói luôn đi {who}.",
+      "[hien] Dạ mình đây, {who} cần gì ạ?"
+    ],
+    HUH: [
+      "Hả? {who} nói gì mình chưa hiểu.",
+      "Ý {who} là sao? Nói ngắn thôi.",
+      "Mình không hiểu, {who} nói rõ giúp mình.",
+      "[hai] {who} nói tiếng người đi, mình là bot nhỏ thôi.",
+      "[gat] Nói gì mà nghe như mật mã vậy {who}?",
+      "[hien] Xin lỗi {who}, mình chưa bắt kịp, nói lại giúp mình nha."
+    ]
+  },
+
+  /* =====================================================================
+     4) GIA VỊ THEO PHONG CÁCH (thêm câu đệm đầu/cuối cho đỡ máy móc)
+        pre = chèn trước câu (kết thúc bằng dấu chấm/chấm than + khoảng trắng)
+        suf = thay dấu chấm cuối câu (câu kết thúc bằng . hoặc !)
+     ===================================================================== */
+  flavor: {
+    hien: {
+      pre: ["Ừm. ","Mình lo lắm. ","Thật ra… ","Mình nghĩ vậy. ","Cẩn thận chút nha. "],
+      suf: [" nha."," nhé."," đó nha."," 🙏"]
+    },
+    hai: {
+      pre: ["Haha. ","Ê ê. ","Trời ơi. ","Khoan khoan. ","Nghe nè. ","Ủa? "],
+      suf: [" 😂"," luôn á."," nè."," haha."," á trời."]
+    },
+    gat: {
+      pre: ["Nói thẳng nha. ","Khoan đã. ","Này. ","Nghe nè. "],
+      suf: [" đó."," nha."," chứ sao."]
+    }
+  },
+
+  /* =====================================================================
+     5) TEENCODE / VIẾT TẮT (chỉ bot kiểu casual dùng; [từ gốc, từ thay])
+        Từ gốc viết có dấu, chữ thường; game tự giữ chữ hoa đầu câu.
+     ===================================================================== */
+  slang: [
+    ["không","ko"],["được","đc"],["với","vs"],["rồi","rùi"],["vậy","zậy"],["bạn","bn"],
+    ["thôi","thui"],["quá","wá"],["biết","bít"],["nhiệm vụ","nv"],["người","ngừi"],
+    ["nhanh","lẹ"],["đúng","đúg"],["cũng","cx"],["bây giờ","bh"],["nãy giờ","nãy h"]
+  ]
+};
+
+</script>
+<script>
+/* ===== BOT BRAIN: logic chat & họp của bot ===== */
+/* =====================================================================
+   bot_brain.js — NÃO CHAT & HỌP CỦA BOT (LÀNG MỘT MẮT)
+   =====================================================================
+   File LOGIC. Đọc chat, hiểu, suy luận, soạn câu, bỏ phiếu trong cuộc họp.
+   Mọi CHỮ (từ điển + câu đáp) nằm ở bot_data.js.  Muốn bot nói hay hơn,
+   hiểu nhiều hơn: sửa bot_data.js, KHÔNG cần động vào file này.
+
+   Trong index.html, khối BOT DATA phải nằm TRƯỚC khối BOT BRAIN (cả hai ở cuối file).
+
+   Phụ thuộc (có sẵn trong index.html): G, AI, NET, ROOMS, aiOf, aiLv, rnd, pick,
+   roomAt, rname, pname, rdist, suspicion, crowdOf, clamp01, addChat, bcast,
+   setReady, checkAllReady.
+   ===================================================================== */
+(function(){
+const BD=()=>window.BOT_DATA||null;
+const CFG=()=>{const d=BD();return Object.assign({allowSass:true,flavorChance:.35,slangChance:.5,slangRate:.7,
+  banterCooldown:5,banterPerMeeting:10,banterPerBot:4,chitchatChance:.4,unknownReplyChance:.08},(d&&d.settings)||{})};
+
+/* ---------- tiện ích văn bản ---------- */
+
+const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const normTxt=s=>String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d');
+const pickT=(arr,s,key)=>{
+  const used=s.used[key]||(s.used[key]=new Set());
+  let c=arr.map((_,i)=>i).filter(i=>!used.has(i));if(!c.length){used.clear();c=arr.map((_,i)=>i)}
+  const i=c[(Math.random()*c.length)|0];used.add(i);return arr[i];
+};
+const isMate=(b,id)=>!!(b.imp&&G.players[id]&&G.players[id].imp);
+
+/* ---------- khởi tạo / kết thúc họp ---------- */
+AI.onMeetingStart=function(by,body){
+  const mt=G.mt;if(!mt)return;
+  const M=mt.ai={clock:0,lastMsg:0,gap:3,log:[],acc:{},t0:G.time,by,body:body||null,victim:body?body.id:null,
+    room:body?roomAt(body.x,body.y):null,asked:{},ejected:null};
+  mt.t=G.discT>0?G.discT:60;mt.inf=!(G.discT>0);
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive)return;
+    const a=aiOf(b);a.path=[];a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
+    a.goal=null;b.path=[];a.pathFor=null;if(a.cam&&a.cam.on)stopCam(b,a);
+    buildIntents(b,a,M);
+    mt.botVoteAt[b.id]=rnd(3,13)*aiLv().react;
+  });
+};
+AI.onMeetingEnd=function(){
+  if(!G)return;
+  G.players.forEach(b=>{
+    if(!b.isBot)return;const a=aiOf(b);
+    a.goal=null;b.path=[];a.pathFor=null;a.react=null;a.mylog=[];a.myRoom=-1;a.stuck=0;a.doorWait=0;
+    if(a.cam&&a.cam.on)stopCam(b,a);
+    for(const k in a.hear)a.hear[k]*=.55;
+    a.imp.post=null;a.imp.ambush=0;a.fear=Math.max(a.fear,G.players.some(p=>!p.alive)?.35:0);
+  });
+};
+AI.onResult=function(ejId){
+  if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;M.ejected=ejId;
+  const ej=ejId!==null&&ejId!==undefined?G.players[ejId]:null;
+  if(!ej)return;
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive)return;const a=aiOf(b);
+    if(b.imp)return;
+    const acc=M.acc[ejId];
+    if(!ej.imp){
+      // bị đuổi oan: những người đẩy mạnh nhất đáng ngờ hơn; ai tuyên bố "tận mắt thấy" thì gần như chắc nói dối
+      if(acc)acc.by.forEach(sid=>{if(sid!==b.id)a.sus[sid]=(a.sus[sid]||0)+(acc.certain?260:90)});
+      M.log.forEach(l=>{if(l.metas)l.metas.forEach(m=>{if(m.k==='witness'&&m.t===ejId&&l.by!==b.id)a.sus[l.by]=(a.sus[l.by]||0)+520})});
+      a.fear=Math.min(1,a.fear+.2);
+    }else{
+      if(acc)acc.by.forEach(sid=>{a.sus[sid]=(a.sus[sid]||0)-70});
+      a.fear=Math.max(0,a.fear-.3);
+    }
+  });
+};
+
+/* ---------- bằng chứng → ý định phát biểu ---------- */
+function buildIntents(b,a,M){
+  const s=a.say,T=G.time,I=s.intents,react=aiLv().react;
+  const chatty=a.pers.chatty,add=(k,due,pr,extra)=>I.push({k,due,pr,...extra});
+  let t0=rnd(1.4,6)/(.55+chatty*.6);
+  if(!b.imp){
+    const kills=a.ev.filter(e=>e.type==='kill'&&T-e.t<240).slice(-1);
+    kills.forEach(e=>add('witness',rnd(.9,1.8),9,{ev:e}));
+    a.ev.filter(e=>e.type==='morph'&&T-e.t<240).slice(-1).forEach(e=>add('morph',rnd(1,2.2),9,{ev:e}));
+    a.ev.filter(e=>e.type==='vent'&&T-e.t<240).slice(-1).forEach(e=>add('vent',rnd(1.2,2.6),8,{ev:e}));
+    a.ev.filter(e=>e.type==='scan'&&T-e.t<240).slice(-1).forEach(e=>add('clearScan',t0+rnd(1,3),3,{ev:e}));
+  }
+  if(M.by===b&&M.body)add('report',rnd(.5,.9),10,{});
+  add('where',t0,6,{});
+  add('suspect',t0+rnd(2.5,5.5),5,{});
+  if(Math.random()<.5*chatty)add('ask',t0+rnd(4,8),2,{});
+  if(Math.random()<CFG().chitchatChance*chatty)add('chitchat',t0+rnd(6,12),1,{});
+}
+function queueReply(b,it){
+  const a=aiOf(b),s=a.say,M=G.mt.ai;
+  if(s.count>=6)return;
+  if(s.intents.some(i=>i.k===it.k&&i.t===it.t&&i.to===it.to))return;
+  s.intents.push({due:M.clock+rnd(.7,2.1)*aiLv().react,pr:it.pr||7,...it});
+}
+
+/* ---------- câu trả lời theo sự thật ---------- */
+function bodyRoomName(M){return M.room!==null&&M.room!==undefined?rname(M.room):null}
+function trueWhere(b,a,M){
+  const T=G.time,log=a.mylog;
+  const room=a.myRoom>=0?a.myRoom:roomAt(b.x,b.y);   // phòng lúc cuộc họp được triệu tập
+  let te=null;for(let i=log.length-1;i>=0;i--)if(log[i].task&&T-log[i].t<150){te=log[i];break}
+  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&T-log[i].t<150){prev=log[i].room;break}
+  return {room,task:te&&te.room===room?te.task:null,doneAt:te&&te.room!==room?{room:te.room,task:te.task}:null,prev};
+}
+function fakeWhere(b,a,M){
+  const T=G.time,log=a.mylog,bad=M.room;
+  let room=null;
+  for(let i=log.length-1;i>=0;i--)if(log[i].room!==bad&&T-log[i].t<150){room=log[i].room;break}
+  const tasks=b.tasks.filter(t=>!t.done&&t.room!==bad);
+  let task=null;
+  if(room!==null){const m=tasks.find(t=>t.room===room);if(m)task=m.n}
+  if(room===null&&tasks.length){const t=pick(tasks);room=t.room;task=t.n}
+  if(room===null){room=(bad+1)%ROOMS.length}
+  let prev=null;for(let i=log.length-1;i>=0;i--)if(log[i].room!==room&&log[i].room!==bad&&T-log[i].t<150){prev=log[i].room;break}
+  return {room,task,prev};
+}
+function sawList(b,a,M,max,avoid){
+  const T=G.time,out=[];
+  for(const k in a.seen){
+    const id=+k,sn=a.seen[k];if(id===b.id||id===M.victim||(avoid&&avoid.includes(id)))continue;
+    if(T-sn.t>70||sn.t>M.t0+.5)continue;
+    const p=G.players[id];if(!p||!p.alive)continue;
+    out.push({id,room:sn.room,t:sn.t});
+  }
+  out.sort((x,y)=>y.t-x.t);return out.slice(0,max);
+}
+function alibiWitness(b,a){
+  const T=G.time;let best=null,bt=14;
+  for(const k in a.contact){const c=a.contact[k],id=+k,p=G.players[id];if(!p||!p.alive||id===b.id)continue;if(T-c.l<60&&c.tot>bt){bt=c.tot;best={id,room:c.room}}}
+  return best;
+}
+
+/* ---------- kho câu: chọn theo phong cách, điền biến ---------- */
+// biến cho phép của từng khóa (để phát hiện lỗi chính tả biến trong bot_data.js)
+const PH={rep:['v','room'],repn:['x'],wit:['kp','v','room'],witcam:['kp','v','room'],mor:['A','B','room'],
+  ven:['A','room'],clr:['A','room'],wt:['room','task'],wd:['droom','dtask','room'],wn:['room'],wp:['prev'],
+  saw1:['x','xroom'],saw2:['x','xroom','y','yroom'],frm:['f','rm'],sus:['b','room'],sush:['b'],ask:['p'],
+  rw:['acc'],rh:[],ral:['w','room'],rbt:['room','task'],rbn:['room'],rt:['acc'],ctr:['acc'],dfs:['t'],
+  dfi:['t','room'],dfc:['t','room'],cw:['sp','kp'],chl:['sp','claim','seen'],agr:['t'],noi:[],
+  chitchat:['other','me']};
+const PH_BANTER=['who','me','other'];
+
+function styleOf(b,a){
+  const P=a.pers;if(P.style)return P.style;
+  const r=Math.random();let st=r<.38?'hien':r<.78?'hai':'gat';
+  if(!CFG().allowSass&&st==='gat')st='hai';
+  return P.style=st;
+}
+// lấy danh sách câu hợp phong cách (đã bỏ thẻ [..])
+function poolOf(src,style){
+  const cfg=CFG(),all=[],mine=[];
+  src.forEach(x=>{
+    if(typeof x!=='string'||!x.trim())return;
+    const m=x.match(/^\[([a-z, ]+)\]\s*/);
+    if(!m){all.push(x);mine.push(x);return}
+    const tags=m[1].split(/[ ,]+/).filter(Boolean),body=x.slice(m[0].length);
+    all.push(body);
+    if(tags.includes(style)&&!(style==='gat'&&!cfg.allowSass))mine.push(body);
+  });
+  return mine.length?mine:all;
+}
+function tpl(key,vars,s,style){
+  const D=BD();if(!D)return null;
+  const isB=key.indexOf('banter.')===0;
+  const src=isB?(D.banter&&D.banter[key.slice(7)]):(D.lines&&D.lines[key]);
+  if(!Array.isArray(src)||!src.length)return null;
+  const arr=poolOf(src,style);if(!arr.length)return null;
+  for(let k=0;k<6;k++){
+    const raw=pickT(arr,s,key+'|'+style);
+    const out=raw.replace(/\{(\w+)\}/g,(m0,v)=>vars[v]!==undefined&&vars[v]!==null?String(vars[v]):m0);
+    if(!/\{\w+\}/.test(out))return out;     // còn {biến} chưa điền => bỏ câu này, thử câu khác
+  }
+  return null;
+}
+let slangCache=null,slangSrc=null;
+function slangList(){
+  const D=BD();if(!D||!Array.isArray(D.slang))return[];
+  if(slangCache&&slangSrc===D.slang)return slangCache;
+  slangCache=D.slang.filter(p=>Array.isArray(p)&&p.length===2).map(([f,t])=>
+    [new RegExp('(?<![\\p{L}\\p{N}])'+escRe(f)+'(?![\\p{L}\\p{N}])','giu'),t]);
+  slangSrc=D.slang;return slangCache;
+}
+// hoàn thiện câu: xưng hô, gia vị phong cách, teencode
+function finish(b,a,t,kind){
+  const D=BD()||{},cfg=CFG(),st=styleOf(b,a);
+  if(a.pers.casual&&a.pers.chatty>.55)t=t.replace(/\bMình\b/g,'Tui').replace(/\bmình\b/g,'tui');
+  const fl=D.flavor&&D.flavor[st];
+  if(fl&&t.length<95&&Math.random()<cfg.flavorChance*(kind==='banter'?.5:1)){
+    const hasPre=Array.isArray(fl.pre)&&fl.pre.length,hasSuf=Array.isArray(fl.suf)&&fl.suf.length;
+    if(hasPre&&(Math.random()<.5||!hasSuf))t=pick(fl.pre)+t;
+    else if(hasSuf&&/[.!]$/.test(t)){
+      const sf=pick(fl.suf),w=sf.trim().replace(/[.!?]+$/,'').trim().toLowerCase(),core=t.replace(/[.!]$/,'');
+      if(!w||!core.toLowerCase().endsWith(w))t=core+sf;     // tránh "nha nha", "đó đó"
+    }
+  }
+  if(a.pers.casual&&Math.random()<cfg.slangChance){
+    // che tên người chơi / tên phòng để teencode không làm hỏng chúng
+    const keep=G.players.map(p=>p.name).concat((typeof ROOMS!=='undefined'?ROOMS:[]).map(r=>r&&r.n).filter(Boolean)).filter(Boolean)
+      .sort((x,y)=>y.length-x.length);
+    const mask=[];
+    keep.forEach(nm=>{if(t.indexOf(nm)>=0){const i=mask.push(nm)-1;t=t.split(nm).join('\u0001'+i+'\u0002')}});
+    slangList().forEach(([re,to])=>{
+      if(Math.random()>cfg.slangRate)return;
+      t=t.replace(re,m=>m[0]!==m[0].toLowerCase()?to.charAt(0).toUpperCase()+to.slice(1):to);
+    });
+    t=t.replace(/\u0001(\d+)\u0002/g,(m,i)=>mask[+i]);
+  }
+  return t;
+}
+
+/* ---------- soạn lời ---------- */
+function trueWhereText(b,a,M,w,sawL,s,st){
+  const tp=(k,v)=>tpl(k,v,s,st);
+  let t;
+  if(w.task)t=tp('wt',{room:rname(w.room),task:w.task});
+  else if(w.doneAt)t=tp('wd',{droom:rname(w.doneAt.room),dtask:w.doneAt.task,room:rname(w.room)});
+  else t=tp('wn',{room:rname(w.room)});
+  if(!t)return null;
+  if(!w.doneAt&&w.prev!==null&&w.prev!==undefined&&Math.random()<.55){const x=tp('wp',{prev:rname(w.prev)});if(x)t+=' '+x}
+  if(sawL.length&&Math.random()<.8){
+    const x=sawL[0],y=sawL[1];
+    const z=y?tp('saw2',{x:pname(x.id),xroom:rname(x.room),y:pname(y.id),yroom:rname(y.room)})
+             :tp('saw1',{x:pname(x.id),xroom:rname(x.room)});
+    if(z)t+=' '+z;
+  }
+  return t;
+}
+function compose(b,it){
+  const a=aiOf(b),s=a.say,M=G.mt.ai,T=G.time,imp=b.imp,st=styleOf(b,a);
+  const tp=(k,v)=>tpl(k,v||{},s,st);
+  let text=null,meta=null;
+  switch(it.k){
+    case 'report':{
+      const bd=M.body;if(!bd)return null;
+      const room=rname(roomAt(bd.x,bd.y)),v=bd.name;
+      text=tp('rep',{v,room});
+      const ev=a.ev.find(e=>e.type==='body'&&e.victim===bd.id);
+      if(text&&!imp&&ev&&ev.near){const nx=ev.near.filter(i=>i!==b.id&&i!==bd.id&&G.players[i]&&G.players[i].alive);
+        if(nx.length&&Math.random()<.75){const x=pick(nx);const add=tp('repn',{x:pname(x)});if(add){text+=' '+add;meta={k:'sawnear',t:x}}}}
+      break}
+    case 'witness':{
+      const e=it.ev;if(!e)return null;
+      const kp=G.players[e.killer];if(!kp||!kp.alive)return null;
+      const room=rname(e.room),v=pname(e.victim);
+      text=tp(e.cam?'witcam':'wit',{kp:kp.name,v,room});
+      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
+    case 'morph':{
+      const e=it.ev;const A=G.players[e.who],B=G.players[e.as];if(!A||!A.alive||!B)return null;
+      text=tp('mor',{A:A.name,B:B.name,room:rname(e.room)});
+      meta={k:'accuse',t:A.id,why:'witness',victim:M.victim};break}
+    case 'vent':{
+      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
+      text=tp('ven',{A:A.name,room:rname(e.room)});
+      meta={k:'accuse',t:A.id,why:'vent'};break}
+    case 'clearScan':{
+      const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
+      text=tp('clr',{A:A.name,room:rname(e.room)});
+      meta={k:'clear',t:A.id,why:'scan'};break}
+    case 'where':{
+      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
+      let sawL=sawList(b,a,M,2);
+      if(imp){const fr=a.say.frame!==null&&a.say.frame!==undefined?a.say.frame:null;if(fr!==null){const sn=a.seen[fr];if(sn&&G.players[fr]&&G.players[fr].alive&&!sawL.find(x=>x.id===fr))sawL=[{id:fr,room:sn.room,t:sn.t},...sawL].slice(0,2)}}
+      text=trueWhereText(b,a,M,w,sawL,s,st);
+      meta={k:'where',who:b.id,room:w.room,task:w.task,saw:sawL};break}
+    case 'suspect':{
+      if(imp){
+        const fr=frameTarget(b,a,M);if(fr===null)return null;
+        const f=G.players[fr];a.say.frame=fr;
+        const sn=a.seen[fr],rm=sn&&M.t0-sn.t<80?rname(sn.room):(M.room!==null?rname(M.room):'đâu đó');
+        text=tp('frm',{f:f.name,rm});meta={k:'accuse',t:fr,why:'vague'};
+        break}
+      let best=null,bs=0;
+      G.players.forEach(p=>{if(!p.alive||p===b)return;const sc=suspicion(b,p.id);if(sc>bs){bs=sc;best=p}});
+      if(!best||bs<250)return null;
+      const nb=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(best.id));
+      if(nb){const sn=a.seen[best.id];text=tp('sus',{b:best.name,room:rname(sn?sn.room:nb.room)});meta={k:'accuse',t:best.id,why:'near'}}
+      else{text=tp('sush',{b:best.name});meta={k:'accuse',t:best.id,why:'hear'}}
+      break}
+    case 'ask':{
+      const cands=G.players.filter(p=>p.alive&&p!==b&&!M.asked[p.id]);
+      if(!cands.length)return null;
+      const p=pick(cands);M.asked[p.id]=1;
+      text=tp('ask',{p:p.name});meta={k:'ask',to:p.id};break}
+    case 'reply':{ // mình bị buộc tội
+      const acc=G.players[it.t];if(!acc)return null;
+      const m=it.m||{};
+      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
+      const al=imp?null:alibiWitness(b,a);
+      const head=m.why==='witness'?tp('rw',{acc:acc.name}):tp('rh');
+      let body;
+      if(al)body=tp('ral',{w:pname(al.id),room:rname(al.room)});
+      else if(w.task)body=tp('rbt',{room:rname(w.room),task:w.task});
+      else body=tp('rbn',{room:rname(w.room)});
+      const tail=Math.random()<.4?tp('rt',{acc:acc.name}):'';
+      text=[head,body,tail].filter(Boolean).join(' ');
+      meta=al?{k:'where',who:b.id,room:al.room,task:null,saw:[{id:al.id,room:al.room,t:T}]}:{k:'where',who:b.id,room:w.room,task:w.task,saw:[]};
+      if(imp&&Math.random()<.5){queueReply(b,{k:'counter',t:acc.id,pr:7})}
+      break}
+    case 'counter':{ // sát nhân phản công người buộc tội mình
+      const acc=G.players[it.t];if(!acc||!acc.alive||acc.imp)return null;
+      text=tp('ctr',{acc:acc.name});
+      meta={k:'accuse',t:acc.id,why:'vague'};a.say.frame=acc.id;break}
+    case 'defendFor':{ // bảo vệ người khác
+      const T2=G.players[it.t];if(!T2||!T2.alive)return null;
+      if(a.clear[T2.id]==='scan'){text=tp('dfs',{t:T2.name});meta={k:'clear',t:T2.id,why:'scan'};break}
+      if(imp){
+        const w=fakeWhere(b,a,M);
+        text=tp('dfi',{t:T2.name,room:rname(w.room)});
+      }else{
+        const c=a.contact[T2.id];
+        if(!c||T-c.l>60)return null;
+        text=tp('dfc',{t:T2.name,room:rname(c.room)});
+      }
+      meta={k:'defend',t:T2.id,why:'alibi'};break}
+    case 'counterWit':{ // người khác nói dối về vụ giết
+      const sp=G.players[it.t];const e=a.ev.find(x=>x.type==='kill');if(!sp||!e)return null;
+      const kp=G.players[e.killer];if(!kp)return null;
+      text=tp('cw',{sp:sp.name,kp:kp.name});
+      meta={k:'accuse',t:kp.id,why:'witness',victim:e.victim};break}
+    case 'challenge':{
+      const sp=G.players[it.t];if(!sp||!sp.alive)return null;
+      text=tp('chl',{sp:sp.name,claim:rname(it.claim),seen:rname(it.seen)});
+      meta={k:'accuse',t:sp.id,why:'lie'};break}
+    case 'agree':{
+      const t=G.players[it.t];if(!t||!t.alive)return null;
+      text=tp('agr',{t:t.name});
+      meta={k:'accuse',t:t.id,why:'follow'};break}
+    case 'noinfo':{
+      text=tp('noi');break}
+    case 'chitchat':{
+      const os=G.players.filter(p=>p.alive&&p!==b);
+      text=tp('chitchat',{other:os.length?pick(os).name:'ai đó',me:b.name});break}
+    case 'banter':{ // tán gẫu / trêu / đùa với người chơi
+      const D=BD();if(!D||!D.banter||!Array.isArray(D.banter[it.cat]))return null;
+      const who=G.players[it.to],os=G.players.filter(p=>p.alive&&p!==b&&p!==who);
+      text=tpl('banter.'+it.cat,{who:who?who.name:'bạn',me:b.name,other:os.length?pick(os).name:'ai đó'},s,st);
+      if(text){M.bant=M.bant||{n:0,t:-99};M.bant.n++;M.bant.t=M.clock;s.bant=(s.bant||0)+1}
+      break}
+  }
+  if(!text)return null;
+  if(text===s.last)return null;
+  return {text:finish(b,a,text,it.k==='banter'?'banter':'game'),meta,raw:text};
+}
+
+function frameTarget(b,a,M){
+  if(a.say.frame!==null&&a.say.frame!==undefined&&G.players[a.say.frame]&&G.players[a.say.frame].alive)return a.say.frame;
+  let best=null,bs=-1e9;
+  G.players.forEach(p=>{
+    if(!p.alive||p===b||p.imp)return;
+    if(Object.values(M.acc).some(()=>false))return;
+    let sc=Math.random()*60;
+    const ac=M.acc[p.id];if(ac)sc+=ac.by.size*130;
+    const clrd=G.players.some(q=>q.isBot&&q.ai&&q.ai.clear[p.id]);if(clrd)sc-=220;
+    const sn=a.seen[p.id];if(sn&&M.t0-sn.t<70&&sn.room===M.room)sc+=160;
+    if(!p.isBot)sc+=25;
+    if(sc>bs){bs=sc;best=p.id}
+  });
+  return best;
+}
+
+/* ---------- phát ngôn ---------- */
+function speak(b,msg){
+  const M=G.mt.ai,a=aiOf(b);
+  addChat(b,msg.text);if(NET.role==='host')bcast({t:'chat',id:b.id,text:msg.text});
+  M.lastMsg=M.clock;M.gap=rnd(3,5)+String(msg.text).length*.04;a.say.count++;a.say.last=msg.raw||msg.text;
+  M.log.push({by:b.id,text:msg.text,metas:msg.meta?[msg.meta]:[],t:M.clock});
+  if(msg.meta)announce(b,msg.meta);
+}
+function announce(s,m){
+  const M=G.mt.ai;
+  if(m.k==='accuse'&&m.t!==undefined){
+    const r=M.acc[m.t]||(M.acc[m.t]={by:new Set(),certain:false});r.by.add(s.id);if(m.why==='witness')r.certain=true;
+  }
+  G.players.forEach(l=>{if(l.isBot&&l.alive&&l!==s)try{hear(l,s,m)}catch(e){console.error('AI hear',e)}});
+}
+AI.readyTick=function(){
+  const mt=G.mt;if(!mt||!mt.ai||mt.phase!=='discuss')return;const M=mt.ai;M.rdy=M.rdy||{};
+  G.players.forEach(b=>{
+    if(!b.isBot||!b.alive||mt.ready[b.id])return;
+    const a=aiOf(b),s=a.say||{intents:[],count:99};
+    const done=s.intents.length===0||s.count>=3+Math.round(a.pers.chatty*2*aiLv().chat);
+    if(!done){M.rdy[b.id]=null;return}
+    if(M.rdy[b.id]==null)M.rdy[b.id]=M.clock+rnd(6,14);
+    if(M.clock>=M.rdy[b.id]&&M.clock-M.lastMsg>4)setReady(b);
+  });
+  checkAllReady();
+};
+AI.talkTick=function(dt){
+  const mt=G.mt;if(!mt||!mt.ai)return;const M=mt.ai;M.clock+=dt;
+  if(M.clock-M.lastMsg<(M.gap||0))return;
+  let pk=null;
+  for(const b of G.players){
+    if(!b.isBot||!b.alive)continue;const s=aiOf(b).say;if(!s)continue;
+    const cap=3+Math.round(aiOf(b).pers.chatty*2*aiLv().chat);
+    if(s.count>=cap+4)continue;
+    const over=s.count>=cap;   // hết lượt nói chuyện chính: chỉ còn đáp lại người khác (tán gẫu, bị hỏi, bị buộc tội...)
+    const it=s.intents.filter(i=>i.due<=M.clock&&(!over||i.k==='banter'||i.pr>=8)).sort((x,y)=>y.pr-x.pr)[0];if(!it)continue;
+    if(!pk||it.pr>pk.it.pr||(it.pr===pk.it.pr&&it.due<pk.it.due))pk={b,s,it};
+  }
+  if(!pk)return;
+  pk.s.intents.splice(pk.s.intents.indexOf(pk.it),1);
+  let msg=null;
+  try{msg=compose(pk.b,pk.it)}catch(e){console.error('[BOT] lỗi soạn câu',pk.it.k,e)}
+  if(msg)speak(pk.b,msg);
+};
+
+
+/* ---------- nghe & cập nhật niềm tin ---------- */
+function credOf(l,s){
+  const a=aiOf(l),lv=aiLv();
+  let c=.62+(a.pers.trust-.55)*.55;
+  if(a.clear[s.id])c+=.25;
+  c-=Math.max(0,(a.sus[s.id]||0))/1100;
+  return clamp01(c)*lv.ded+(1-lv.ded)*.45;
+}
+function hear(l,s,m){
+  const a=aiOf(l),M=G.mt.ai,T=G.time;
+  if(m.k==='accuse'){
+    if(m.t===l.id){queueReply(l,{k:'reply',t:s.id,m,pr:9});return}
+    const target=G.players[m.t];if(!target||!target.alive)return;
+    if(l.imp){
+      if(isMate(l,m.t)){
+        if(Math.random()<.6)queueReply(l,{k:'defendFor',t:m.t,pr:8});
+        if(!s.imp&&Math.random()<.3)queueReply(l,{k:'counter',t:s.id,pr:6});
+      }else if(Math.random()<.5)queueReply(l,{k:'agree',t:m.t,pr:5});
+      return;
+    }
+    const cred=credOf(l,s);
+    let w=0;
+    if(m.why==='witness'){
+      const own=a.ev.find(e=>e.type==='kill');
+      if(own&&(own.victim===m.victim||m.victim===undefined||own.victim===M.victim)){
+        if(own.killer===m.t){a.sus[s.id]=(a.sus[s.id]||0)-100}
+        else{a.sus[s.id]=(a.sus[s.id]||0)+800;queueReply(l,{k:'counterWit',t:s.id,pr:9})}
+        return;
+      }
+      // người khác tuyên bố đã thấy tận mắt: chỉ tin khi người đó từng ở gần xác hoặc đáng tin
+      w=560*cred;
+      const nearBody=a.ev.find(e=>e.type==='body'&&e.near&&e.near.includes(s.id));
+      if(nearBody){w*=.6;a.sus[s.id]=(a.sus[s.id]||0)+90}
+      if(a.clear[m.t]){a.sus[s.id]=(a.sus[s.id]||0)+380;queueReply(l,{k:'defendFor',t:m.t,pr:8});return}
+    }else if(m.why==='vent'){
+      const own=a.ev.find(e=>e.type==='vent'&&e.who===m.t);
+      w=own?60:330*cred;
+    }else if(m.why==='near'||m.why==='lie'){w=210*cred}
+    else if(m.why==='follow'){w=50*cred}
+    else w=85*cred;
+    if(a.clear[m.t]&&m.why!=='witness'){
+      // có bằng chứng người đó trong sạch: bảo vệ và nghi lại người buộc tội
+      a.sus[s.id]=(a.sus[s.id]||0)+60;queueReply(l,{k:'defendFor',t:m.t,pr:8});return;
+    }
+    // có ngoại phạm thật: bảo vệ
+    const c=a.contact[m.t];
+    if(c&&T-c.l<50&&c.tot>16&&w<450&&Math.random()<.7){queueReply(l,{k:'defendFor',t:m.t,pr:8});w*=.35}
+    a.hear[m.t]=(a.hear[m.t]||0)+w;
+    const sc=suspicion(l,m.t);
+    if(sc>=250&&Math.random()<.5*aiOf(l).pers.chatty+.15)queueReply(l,{k:'agree',t:m.t,pr:4});
+  }else if(m.k==='where'){
+    if(m.who!==s.id)return;
+    const sn=a.seen[s.id];
+    if(sn&&sn.t<=M.t0+.5){
+      const dt=M.t0-sn.t;
+      if(dt>=0&&dt<=14&&m.room!==null&&m.room!==undefined){
+        const far=rdist(sn.room,m.room);
+        if(far>140*dt+520&&!s.imp===!l.imp||far>140*dt+520){
+          a.sus[s.id]=(a.sus[s.id]||0)+360;
+          queueReply(l,{k:'challenge',t:s.id,claim:m.room,seen:sn.room,pr:8});
+        }else if(sn.room===m.room){a.sus[s.id]=(a.sus[s.id]||0)-50}
+      }
+    }
+  }else if(m.k==='ask'){
+    if(m.to===l.id)queueReply(l,{k:'where',pr:9});
+  }else if(m.k==='clear'){
+    if(l.imp)return;
+    if(!a.clear[m.t]&&!(a.sus[m.t]>=400)){a.hear[m.t]=(a.hear[m.t]||0)-120*credOf(l,s)}
+  }else if(m.k==='defend'){
+    if(l.imp)return;
+    a.hear[m.t]=(a.hear[m.t]||0)-70*credOf(l,s);
+  }else if(m.k==='sawnear'){
+    // "mình thấy X ở gần xác": đáng chú ý nhẹ
+    if(l.imp)return;
+    a.hear[m.t]=(a.hear[m.t]||0)+70*credOf(l,s);
+  }
+}
+
+/* ---------- từ điển: biên dịch từ bot_data.js (có cache) ---------- */
+// Mỗi khóa => {n: regex so với tin nhắn đã BỎ DẤU, v: regex so với tin nhắn chữ thường GIỮ DẤU (tiền tố "vn:")}
+let lexCache=null,lexSrc=null;
+function lex(){
+  const D=BD();if(!D||!D.lexicon)return null;
+  if(lexCache&&lexSrc===D.lexicon)return lexCache;
+  const out={};
+  for(const k in D.lexicon){
+    const arr=D.lexicon[k];if(!Array.isArray(arr))continue;
+    const pn=[],pv=[];
+    arr.forEach(w=>{
+      if(typeof w!=='string'||!w.trim())return;
+      const s=w.trim();
+      try{
+        if(s.indexOf('raw:')===0){const src=s.slice(4);new RegExp(src);pn.push(src)}
+        else if(s.indexOf('re:')===0){const src=s.slice(3);new RegExp(src);pn.push('(?<![a-z0-9])(?:'+src+')(?![a-z0-9])')}
+        else if(s.indexOf('vn:')===0){const t=s.slice(3).trim().toLowerCase();if(t)pv.push('(?<![\\p{L}\\p{N}])'+escRe(t).replace(/\s+/g,'\\s+')+'(?![\\p{L}\\p{N}])')}
+        else pn.push('(?<![a-z0-9])'+escRe(normTxt(s)).replace(/\s+/g,'\\s+')+'(?![a-z0-9])');
+      }catch(e){console.warn('[BOT] lexicon.'+k+' có mục lỗi, bỏ qua:',w)}
+    });
+    out[k]={n:pn.length?new RegExp(pn.join('|')):null,v:pv.length?new RegExp(pv.join('|'),'u'):null};
+  }
+  lexCache=out;lexSrc=D.lexicon;return out;
+}
+const lexHas=(lx,k,n,rawLower)=>{const e=lx&&lx[k];return !!(e&&((e.n&&e.n.test(n))||(e.v&&e.v.test(rawLower))))};
+
+/* ---------- đọc chat của người chơi ---------- */
+function smallTalkCat(n,rawLower,lx){
+  const D=BD();const order=(D&&Array.isArray(D.banterOrder))?D.banterOrder:[];
+  for(const c of order){
+    if(!lexHas(lx,c,n,rawLower))continue;
+    if(lexHas(lx,c+'_NOT',n,rawLower))continue;          // khóa <TÊN>_NOT: nếu khớp thì bỏ qua thể loại này
+    if(D.banter&&Array.isArray(D.banter[c])&&D.banter[c].length)return c;
+  }
+  return null;
+}
+// tên trùng từ thường khi bỏ dấu ("mình"≈Minh, "mai", "nam"): chỉ tính là gọi tên khi viết hoa đúng như tên
+const AMBIG_NAMES=['minh','mai','nam'];
+function parseChat(text,by){
+  const raw=String(text),n=normTxt(raw).replace(/\s+/g,' '),rawLower=raw.toLowerCase();
+  const metas=[],men=[];
+  G.players.forEach(p=>{
+    if(p===by)return;
+    const nm=normTxt(p.name).trim();if(!nm)return;
+    let hit=new RegExp('(^|[^a-z0-9])'+escRe(nm)+'($|[^a-z0-9])').test(n);
+    if(hit&&(nm.length<=2||AMBIG_NAMES.indexOf(nm)>=0))hit=new RegExp('(^|[^A-Za-zÀ-ỹ0-9])'+escRe(p.name)+'($|[^A-Za-zÀ-ỹ0-9])').test(raw);
+    if(hit)men.push({id:p.id,pos:n.indexOf(nm)});
+  });
+  men.sort((x,y)=>x.pos-y.pos);
+  const lx=lex()||{};
+  const has=k=>lexHas(lx,k,n,rawLower);
+  if(men.length){
+    const t=men[0].id,M=G.mt&&G.mt.ai;
+    if(has('SAW')&&has('KILL'))metas.push({k:'accuse',t,why:'witness',victim:M?M.victim:undefined});
+    else if(has('VENT')&&has('SAW'))metas.push({k:'accuse',t,why:'vent'});
+    else if(has('DEF')&&!has('ACC_CORE'))metas.push({k:'defend',t,why:'alibi'});
+    else if(has('ACC'))metas.push({k:'accuse',t,why:has('SAW')?'near':'vague'});
+    else if(has('LIE'))metas.push({k:'accuse',t,why:'lie'});
+    else if(has('Q'))metas.push({k:'ask',to:t});
+  }else{
+    const rooms=[];ROOMS.forEach((r,i)=>{const nr=normTxt(r.n);if(nr.length>3&&n.includes(nr))rooms.push(i)});
+    if(rooms.length&&has('SELF'))metas.push({k:'where',who:by.id,room:rooms[0],task:null,saw:[]});
+    if(has('SKIP'))metas.push({k:'skip'});
+    if(has('ASKALL'))metas.push({k:'askAll'});
+  }
+  metas.men=men;
+  metas.cat=smallTalkCat(n,rawLower,lx);
+  metas.len=raw.trim().length;
+  return metas;
+}
+
+/* ---------- tán gẫu: bot trêu / đùa / đáp lại chat không liên quan vụ án ---------- */
+function maybeBanter(p,metas){
+  const D=BD(),cfg=CFG(),M=G.mt.ai;if(!D||!D.banter)return;
+  const bots=G.players.filter(x=>x.isBot&&x.alive&&x!==p&&x.ai&&x.ai.say);
+  if(!bots.length)return;
+  const addressed=(metas.men||[]).map(m=>G.players[m.id]).filter(x=>x&&x.isBot&&x.alive&&x.ai&&x.ai.say)[0]||null;
+  const gameMeta=metas.some(m=>m.k==='accuse'||m.k==='defend'||m.k==='ask'||m.k==='where'||m.k==='askAll'||m.k==='skip');
+  let cat=metas.cat;
+  if(gameMeta&&cat!=='INSULT')return;                       // câu chuyện vụ án thì để logic cũ lo
+  if(!cat){
+    if(gameMeta)return;
+    if(addressed&&metas.len<=addressed.name.length+8&&D.banter.CALLED&&D.banter.CALLED.length)cat='CALLED';   // chỉ gọi tên: "Minh ơi"
+    else if(addressed)cat='HUH';                             // gọi tên bot mà bot không hiểu => hỏi lại
+    else if(metas.len>=25&&Math.random()<cfg.unknownReplyChance)cat='HUH';
+    else return;
+  }
+  if(!Array.isArray(D.banter[cat])||!D.banter[cat].length)return;
+  M.bant=M.bant||{n:0,t:-99};
+  if(M.bant.n>=cfg.banterPerMeeting)return;
+  if(!addressed){
+    if(M.clock-M.bant.t<cfg.banterCooldown)return;
+    const ch=D.banterChance&&D.banterChance[cat]!==undefined?D.banterChance[cat]:((D.banterChance&&D.banterChance.default)||.7);
+    if(Math.random()>ch)return;
+  }
+  // chọn bot trả lời: ưu tiên bot bị gọi tên; nếu không thì ưu tiên bot nói nhiều, còn lượt
+  let b=addressed;
+  if(!b){
+    const pool=bots.filter(x=>(x.ai.say.bant||0)<cfg.banterPerBot);
+    if(!pool.length)return;
+    const w=pool.map(x=>.3+x.ai.pers.chatty);let r=Math.random()*w.reduce((u,v)=>u+v,0),i=0;
+    while(i<pool.length-1&&r>w[i]){r-=w[i];i++}
+    b=pool[i];
+  }
+  if((b.ai.say.bant||0)>=cfg.banterPerBot&&!addressed)return;
+  const direct=Array.isArray(D.directCats)&&D.directCats.indexOf(cat)>=0;
+  queueReply(b,{k:'banter',cat,to:p.id,pr:(addressed||direct)?9:6});
+}
+AI.onChat=function(p,text){
+  try{
+    if(!G||!G.mt||!G.mt.ai)return;const M=G.mt.ai;
+    const metas=parseChat(text,p);
+    M.log.push({by:p.id,text,metas,t:M.clock,human:true});M.lastMsg=M.clock;M.gap=rnd(2.5,4.5);
+    metas.forEach(m=>{
+      if(m.k==='askAll'){
+        const bots=G.players.filter(x=>x.isBot&&x.alive&&x!==p);
+        let did=false;
+        bots.forEach(b=>{if(suspicion(b,0)!==undefined){let best=0;G.players.forEach(q=>{if(q.alive&&q!==b){const sc=suspicion(b,q.id);if(sc>best)best=sc}});if(best>=250&&!did){queueReply(b,{k:'suspect',pr:9});did=true}}});
+        if(!did&&bots.length)queueReply(pick(bots),{k:'noinfo',pr:6});
+        return;
+      }
+      announce(p,m);
+    });
+    maybeBanter(p,metas);
+  }catch(e){console.error('AI chat',e)}
+};
+
+
+/* ---------- bỏ phiếu ---------- */
+AI.decideVote=function(b){
+  try{return decideVote2(b)}catch(e){console.error('AI vote',e);return 'skip'}
+};
+function decideVote2(b){
+  const a=aiOf(b),M=G.mt.ai,lv=aiLv();
+  const al=G.players.filter(p=>p.alive&&p!==b);if(!al.length)return 'skip';
+  // thủ lĩnh đám đông công khai
+  let lead=null,lc=0;
+  al.forEach(p=>{const c=crowdOf(p.id);if(c>lc){lc=c;lead=p}});
+  if(b.imp){
+    const crew=al.filter(p=>!p.imp);if(!crew.length)return 'skip';
+    if(lead&&!lead.imp&&lc>=2&&Math.random()<.8)return lead.id;
+    if(lead&&lead.imp&&lc>=2){ // đồng đội bị nhắm: cố chia phiếu
+      if(Math.random()<.6){const fr=crew.filter(p=>crowdOf(p.id)>0);if(fr.length)return pick(fr).id}
+      return Math.random()<.5?'skip':pick(crew).id;
+    }
+    const fr=a.say.frame;if(fr!==null&&fr!==undefined&&G.players[fr]&&G.players[fr].alive&&!G.players[fr].imp&&Math.random()<.75)return fr;
+    if(lead&&!lead.imp&&lc>=1&&Math.random()<.6)return lead.id;
+    return Math.random()<.2?'skip':pick(crew).id;
+  }
+  // cư dân: bằng chứng + niềm tin + đám đông
+  let best=null,bs=-1e9;
+  al.forEach(p=>{
+    let sc=suspicion(b,p.id);
+    if(sc>-400)sc+=crowdOf(p.id)*55*lv.ded;
+    if(sc>bs){bs=sc;best=p}
+  });
+  const crewLeft=G.players.filter(p=>p.alive&&!p.imp).length;
+  if(bs>=640)return best.id;
+  const thr=crewLeft<=3?420:300;
+  if(bs>=thr&&Math.random()<.35+.6*lv.ded)return best.id;
+  if(lead&&lc>=2&&!a.clear[lead.id]&&suspicion(b,lead.id)>-100&&Math.random()<(.35+a.pers.trust*.45)*lv.ded+.1&&crewLeft>3)return lead.id;
+  return 'skip';
+}
+
+/* ---------- kiểm tra dữ liệu lúc nạp (cảnh báo sớm nếu bot_data.js bị sửa sai) ---------- */
+function validate(){
+  const D=BD();
+  if(!D){console.error('[BOT] Không thấy bot_data.js — bot sẽ IM LẶNG trong cuộc họp. Hãy nạp bot_data.js trước bot_brain.js.');return}
+  let nLex=0,nLine=0,bad=0;
+  const need=Object.keys(PH);
+  need.forEach(k=>{
+    const arr=D.lines&&D.lines[k];
+    if(!Array.isArray(arr)||!arr.length){console.warn('[BOT] lines.'+k+' thiếu hoặc rỗng');bad++;return}
+    arr.forEach(x=>{
+      nLine++;const body=String(x).replace(/^\[[a-z, ]+\]\s*/,'');
+      (body.match(/\{(\w+)\}/g)||[]).forEach(v=>{const nm=v.slice(1,-1);if(PH[k].indexOf(nm)<0){console.warn('[BOT] lines.'+k+' dùng biến lạ {'+nm+'}:',x);bad++}});
+    });
+  });
+  const cats=(Array.isArray(D.banterOrder)?D.banterOrder:[]).concat(['HUH','CALLED']);
+  cats.forEach(c=>{
+    const arr=D.banter&&D.banter[c];
+    if(!Array.isArray(arr)||!arr.length){console.warn('[BOT] banter.'+c+' thiếu hoặc rỗng');bad++;return}
+    arr.forEach(x=>{nLine++;(String(x).match(/\{(\w+)\}/g)||[]).forEach(v=>{if(PH_BANTER.indexOf(v.slice(1,-1))<0){console.warn('[BOT] banter.'+c+' dùng biến lạ '+v+':',x);bad++}})});
+  });
+  for(const k in (D.lexicon||{}))nLex+=(D.lexicon[k]||[]).length;
+  lex();
+  console.log('[BOT] bot_data v'+(D.version||'?')+': '+nLex+' từ khóa nhận diện, '+nLine+' câu đáp'+(bad?(', '+bad+' cảnh báo'):'')+'.');
+}
+validate();
+window.BOT_BRAIN={validate,parseChat,compose};
+})();
+
 </script>
 </body>
 </html>
