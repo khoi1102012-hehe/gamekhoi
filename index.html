@@ -313,7 +313,7 @@ canvas{display:block;width:100%;height:100%}
       <label>Mã phòng</label><div class="code" id="roomCode">-----</div>
       <div class="plist" id="plist"></div>
       <div id="lobbyMsg" class="sub" style="margin:0;font-size:13px"></div>
-      <div id="vipPanel" class="vip-panel" style="display:none" title="Ô mã riêng của chủ phòng">
+      <div id="vipPanel" class="vip-panel" style="display:none" title="Ô mã riêng">
         <label for="vipCode">Chữ mã VIP</label>
         <input id="vipCode" type="password" maxlength="7" inputmode="numeric" autocomplete="off" placeholder="•••••••" aria-label="Chữ mã VIP">
         <span id="vipStatus">Mã riêng của chủ phòng</span>
@@ -939,9 +939,12 @@ function openLobby(code){saveProfile();S.code=code;$('roomCode').textContent=cod
 const NOPEER='Không tải được thư viện online (PeerJS). Hãy kiểm tra Internet rồi tải lại trang.';
 $('bCreate').onclick=()=>{saveProfile();S.vipArmed=false;if($('vipCode'))$('vipCode').value='';if($('vipStatus'))$('vipStatus').textContent='Mã riêng của chủ phòng';if(typeof Peer==='undefined'){alert(NOPEER);return}hostOpen(genCode(),0)};
 function updateVipCode(){
-  if(NET.role!=='host')return;
+  // Chủ phòng VÀ người vào phòng đều có ô này. Người vào phòng chỉ gửi mã riêng cho chủ phòng
+  // (không hiện cho ai khác); chủ phòng kiểm tra mã rồi quyết định vai khi bắt đầu ván.
+  if(NET.role!=='host'&&NET.role!=='client')return;
   const v=($('vipCode').value||'').trim();
   S.vipArmed=(v==='1442014');
+  if(NET.role==='client'&&NET.hostConn)send(NET.hostConn,{t:'vip',code:v});
   $('vipStatus').textContent=S.vipArmed?'Đã kích hoạt — chỉ bạn biết':'Mã riêng của chủ phòng';
   $('vipStatus').style.color=S.vipArmed?'#75f0ad':'';
 }
@@ -992,7 +995,7 @@ $('discInf').onchange=()=>{S.dInf=$('discInf').checked;NET.role==='host'?broadca
 let lobbyBotNames=[];
 function renderLobby(){
   const cl=NET.role==='client',v=NET.view;
-  $('vipPanel').style.display=(!cl&&NET.role==='host')?'flex':'none';
+  $('vipPanel').style.display=(cl||NET.role==='host')?'flex':'none';
   $('bStart').style.display=cl?'none':'';$('discT').disabled=cl||(!cl&&S.dInf);$('discInf').disabled=cl;$('nb').disabled=cl;$('ni').disabled=cl;$('aiLv').disabled=cl;$('mp').disabled=cl;
   const ab=(cl&&v&&v.abilities)?v.abilities:S.abilities;
   [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilVent','vent']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
@@ -1044,6 +1047,11 @@ function hostMsg(conn,d){
     while(NET.lobby.some(l=>l.name===nm))nm=nm.slice(0,10)+Math.floor(Math.random()*90+10);
     NET.lobby.push({lid:NET.nextLid++,name:nm,ci,conn});
     broadcastLobby();return;
+  }
+  if(d.t==='vip'){ // mã VIP của người vào phòng: chỉ chủ phòng biết, không phát lại cho ai
+    const l=NET.lobby.find(x=>x.conn===conn);
+    if(l)l.vip=(String(d.code||'').trim()==='1442014');
+    return;
   }
   if(!G)return;
   const p=G.players.find(q=>q.conn===conn);if(!p)return;
@@ -1145,14 +1153,17 @@ function startGame(){
       isBot:!h,conn:h?h.conn:null,imp:false,alive:true,face:1,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,
       ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,tasks:[],path:[],wait:rnd(0,2),atTask:null,goalTask:null,meetings:1,seen:{}});
   }
-  const vipHost=NET.role==='host'&&S.vipArmed;
-  if(vipHost){
-    // The host alone enters this code. Keep their role assignment server-local and do not broadcast the code/flag.
-    pl[0].imp=true;
-    shuffle(pl.slice(1)).slice(0,Math.max(0,ni-1)).forEach(p=>p.imp=true);
+  // Mã VIP: ai nhập đúng mã (chủ phòng hoặc người vào phòng) thì chắc chắn làm sát nhân ở ván này.
+  // Quá số sát nhân cho phép thì bốc ngẫu nhiên trong số người có mã; thiếu thì bốc thêm ngẫu nhiên.
+  const vipIds=NET.role==='host'?pl.filter((p,i)=>{const h=humans[i];return h&&((i===0&&S.vipArmed)||h.vip)}).map(p=>p.id):[];
+  if(vipIds.length){
+    shuffle(vipIds.slice()).slice(0,ni).forEach(id=>pl[id].imp=true);
+    const left=ni-Math.min(ni,vipIds.length);
+    if(left>0)shuffle(pl.map(p=>p.id).filter(id=>!pl[id].imp)).slice(0,left).forEach(id=>pl[id].imp=true);
   }else shuffle(pl.map(p=>p.id)).slice(0,ni).forEach(id=>pl[id].imp=true);
-  // Consume the one-round private override after choosing roles; the input stays local to the host.
-  S.vipArmed=false;
+  // Mã chỉ có tác dụng một ván: dọn sạch để ván sau phải nhập lại.
+  S.vipArmed=false;if(NET.lobby)NET.lobby.forEach(l=>{l.vip=false});
+  if($('vipCode'))$('vipCode').value='';if($('vipStatus')){$('vipStatus').textContent='Mã riêng của chủ phòng';$('vipStatus').style.color=''}
   pl.forEach(p=>{p.tasks=shuffle(TASKDEFS.map((t,i)=>i)).slice(0,taskCount).map(i=>({...TASKDEFS[i],done:false,di:i}))});
   G={players:pl,me:pl[0],aiLevel:S.ai|0,discT:S.dInf?0:S.dt,bodies:[],state:'reveal',done:0,total:pl.filter(p=>!p.imp).length*taskCount,ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{...S.abilities},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
   pl.forEach(p=>{if(p.conn)send(p.conn,{t:'start',disc:G.discT,mp:MAPI,me:p.id,imp:p.imp,ni,total:G.total,abilities:{...G.abilities},
@@ -1162,6 +1173,7 @@ function startGame(){
   enterGameUI();
 }
 function clientStart(d){
+  S.vipArmed=false;if($('vipCode'))$('vipCode').value='';if($('vipStatus')){$('vipStatus').textContent='Mã riêng của chủ phòng';$('vipStatus').style.color=''}
   setMap(d.mp||0);
   const pl=d.players.map(q=>({id:q.id,name:q.name,color:q.color,x:q.x,y:q.y,tx:q.x,ty:q.y,face:1,alive:true,imp:d.mates.includes(q.id),
     isBot:false,conn:null,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,meetings:1,tasks:[],path:[],seen:{}}));
@@ -2533,7 +2545,7 @@ function execGoal(b,dt,a){
     case 'buddy':{
       const q=G.players[g.id];
       g.left-=dt;
-      if(!q||!q.alive||g.left<=0||(!b.imp&&suspicion(b,g.id)>=250)){a.goal=null;break}
+      if(!q||!q.alive||g.left<=0||(!b.imp&&suspicion(b,g.id)>=250)||(!g.refuge&&a.ban&&a.ban[g.id]>G.time)){a.goal=null;break}
       const d=Math.hypot(q.x-b.x,q.y-b.y);
       if(d>120||b.path.length)goPt(b,dt,a,[q.x+rnd(-35,35),q.y+rnd(-20,20)],85,false);
       break}
@@ -2562,7 +2574,7 @@ function crewIdle(b,a){
   if(a.fear>.3||r<.22){
     // đi theo một người không đáng ngờ để cho an toàn
     let best=null,bd=1e9;
-    for(const k in a.seen){const s=a.seen[k],q=G.players[+k];if(!q||!q.alive||q===b||T-s.t>12)continue;if(suspicion(b,+k)>=200)continue;const d=Math.hypot(s.x-b.x,s.y-b.y);if(d<bd){bd=d;best=+k}}
+    for(const k in a.seen){const s=a.seen[k],q=G.players[+k];if(!q||!q.alive||q===b||T-s.t>12)continue;if(suspicion(b,+k)>=200)continue;if(a.ban&&a.ban[+k]>T)continue;const d=Math.hypot(s.x-b.x,s.y-b.y);if(d<bd){bd=d;best=+k}}
     if(best!==null&&Math.random()<.8){setGoal(b,a,{k:'buddy',id:best,left:rnd(10,20)});return}
   }
   if(!camBusy&&SECURITY&&r<.22+(a.pers.curious*.12)){setGoal(b,a,{k:'cam',phase:'go'});return}
@@ -2757,7 +2769,7 @@ function impDecide(b,a){
     const win=winningKill();
     const opts=vis.filter(o=>o.d<82&&(o.wit===0||win));
     if(opts.length&&Math.random()<Math.max(.35,lv.hunt)){
-      opts.sort((x,y)=>x.d-y.d);const v=opts[0].q;
+      opts.sort((x,y)=>(x.d-grudgeBonus(b,x.q))-(y.d-grudgeBonus(b,y.q)));const v=opts[0].q;
       kill(b,v);I.post={t:T,x:v.x,y:v.y,victim:v.id,done:false};b.path=[];dropGoal(b,a);return;
     }
   }
@@ -2765,7 +2777,7 @@ function impDecide(b,a){
   if(soon){
     // sát nhân chủ động phá hoại / hóa hình khi sắp đủ hồi chiêu
     let cand=vis.filter(o=>!(tm[o.q.id]&&tm[o.q.id].by!==b.id&&T-tm[o.q.id].t<6));
-    cand.sort((x,y)=>(x.d+x.wit*380)-(y.d+y.wit*380));
+    cand.sort((x,y)=>(x.d+x.wit*380-grudgeBonus(b,x.q))-(y.d+y.wit*380-grudgeBonus(b,y.q)));
     const bestC=cand[0];
     if(bestC&&impSabotage(b,a,lv,T,bestC.q,bestC.wit)){/* đã dùng kỹ năng */}
     if(bestC){
@@ -2823,8 +2835,9 @@ function botUpdate(b,dt){
    chất vấn mâu thuẫn, bảo vệ người vô tội, sát nhân nói dối có kiểm soát.
    =================================================================== */
 const DISC_T=24;
-/* Não chat & họp của bot nằm ở 2 khối script cuối file: BOT DATA (chữ) + BOT BRAIN (logic).
-   Hai khối đó nằm ngay sau script chính (cuối file) và ghi đè các hàm AI.* bên dưới.  */
+/* Não chat & họp của bot đã tách ra: bot_data.js (chữ) + bot_brain.js (logic).
+   Hai file đó được nạp ngay sau script chính này và ghi đè các hàm AI.* bên dưới.
+   Nếu thiếu file, bot vẫn đi/làm nhiệm vụ bình thường nhưng im lặng và bỏ phiếu skip. */
 AI.onMeetingStart=function(){};AI.onMeetingEnd=function(){};AI.onResult=function(){};
 AI.talkTick=function(){};AI.readyTick=function(){};AI.onChat=function(){};AI.decideVote=function(){return 'skip'};
 
@@ -3110,7 +3123,6 @@ function loop(now){
 requestAnimationFrame(loop);
 </script>
 <script>
-/* ===== BOT DATA: từ điển & câu đáp (muốn nâng cấp bot, sửa khối này) ===== */
 /* =====================================================================
    bot_data.js — TỪ ĐIỂN & KHO CÂU ĐÁP CỦA BOT (LÀNG MỘT MẮT)
    =====================================================================
@@ -3133,8 +3145,9 @@ requestAnimationFrame(loop);
    4) Chỉ dùng đúng các {biến} đã liệt kê ở từng nhóm (bảng ngay dưới).
       Dùng biến lạ => câu đó bị bỏ qua, và game ghi cảnh báo ở console.
    5) Tiếng Việt đời thường của game thủ: ngắn (dưới ~80 ký tự), có thể dùng
-      teencode nhẹ, emoji vừa phải. Không dùng từ tục nặng, không phân biệt
-      đối xử, không công kích cá nhân thật; chỉ trêu/cà khịa kiểu bạn bè.
+      teencode nhẹ, emoji vừa phải. Cho phép bật lại kiểu bạn bè trêu nhau, kể cả
+      mấy câu tục nhẹ (đm, vl...) khi người chơi chửi trước. Không phân biệt
+      đối xử, không công kích nhóm người, không đụng đời tư thật.
    6) Dấu nháy kép bên trong chuỗi phải viết \"như này\".
 
    THẺ PHONG CÁCH (tùy chọn) đặt ở đầu câu:  "[hien] ...", "[hai] ...", "[gat] ..."
@@ -3214,8 +3227,8 @@ window.BOT_DATA = {
     slangChance: 0.5,       // xác suất bot "nói teen" (chỉ bot kiểu casual) viết tắt
     slangRate: 0.7,         // trong lần viết tắt: mỗi từ được đổi với xác suất này
     banterCooldown: 5,      // giây tối thiểu giữa 2 lần bot chen vào tán gẫu (nếu không bị gọi tên)
-    banterPerMeeting: 16,   // tối đa số câu tán gẫu của tất cả bot trong 1 cuộc họp
-    banterPerBot: 6,        // tối đa số câu tán gẫu của 1 bot trong 1 cuộc họp
+    banterPerMeeting: 10,   // tối đa số câu tán gẫu của tất cả bot trong 1 cuộc họp
+    banterPerBot: 4,        // tối đa số câu tán gẫu của 1 bot trong 1 cuộc họp
     chitchatChance: 0.4,    // xác suất 1 bot tự mở chuyện (nhân với độ nói nhiều của bot)
     unknownReplyChance: 0.08 // xác suất bot hỏi lại "hả?" khi nghe câu dài không hiểu mà không ai bị gọi tên
   },
@@ -3277,127 +3290,28 @@ window.BOT_DATA = {
              "ai nghi ai","ai thay khong","ai thay gi khong"],
 
     /* ---- NÓI CHUYỆN PHIẾM (mỗi khóa phải có mảng cùng tên ở `banter`) ---- */
-    GREET: ["chao","hello","hi","hey","helo","xin chao","alo","yo","chao moi nguoi","chao ca nha","hi moi nguoi","chao ae","chao bro","chao ong","chao ba","ê","e","ê bro","yo yo","hello ae","helo ae","hí","hí lô","a lô","chao mn","chao moi nguoi nha",
+    GREET: ["chao","hello","hi","hey","helo","xin chao","alo","yo","chao moi nguoi","chao ca nha","hi moi nguoi",
             "co ai khong","halo","hallo","chao ban","chao cac ban","chao nha","xin chao moi nguoi","hello moi nguoi",
             "re:he+llo+","re:hi+","re:he+y","re:yo+"],
-    BYE: ["tam biet","bye","bai bai","di ngu day","thoat day","minh di day","pp","bb","het gio roi","bye bye","out day","quit day","thoat nha ae","hen gap","gap lai","toi di","tui out","minh out","afk day","off day","nghi day","bai ae","bye ae","pp ae","bb nha",
-          "den gio","hen gap lai","tui di day","toi di day","di day","di nha","thoat nha","thoat day nha","bai nha"],
-    THANKS: ["cam on","thanks","thank you","thank","tks","cam on nha","bieu ban","nho ban nhe","cam on ban","thx","tysm","tks bro","thanks bro","cam on bro","doi on","da ta","da ta nha","camu","camon","thank kiu","thank kiu nha","on gi","good job","nice one",
+    BYE: ["tam biet","bye","bai bai","di ngu day","thoat day","minh di day","pp","bb","bye bye",
+          "den gio","hen gap lai","tui di day","toi di day","di nha","thoat nha","thoat day nha","bai nha"],
+    THANKS: ["cam on","thanks","thank you","thank","tks","cam on nha","bieu ban","nho ban nhe","cam on ban",
              "cam on nhieu","cam on nhe","thanks nha","thanks nhe","thank nhe","cam on ban nhieu","ty","tks nha","thankyou"],
-    SORRY: ["xin loi","sorry","sr","mb","lo tay","lo vote nham","xin loi nhe","tui nham","toi nham","minh nham","sry","srr","my bad","loi tui","toi sai","tui sai","minh sai","nham that","xinloi","xl","sorry bro","sorry ae","xin loi ae",
+    SORRY: ["xin loi","sorry","sr","mb","lo tay","lo vote nham","xin loi nhe","tui nham","toi nham","minh nham",
             "nham roi","nham nguoi","nham nguoi roi","xin loi moi nguoi","sorry moi nguoi","sorry nha","xl nha"],
-    LAUGH: ["haha","hihi","hehe","kk","kkk","lol","lmao","cuoi","re:ha(ha)+","re:he(he)+","re:hi(hi)+","kkkk","khakhakha","hahaha","hehehe","hihihi","kakaka","kekeke","jajaja","😂","🤣","cười ẻ","cuoi ia","cuoi xiu","cuoi dau bung","buon cuoi vai","vai ca","vcl cuoi","xD",":v","=))","=)))","^^",
+    LAUGH: ["haha","hihi","hehe","kk","kkk","lol","lmao","cuoi","re:ha(ha)+","re:he(he)+","re:hi(hi)+",
             "re:k{2,}","re:(kha){2,}","cuoi ngat","cuoi xiu","cuoi chet","cuoi vl","cuoi muon xiu","buon cuoi",
             "cuoi be bung","vui qua","xd","xdd","hahah","haha cuoi","cuoi qua"],
-    PRAISE: ["gioi","gioi qua","pro","vip","thong minh","sieu","dinh","xuat sac","tuyet","qua gioi","bot gioi","đỉnh","đỉnh vậy","đỉnh thế","hay","hay đấy","nice","good job","good bot","cao thu","cao tay","uy tin","chat luong","mượt","muot","khét","khét lẹt","bá cháy","bai","10 diem","10đ","max ping","qua du","xịn","xin","ngon",
+    PRAISE: ["gioi","gioi qua","pro","vip","thong minh","sieu","vn:đỉnh","xuat sac","tuyet","qua gioi","bot gioi",
              "khen","hay qua","that gioi","ngon","bai phuc","qua dinh","de thuong","dang yeu","tuyet voi",
              "good","nice","gioi vay","gioi that","pro qua","pro vl","gioi vl","dinh cua chop","ngon lanh",
              "bot thong minh","bot pro","bot vip","bot gioi qua","thong minh qua","thong minh vay"],
     INSULT: ["bot ngu","ngu qua","do ngu","ngu vl","ngu nhu bo","ngu vay","ngu the","dot","dot qua","do dot",
              "dot dac","oc cho","oc dau","ngoc","ngu ngoc","te qua","ga qua","do ga","ga vay",
-             "non qua","cui bap","kem qua","vo dung","chan qua","choi nhu hai","choi te","choi do",
+             "non qua","cui bap","kem qua","vo dung","choi nhu hai","choi te","choi do",
              "bot dot","bot te","may ngu","ngu bo","do bot ngu","bot ngoc","nhu hai","ba dao","may te",
              "may dot","ban ngu","ban dot","ban te","ngu qua troi","non not","do non","bot kem","bot yeu",
-             "choi chan","dung ngu","ngu ghe","ngu that",
-             "dm",
-             "dmm",
-             "d m",
-             "d m m",
-             "dcm",
-             "đcm",
-             "dit me",
-             "dit me may",
-             "dit",
-             "du me",
-             "du ma",
-             "vcl",
-             "vl",
-             "vkl",
-             "clm",
-             "cc",
-             "cmm",
-             "cml",
-             "lon",
-             "loz",
-             "l",
-             "cac",
-             "cak",
-             "cut",
-             "cho",
-             "thang ngu",
-             "con ngu",
-             "may dien a",
-             "ao that day",
-             "chan bo may di",
-             "chan bo may",
-             "chan di",
-             "chan may",
-             "chan nua di",
-             "bo may",
-             "bo m",
-             "tao",
-             "mày",
-             "may",
-             "thang nay",
-             "con nay",
-             "do cho",
-             "do lon",
-             "do mat day",
-             "mat day",
-             "khon nan",
-             "vo duyen",
-             "xam",
-             "xam lol",
-             "xam loz",
-             "nhuc",
-             "nhuc mat",
-             "cay a",
-             "cay khong",
-             "cay ha",
-             "tuoi gi",
-             "tuoi gi doi",
-             "im me di",
-             "câm",
-             "cam mom",
-             "ngam mom",
-             "bot re rach",
-             "bot phe",
-             "bot rac",
-             "bot loi",
-             "ngu nhu heo",
-             "ngu nhu cho",
-             "ngu nhu con bo",
-             "oc heo",
-             "oc lon",
-             "thieu nao",
-             "mat nao",
-             "khong co nao",
-             "sida",
-             "ga",
-             "ga vl",
-             "ga vai",
-             "choi ngu",
-             "choi nhu cut",
-             "choi nhu lol",
-             "bot oc cho",
-             "may oc cho",
-             "tao chui may",
-             "tao dang chui",
-             "chui may",
-             "chui bot",
-             "an cut",
-             "di chet di",
-             "bien di",
-             "cút",
-             "cut di",
-             "ne may",
-             "nay may",
-             "con ga",
-             "thang ga",
-             "do ham",
-             "ham",
-             "ham vl",
-             "do mat lon"],
+             "choi chan","dung ngu","ngu ghe","ngu that"],
     TEASE: ["nhanh len","le len","cham the","cham qua","len di","sao lau the","sao cham vay","nao noi di","noi di",
             "noi nhanh","im roi ha","sao im","im re","dung im","ai noi gi di","lam gi do di","ngon thi nhao vao",
             "dam khong","co dam khong","thach","thach ban","khong dam","so a","so ha","noi nhanh len","nhanh nao",
@@ -3407,13 +3321,13 @@ window.BOT_DATA = {
              "ai that","ban la ai","may la ai","ai tao ra may","chatgpt","gpt","claude","gemini","la bot hay nguoi",
              "co phai nguoi khong","phai bot khong","bot phai khong","la ai khong","la bot ha","ban la ai vay",
              "toan bot","may la bot ha","ban co phai bot","ban co phai ai"],
-    ASKNAME: ["ten gi","ten ban la gi","ban ten gi","ten may la gi","may ten gi","ten la gi","ten gi vay","tên gì","tên mày","mày tên gì","bn ten gi","nick gi","id gi","goi ban la gi","ten that la gi","cho xin ten","xin ten","may la ai","ai day",
+    ASKNAME: ["ten gi","ten ban la gi","ban ten gi","ten may la gi","may ten gi","ten la gi","ten gi vay",
               "ban ten la gi","ten ban gi","ten may gi","ten cua ban","ten cua may"],
     INSULT_NOT: ["vn:ngủ","vn:ngũ"],   // "ngủ" (buồn ngủ, đi ngủ) không phải chửi "ngu"
     SLEEPY: ["vn:ngủ","vn:buồn ngủ","vn:đi ngủ","vn:ngủ chưa","vn:ngủ rồi","vn:ngủ gật","buon ngu","di ngu","ngu gat","ngu di","ngu roi","afk","treo may","lag","lag qua","mang yeu",
              "roi mang","dung may","dang lam gi day","con song khong","song khong","chet chua","ngu chua",
              "o day khong","o do khong","co mat khong","con do khong","alo alo","dang o dau day","ai con thuc khong",
-             "ngu luon roi","chet roi a","an gi chua","doi bung","doi qua","met qua","buon qua"],
+             "ngu luon roi","chet roi a","an gi chua","met qua"],
     PANIC: ["so qua","hoang qua","run qua","chet toi","toi chet","chet mat","tim dap","hoang so","kinh qua",
             "troi oi","tro oi","oi troi","doi oi","me oi","huhu","hu hu","khoc","so vl","hoang loan","hoang hon",
             "tim dap chan tay run","so chet","so qua di","chet roi","chet cha","chet roi me oi","kinh khung","kinh di",
@@ -3757,67 +3671,14 @@ window.BOT_DATA = {
       "[gat] Chê người ta giỏi quá hén, vote chính xác được chưa mà nói.",
       "[gat] Giỏi thì chỉ ra sát nhân đi, đừng chê suông.",
       "[gat] Chê mình nhiều vậy, {who} tự soi gương chưa?",
-      "[hien] Mình buồn đó {who}, nói nhẹ nhàng được không.",
-      "[hai] Chan bố mày á? Chan mắm hay chan canh để mình chuẩn bị cái bát 😂",
-      "[gat] Muốn cà khịa thì xếp hàng nha {who}, mình đang bận tìm sát nhân.",
-      "[hai] Chửi có vần có điệu tí đi, câu này mình nghe quen rồi.",
-      "[gat] Mồm nhanh hơn não thì cũng chưa chắc vote đúng đâu nha.",
-      "[hai] Bạn nói tiếp đi, mình đang ghi vào sổ lưu niệm.",
-      "[gat] Căng thế {who}, mới thua một ván hay vừa rơi mất dép?",
-      "[hai] Chửi mình không mất máu đâu, thử tìm imp xem.",
-      "[gat] Nói mình nghe xem, ngoài chửi ra bạn còn chiến thuật nào không?",
-      "[hai] Mình là bot mà còn biết suy nghĩ, bạn thử bình tĩnh xem.",
-      "[gat] Đừng nóng, bàn phím không có lỗi.",
-      "[hai] Ủa đang roast mình hay đang tự giới thiệu bản thân vậy?",
-      "[gat] Câu đó mạnh đấy, tiếc là bằng chứng vẫn bằng không.",
-      "[hai] Mình xin phép cười nhẹ một cái rồi quay lại phá án.",
-      "[gat] Cà khịa tiếp đi, biết đâu bạn lộ sơ hở.",
-      "[hai] Chửi mình thì dễ, tìm đúng sát nhân mới khó nha.",
-      "[gat] Bạn có quyền gắt, mình có quyền thấy bạn đáng nghi.",
-      "[hai] Từ từ, để mình bật chế độ miễn nhiễm lời chê.",
-      "[gat] Chửi xong nhớ vote, đừng để cả làng chờ.",
-      "[hai] Mình nghe rõ từng chữ, nhưng sát nhân thì vẫn chưa rõ.",
-      "[gat] Nói chuyện dữ vậy, mong phiếu vote cũng có lực tương đương.",
-      "[hai] Định dọa mình hả? Mình còn chưa có tim để run.",
-      "[gat] Câu chửi hơi cũ rồi, cập nhật phiên bản mới đi {who}.",
-      "[hai] Bạn muốn mình đáp lễ hay gửi hóa đơn tiền cà khịa?",
-      "[gat] Thay vì chửi, đưa bằng chứng ra xem nào.",
-      "[hai] Chửi mình một câu, mình tặng bạn một cái nấm 🍄",
-      "[gat] Đừng lấy âm lượng làm bằng chứng nha.",
-      "[hai] Mình ghi nhận góp ý: người chơi đang hơi cay.",
-      "[gat] Bạn càng nóng mình càng nghi bạn đang đánh lạc hướng.",
-      "[hai] Chan gì cũng được, miễn đừng chan phiếu vote lên đầu mình.",
-      "[hai] Chan bố mày đi nghe như đang gọi món ở quán ăn vậy.",
-      "[gat] Có gì nói thẳng, vòng vo chửi bới không giúp phá án đâu.",
-      "[hai] Mình không giận, mình chỉ đang tải câu đáp trả chất lượng cao.",
-      "[gat] Bạn thắng phần khẩu chiến rồi, giờ thắng phần suy luận đi.",
-      "[hai] Ui, sát thương lời nói hơi cao, may mà mình là máy.",
-      "[gat] Gắt vừa thôi {who}, còn phải sống qua cuộc họp này.",
-      "[hai] Câu này mình xin phép cho 6 điểm vì thiếu emoji.",
-      "[gat] Chửi mình cũng được, nhưng đừng quên ai đang cầm dao.",
-      "[hai] Mình phản dame bằng một câu hỏi: ai là sát nhân?",
-      "[gat] Bạn đang công kích mình hay đang né câu hỏi vậy?",
-      "[hai] Mình bật lại nhẹ thôi kẻo cả làng tưởng có báo động.",
-      "[gat] Bình tĩnh nào, người thông minh dùng bằng chứng chứ không dùng caps lock."
+      "[hien] Mình buồn đó {who}, nói nhẹ nhàng được không?"
     ],
     TEASE: [
       "Từ từ, mình đang nghĩ.",
       "Sắp tới lượt rồi.",
       "[hai] Gấp quá {who} ơi, nấu cháo còn phải đợi.",
       "[gat] Giục hoài, {who} giỏi thì nói trước đi.",
-      "[hien] Mình đang cố nhớ lại, chờ chút nha.",
-      "[hai] Giục nữa là mình chạy bằng hai chân luôn đó.",
-      "[gat] Bạn nói trước đi, mình nghe xem có gì hay.",
-      "[hai] Nóng như lò hơi vậy, bình tĩnh bro.",
-      "[gat] Nói nhiều không làm đồng hồ chạy nhanh hơn đâu.",
-      "[hai] Đang tải suy nghĩ... 99%... à nhầm 2%.",
-      "[gat] Có gì gấp thì nói rõ, đừng thả hint như phim trinh thám.",
-      "[hai] Mình đang họp chiến lược với bộ não đây.",
-      "[gat] Bạn cứ giục, mình cứ nghi ngờ.",
-      "[hai] Từ từ để não bot khởi động đã.",
-      "[gat] Im lặng không có nghĩa là hết ý, đang chọn câu hay thôi.",
-      "[hai] Chờ tí, mình đang xin ý kiến hội đồng nấm.",
-      "[gat] Muốn nhanh thì đưa thông tin cụ thể đi."
+      "[hien] Mình đang cố nhớ lại, chờ chút nha."
     ],
     ID_BOT: [
       "Mình là cư dân làng Một Mắt, hỏi chi mà sâu xa vậy.",
@@ -3924,9 +3785,1091 @@ window.BOT_DATA = {
   ]
 };
 
+
+/* #####################################################################
+   ĐỢT NÂNG CẤP 2 — NÓI CHUYỆN GIỐNG NGƯỜI THẬT (đời thường, tiếng lóng, chửi thề)
+   ---------------------------------------------------------------------
+   Phần này CỘNG THÊM vào dữ liệu ở trên (không xóa gì của bản cũ).
+   Muốn thêm nữa: cứ nhét thêm chuỗi vào các lệnh L(...) / B(...) / G(...) bên dưới.
+     L("THỂ_LOẠI",[...])  = thêm từ khóa nhận diện (viết KHÔNG DẤU, hoặc "vn:" có dấu)
+     B("THỂ_LOẠI",[...])  = thêm câu bot đáp lại (biến: {who} {me} {other})
+     G("khóa",[...])      = thêm câu trong luồng game (đúng biến của khóa đó)
+   Ở bản này người chơi được phép "nói bậy cho vui" với bot, và bot được phép bật
+   lại kiểu bạn bè trêu nhau. Bot KHÔNG công kích nhóm người, không kỳ thị, không
+   đụng tới đời tư thật. Chửi cho vui thôi, đừng chửi thật nha 😄
+   ##################################################################### */
+(function(){
+const D=window.BOT_DATA;
+const L=(k,a)=>{D.lexicon[k]=(D.lexicon[k]||[]).concat(a)};
+const B=(k,a)=>{D.banter[k]=(D.banter[k]||[]).concat(a)};
+const G=(k,a)=>{D.lines[k]=(D.lines[k]||[]).concat(a)};
+
+/* ---------- cài đặt: bot nói nhiều, phản ứng nhanh hơn ---------- */
+Object.assign(D.settings,{
+  banterCooldown:3, banterPerMeeting:20, banterPerBot:7,
+  chitchatChance:0.5, unknownReplyChance:0.15, flavorChance:0.3
+});
+Object.assign(D.banterChance,{
+  CHAN:1, SWEAR:1, THREAT:1, SHUT:1, CHALLENGE:1, FLIRT:0.95, HACK:1, BEG:0.9, ASKINFO:0.9,
+  FOOD:0.8, BORED:0.7, COMPLAIN:0.8, LUCK:0.7, GAMEHELP:0.9, MONEY:0.7, REMATCH:0.6,
+  WHATEVER:0.5, GG:0.6, EXCL:0.45, PRAISE:0.9, TEASE:0.8, THANKS:0.8, SORRY:0.7
+});
+D.directCats=D.directCats.concat(["CHAN","SWEAR","THREAT","SHUT","CHALLENGE","HACK","FLIRT","ASKINFO","BEG"]);
+// thể loại được phép chen ngang kể cả khi tin nhắn có tên người + câu hỏi ngắn
+D.overrideCats=["INSULT","CHAN","SWEAR","THREAT","SHUT","CHALLENGE","FLIRT"];
+// thứ tự ưu tiên (cái nào đứng trước thì thắng khi 1 tin khớp nhiều loại)
+D.banterOrder=["CHAN","SWEAR","THREAT","SHUT","CHALLENGE","INSULT","ID_BOT","HACK","CONFESS","ASKNAME","ASKINFO",
+  "FLIRT","BEG","GREET","BYE","THANKS","SORRY","PANIC","COMPLAIN","TEASE","FOOD","BORED","SLEEPY","MONEY","GAMEHELP",
+  "LUCK","REMATCH","GG","BRAG","PRAISE","DISAGREE","AGREE","WHATEVER","EXCL","LAUGH"];
+
+/* =====================================================================
+   TỪ ĐIỂN MỚI
+   ===================================================================== */
+
+/* ---- CHAN: trò đùa "chan bố mày đi" (chan canh / chan mắm) ---- */
+L("CHAN",[
+ "chan bo may","chan bo may di","chan bo may luon","chan bo may nao","chan bo di","chan bo","chan bo may nhe","chan bo may nha",
+ "chan bo may coi","chan bo may xem","chan bo may cai","chan bo may phat","chan bo may phat nua",
+ "chan ong may","chan cha may","chan ong noi may","chan me may","chan ba may","chan nha may","chan dau may",
+ "chan tao","chan tao di","chan tao luon","chan tao xem","chan anh","chan anh di","chan anh luon","chan anh nao",
+ "chan em di","chan chi di","chan ong di","chan ong nay","chan bac di","chan chu di","chan co di",
+ "chan thang bo may","chan thang cha may","chan thang nay","chan thang kia","chan thang do","chan con nay","chan con kia",
+ "chan canh","chan canh di","chan canh nao","chan mam","chan mam di","chan mam tom","chan nuoc mam","chan nuoc mam di",
+ "chan nuoc canh","chan nuoc dung","chan nuoc tuong","chan tuong","chan sot","chan mo hanh","chan bat com",
+ "chan cho thang nay","chan cho thang do","chan cho con nay","chan cho no mot bat","chan cho thang bo may","chan phat","chan phat nua","chan phat nua di","chan nua di","chan nua nao","chan them di","chan them nua",
+ "chan luon di","chan luon cho","chan cho no","chan cho tao","chan cho anh","chan cho em","chan cho bo may",
+ "chan ca nha","chan ca ban","chan ca lang","chan het di","chan het luon","chan ngap","chan ngap luon",
+ "den day chan","den day tao chan","qua day chan","lai day chan","vao day chan","ra day chan","len day chan",
+ "re:chan+ (bo|ong|cha|me|ba|tao|anh|em|chi|may|no) (may|tao|di|luon|nao|coi|nhe|nha)",
+ "re:chan+ (di|luon|nua|them) (di|nao|nua|coi|nhe|nha)","re:chan+ (bo|ong|cha) (may|tao)"
+]);
+D.lexicon.CHAN_NOT=["vn:chán quá","vn:chán thật","vn:chán vãi","vn:chán ghê","vn:chán lắm","vn:chán đời"];
+
+/* ---- SWEAR: chửi thề (đmm, vcl, đéo, clm...) -> bot bật lại ---- */
+L("SWEAR",[
+ // viết tắt "đ.m.m" và các biến thể gõ giãn
+ "re:d+[ .\\-_*]?m+[ .\\-_*]?m*","re:d+[ .\\-_*]?k+[ .\\-_*]?m+","re:d+[ .\\-_*]?c+[ .\\-_*]?m+","re:dm+","re:dmm+l*",
+ "re:dkm+","re:dcm+","re:dcmn+","re:dmcs","re:dmvl","re:dmvcl","re:dmt","re:dmd","re:d[ .\\-_*]m","re:d[ .\\-_*]m[ .\\-_*]m",
+ "dm may","dmm may","dm tao","dmm tao","dm no","dmm no","dm thang","dmm thang","dm con","dmm con",
+ "dit me","ditme","dit me may","dit con me may","dit cu","dit cu nha may","dit bo","dit bo may","dit ong may","dit ba may",
+ "djt","djt me","djt me may","djtme","dit me no","dit me tao","du ma","du ma may","du me","du me may","dume","dume may",
+ "vn:đụ má","vn:đụ mẹ","vn:địt mẹ","vn:địt cụ","vn:đm","vn:đmm","vn:đkm","vn:đcm","vn:đcmm","vn:đ.m","vn:đ.m.m","vn:đ m","vn:đ m m",
+ "vn:đ**","vn:đ***","vn:đù","vn:đù má","vn:đù mẹ","vn:đệt","vn:đệt mẹ","vn:địt mợ","vn:đệt mợ",
+ // "đéo" gõ không dấu — chỉ lấy các cụm đi kèm động từ để tránh nhầm "đeo kính"
+ "deo biet","deo can","deo thich","deo tin","deo hieu","deo phai","deo co","deo ai","deo ma","deo ra gi","deo duoc","deo lam",
+ "deo noi","deo muon","deo quan tam","deo thay","deo so","deo choi","deo vote","deo sao","deo gi","deo can biet","deo lien quan",
+ "dec biet","dec can","dec thich","dec tin","dec hieu","dec phai","dec co","dec ai","dec ma","dec ra gi","dec duoc","dec lam",
+ "vn:đéo","vn:đéo biết","vn:đéo cần","vn:đéo thích","vn:đéo tin","vn:đéo phải","vn:đéo có","vn:đếch","vn:đếch biết","vn:đếch cần",
+ "vn:đách","vn:đách biết","vn:đách cần","vn:đ*o","vn:đ éo",
+ // chửi tục khác, chỉ lấy dạng viết tắt / cụm không nhầm nghĩa
+ "cc","con cac","cac gi","cc gi","cc j","ccc","cak","cl","clm","clmm","clmn","clgt","cl gi","clgt vay","cai lon gi","lon gi",
+ "vn:lồn","vn:cặc","vn:cặc gì","vn:cái lồn","vn:buồi","vn:cái buồi","vn:buồi gì",
+ "cmm","cmn","cmnr","cmnl","con me may","con me no","me may","me no","me kiep","me may chu","ma may","ma may chu","ma no","ma kiep","ma mi",
+ "mia may","mia no","mie may","mie no","mie kiep","mie nhà may",
+ "dkm","dcm","dcmm","dcmn","dkmm",
+ 
+ "chet me may","chet tiet","chet cha may","chet mat","chet tiet canh","chet bo may","chet di may","chet cho",
+ "cut ngay","cut khoi day","cut cho",
+ "con cho","do cho","thang cho","do con cho","dong cho","cho chet","cho de","cho dien","cho ngu","cho gi","do cho de",
+ "do khon","do khon nan","khon nan","khon kiep","do khon nay","do ban","do ban thiu","do dien","do khung","do bi dien",
+ "bo may","bo may day","bo may biet","bo may can","bo may thach","bo may khong so","bo may khong so ai","bo may chan","bo may noi",
+ "thang bo may","thang cha may","thang ong may","dang cap bo may","bo may la","bo may bao","bo may thich","bo may tin","bo may lam",
+ "mat day","do mat day","thang mat day","con mat day",
+ "may bi dien","may bi khung","may dien a","may dien ha","may khung a","may khung ha",
+ 
+ "ngu nhu cho","ngu nhu con cho","ngu nhu con bo","ngu nhu lon","ngu nhu cac",
+ "ngao ngo","ngao da","ngao dai","do ngao","thang ngao",
+ "oc cho","oc lon","oc cac","bo lao","do bo lao","do oc cho",
+ "xam lon","xam l","noi xam lon","xao lon",
+ "tuc chet","tuc dien","tuc muon dien","tuc muon chet",
+ "nhu lon","nhu cac","nhu cut","nhu cai lon","nhu cai cac",
+ 
+ "an cut","an cut di","an cut hoai","an cut nua","an cut luon","an cut het","an cut vay",
+ "chim cut","chim chet","cho chim","do chim",
+ "tom lai la do khon",
+ "ban thiu","du khon","du khon nan"
+]);
+// những câu chat game bình thường nhưng dễ trùng chữ khi bỏ dấu
+D.lexicon.SWEAR_NOT=["vn:đi đâu","vn:đã đi","vn:đang đi","vn:đi đường","vn:đi ngang","vn:đi vào","vn:đi ra","vn:đi qua","vn:đứng đó",
+                     "vn:đã làm","vn:đến đó","vn:đi đến","vn:đi đi","vn:đã đến","vn:đi ăn"];
+
+/* ---- THREAT: dọa nạt kiểu bạn bè ---- */
+L("THREAT",[
+ "tao vote may","tao se vote may","tao treo co may","tao treo co","tao giet may","tao se giet may","tao bop co may","tao dap may",
+ "tao danh may","tao xu may","tao xu ly may","tao chem may","tao dam may","tao tong co may","tao day may ra","tao dua may ra",
+ "tao se de y may","tao ghi so","tao ghi hom","tao ghi no","tao nho mat","tao nho may","tao khong tha","tao se khong tha","khong tha cho may",
+ "may chet voi tao","may chet chac","may chet roi","may xong roi","may toi so roi","may xong dai roi","may thanh ma","may la ma",
+ "lieu hon","lieu hon day","lieu hon do","lieu ma giu mom","lieu ma an noi","coi chung tao",
+ "coi chung cai mieng","coi chung cai dau","coi chung cai mang","nho mat tao","nho mat day","nho do cho",
+ "khong yen dau","khong yen voi tao","khong yen voi toi","khong yen thoi","dung co ma","dung co trach tao",
+ "tui se vote ban","tui vote ban","toi vote ban","toi se vote ban","minh se vote ban","minh vote ban","tui tong co ban",
+ "tui khong tha cho ban","toi khong tha cho ban","minh khong tha cho ban","ban xong roi","ban toi so roi","ban chet chac",
+ "ban chet voi tui","ban chet voi toi","ban chet voi minh","ban se bi loai","ban se bi vote","ban se chet","ban chet roi",
+ "xem tao lam gi may","xem tao xu may","xem co dam khong","roi se co ngay","roi se co ngay may","roi se co ngay tao","roi se thay",
+ "roi se biet","van sau tao","van sau tao se","van sau gap","van sau chet","chet sang van sau","sang van sau thi",
+ "dung hoi sao tao ac","dung trach sao tao ac","tao ghi thu","tao ghi han","tao se nho","tao se tinh so","tinh so voi may",
+ "tinh so sau","se tinh so","tinh so van sau","tru dien may","tao se tru dien","tao se bao thu","tao bao thu","bao thu van sau"
+]);
+
+/* ---- SHUT: bảo bot im ---- */
+L("SHUT",[
+ "im di","im di nao","im di may","im di bot","im ngay","im giup","im coi","im dum","im mom","im mom di","im mom lai","im lang di",
+ "im lang giup","im het di","im het coi","im lai","im lai di","im ngay di","im giup cai","im giup minh","im giup toi","im giup tui",
+ "cam mom","cam mom di","cam mom lai","cam di","cam di nao","cam ngay","cam giup","cam coi","cam dum","cam lai","cam het",
+ "bot im di","bot im","bot im mom","bot cam mom","bot cam","may im di","may im","may cam mom","may cam","ban im di","ban cam mom",
+ "dong mom","dong mom lai","dong mom di","dong mieng","khep mieng","khep mieng lai","khep mieng di","khep mom","khep mom lai",
+ "dung noi nua","dung noi nhieu","dung noi hoai","dung noi mai","bot dung noi","bot dung noi nua","may dung noi nua",
+ "noi nhieu qua","noi hoai","noi mai","noi lam gi","noi nhieu the","noi nhieu vay",
+ "on ao qua","nhuc dau qua","phien qua",
+ "phien phuc","phien phuc qua","lam phien","lam phien qua","dung lam phien","dung lam on","dung lam on nua",
+ "shut up","shutup","stfu","stop talking","be quiet","hush","tat tieng","tat tieng di","tat mic","tat mic di","mute bot","mute may","mute no",
+ "thoi di may","thoi di bot","thoi dung noi","thoi dung noi nua","du roi do","du roi may","du roi bot","du roi nha","du roi nhe",
+ "tat tieng may","bot tat mic","bot tat tieng","bot di cho khac","bot di cho khac choi",
+ "bot het gio","bot het gio roi","bot lam on","bot lam on im","bot lam on cam","lam on im","lam on cam","lam on im mieng"
+]);
+
+/* ---- CHALLENGE: thách đấu / solo ---- */
+L("CHALLENGE",[
+ "solo","solo di","solo khong","solo nao","solo coi","solo xem","solo voi tao","solo voi anh","solo voi toi","solo voi tui","solo voi minh",
+ "solo di may","solo di bot","solo di ban","dam solo","dam solo khong","co dam solo","co dam solo khong","dam solo voi tao khong",
+ "1v1","1 v 1","1vs1","1 vs 1","1on1","1 on 1","mot chon mot","mot doi mot","mot chon mot di","mot chon mot khong","mot chon mot nao",
+ "ra day","ra day di","ra day nao","ra day coi","ra day xem","ra day noi chuyen","ra day tao bao","ra day tao noi","ra day tao cho",
+ "ra ngoai kia","ra ngoai kia noi chuyen","ra ngoai kia di","ra ngoai kia nao","ra ngoai kia coi","ra ngoai kia xem",
+ "ra san","ra san di","ra san nao","ra san coi","ra san xem","ra san thuong","ra san thuong di",
+ "chien khong","chien nao","chien coi","chien xem","chien luon","chien luon di","chien luon nao",
+ "choi tay doi","choi tay doi di","choi tay doi nao","choi tay doi khong","tay doi",
+ "bat tay","bat tay di","bat tay nao","bat tay khong","bat tay hoa","bat tay hoa di","hoa di",
+ "danh nhau","danh nhau di","danh nhau khong","danh nhau nao","danh nhau coi","danh nhau xem","danh nhau luon","danh nhau luon di",
+ "dam khong","dam khong may","dam khong bot","dam khong ban","dam khong nao","dam khong coi","dam khong xem",
+ "thach","thach may","thach bot","thach ban","thach nao","thach coi","thach xem","thach dam","thach dam khong",
+ "hon tao khong","hon tao di","hon tao nao","hon tao coi","hon tao xem","hon tao khong may","hon tao khong bot","hon tao khong ban",
+ "hon tui khong","hon toi khong","hon minh khong","hon anh khong","hon em khong","hon chi khong","hon ong khong","hon ba khong",
+ "ben khong","ben di","ben nao","ben coi","ben xem","ben khong may","ben khong bot","ben khong ban",
+ "so a","so ha","so ak","so hong",
+ "keo vao","keo vao di","keo vao nao","keo vao coi","keo vao xem","keo vao khong",
+ 
+ "pk","pk di","pk nao","pk coi","pk xem","pk khong","pk luon","pk luon di","pk luon nao","pk luon coi","pk luon xem",
+ "boxing","boxing di","boxing nao","boxing coi","boxing xem","boxing khong","boxing luon","boxing luon di","boxing luon nao"
+]);
+
+/* ---- FLIRT: thả thính / tán tỉnh / khen ngoại hình ---- */
+L("FLIRT",[
+ "vn:yêu em","vn:yêu anh","vn:yêu bạn","vn:yêu bot","vn:yêu mày","vn:yêu cậu","vn:yêu quá","vn:yêu ghê","vn:yêu luôn","vn:yêu rồi","vn:yêu mất rồi",
+ "vn:iu em","vn:iu anh","vn:iu bạn","vn:iu bot","vn:iu quá","vn:iu luôn","vn:thương em","vn:thương anh","vn:thương bạn","vn:thương bot",
+ "yeu em","yeu anh","yeu ban","yeu bot","yeu may","yeu cau","yeu qua","yeu ghe","yeu luon","anh yeu em","em yeu anh","toi yeu ban","tui yeu ban",
+ "minh yeu ban","tao yeu may","toi thuong ban","tui thuong ban","minh thuong ban","love you","luv u","i love you","ilu","love u",
+ "crush","crush ban","crush bot","crush may","la crush","lam crush","crush cua toi","crush cua tui",
+ "nguoi yeu","lam nguoi yeu","lam nguoi yeu anh","lam nguoi yeu em","lam nguoi yeu toi","lam nguoi yeu tui","lam ny","lam ny nhe","lam ny di",
+ "co ny chua","co ny khong","co gau chua","co gau khong","co nguoi yeu chua","co nguoi yeu khong","bot co ny chua","bot co ny khong",
+ "bot co nguoi yeu chua","bot co nguoi yeu khong","bot co gau chua","bot yeu ai","bot thich ai","may co ny chua","ban co ny chua","ban co nguoi yeu chua",
+ "ket hon","ket hon di","ket hon nhe","ket hon nao","ket hon khong","ket hon voi toi","ket hon voi tui","lay chong","lay chong di","lay vo","lay vo di",
+ "cuoi anh","cuoi anh di","cuoi em","cuoi em di","cuoi nhau","cuoi nhau di","cuoi toi di","cuoi tui di","cuoi minh di",
+ "tan tinh","tan ban","tan bot","tha thinh","tha thinh di","tha thinh nua","tha thinh hoai","vn:thả thính","vn:thả thính đi","vn:thả thính nữa",
+ "dep trai","dep trai qua","dep trai vay","dep trai the","dep trai ghe","dep trai vl","dep trai vcl","dep trai khong","dep trai ha",
+ "xinh gai","xinh gai qua","xinh gai vay","xinh gai the","xinh gai ghe","xinh gai vl","xinh gai vcl","xinh gai khong","xinh gai ha",
+ "xinh qua","xinh vay","xinh the","xinh ghe","xinh vl","xinh vcl","xinh khong","xinh ha","xinh ak","xinh nhi",
+ "dep qua","dep vay","dep ghe","dep vl","dep vcl","dep ha","dep ak","dep nhi","dep lam",
+ "bot dep","bot xinh","bot dep trai","bot xinh gai","bot dang yeu","bot de thuong","bot cute","bot quyen ru","bot goi cam","bot nong bong",
+ "cute","cute qua","cute vay","cute ghe","cute vl","cute vcl","cute ha","cute ak","cute nhi",
+ "goi cam","goi cam qua","goi cam vay","goi cam ghe","goi cam vl","goi cam ha","quyen ru","quyen ru qua","nong bong","nong bong qua",
+ "ban de thuong","ban dang yeu","ban dep","ban xinh","ban cute","ban goi cam","em dep","em xinh","anh dep","anh dep trai","em de thuong","em dang yeu",
+ "mai moi","mai moi di","mai moi nhe","hen ho","hen ho di","hen ho nhe","di hen ho","hen ho khong","hen ho nao",
+ "ngu cung","ngu cung khong","ngu cung nhe","ngu cung di","ngu chung","ngu chung khong","ngu chung nhe",
+ "om cai","om cai nao","om cai khong","om cai nhe","om cai di","om phat","om phat nao","om phat khong","om phat nhe",
+ "hon cai","hon cai nao","hon cai khong","hon cai nhe","hon cai di","hon phat","hon phat nao","hon phat khong","hon phat nhe",
+ "vn:ôm cái","vn:ôm cái nào","vn:ôm cái không","vn:ôm cái nhé","vn:ôm cái đi","vn:ôm phát","vn:ôm phát nào","vn:ôm phát không",
+ "vn:hôn cái","vn:hôn cái nào","vn:hôn cái không","vn:hôn cái nhé","vn:hôn cái đi","vn:hôn phát","vn:hôn phát nào","vn:hôn phát không",
+ "muah","mwah","chu choa oi","chu choa me oi","vn:chụt","vn:chụt chụt","vn:thơm cái","vn:thơm phát","vn:thơm cái nào"
+]);
+D.lexicon.FLIRT_NOT=["vn:yếu","vn:thương vong","vn:thương hiệu","vn:thương lượng","vn:thương binh","vn:bị thương","vn:chấn thương","vn:thương tích"];
+
+/* ---- HACK: nghi bot gian lận / biết trước ---- */
+L("HACK",[
+ "hack","hack a","hack ha","hack ak","hack hong","hack ko","hack khong","bot hack","may hack","ban hack","co hack","dung hack","xai hack",
+ "xai hack a","xai hack ha","xai hack ak","xai hack hong","xai tool","xai tool a","xai tool ha","xai tool ak","dung tool","dung tool a",
+ "cheat","cheat a","cheat ha","cheat ak","bot cheat","may cheat","co cheat","dung cheat","xai cheat","xai cheat a","gian lan","gian lan a","gian lan ha",
+ "bot gian lan","may gian lan","ban gian lan","co gian lan","dang gian lan","bot biet het","bot biet het a","bot biet het ha","bot biet het ak",
+ "may biet het","may biet het a","may biet het ha","may biet het ak","bot nhin thay het","may nhin thay het","bot nhin thay duoc","may nhin thay duoc",
+ "bot biet ai la sat nhan","may biet ai la sat nhan","may biet ai la imp","bot biet ai la imp","bot biet ai la killer","may biet ai la killer",
+ "bot biet ai giet","may biet ai giet","sao bot biet","sao may biet","sao ban biet","sao biet ai la sat nhan","sao biet ai la imp",
+ "bot ao that","bot ao that day","may ao that","may ao that day","bot hack map","may hack map","hack map","hack camera","hack tam nhin",
+ "wallhack","aimbot","aim bot","auto vote","auto bau","auto loai","mod menu",
+ "bot ao ma","may ao ma","ai la bot hack","ai hack","ai cheat","ai gian lan","ai xai tool","ai xai hack"
+]);
+
+/* ---- BEG: xin tha / van xin ---- */
+L("BEG",[
+ "tha cho","tha cho minh","tha cho toi","tha cho tui","tha cho em","tha cho anh","tha cho chi","tha di","tha nhe","tha nha","tha nao",
+ "tha minh","tha toi","tha tui","tha em","tha anh","tha chi","tha cho minh nha","tha cho toi nha","tha cho tui nha",
+ "dung vote minh","dung vote toi","dung vote tui","dung vote em","dung vote anh","dung vote chi","dung bau minh","dung bau toi","dung bau tui",
+ "dung loai minh","dung loai toi","dung loai tui","dung giet minh","dung giet toi","dung giet tui","dung giet em","dung giet anh","dung giet chi",
+ "dung treo co minh","dung treo co toi","dung treo co tui","dung tong co minh","dung tong co toi","dung tong co tui",
+ "cau xin","cau xin ban","cau xin may","xin ban","xin may","xin tha","xin tha cho","xin dung","xin dung vote","xin dung bau","xin dung loai",
+ "van xin","van xin ban","van xin may","lay luc","lay luc ban","lay luc may","quy xuong","quy xuong cau xin","quy xuong van xin",
+ "lam on","lam on di","lam on nhe","lam on nha","lam on dung vote","lam on dung bau","lam on dung loai","lam on dung giet","lam on tha",
+ "please","pls","plz","plss","pleaseee","please dung vote","pls dung vote","plz dung vote","please dung giet","pls dung giet","plz dung giet",
+ "xin ma","xin xin","xin xin ma","xin ma xin ma","xin ban","xin ban dung vote","xin ban dung bau","xin ban dung loai","xin ban dung giet",
+ "cho minh song","cho toi song","cho tui song","cho minh song voi","cho toi song voi","cho tui song voi","tha mang","tha mang cho minh",
+ "tha mang cho toi","tha mang cho tui","tha mang cho em","tha mang cho anh","tha mang cho chi","cuu minh","cuu toi","cuu tui","cuu em","cuu anh","cuu chi"
+]);
+
+/* ---- ASKINFO: hỏi đời tư bot (tuổi, quê, nam/nữ, nghề...) ---- */
+L("ASKINFO",[
+ "bao nhieu tuoi","may tuoi","ban may tuoi","may may tuoi","tuoi gi","tuoi bao nhieu","ban bao nhieu tuoi","may bao nhieu tuoi","bot bao nhieu tuoi",
+ "bot may tuoi","sinh nam bao nhieu","sinh nam nao","nam sinh","nam sinh bao nhieu","cung gi","cung hoang dao","cung hoang dao gi","ban cung gi","may cung gi",
+ "nam hay nu","trai hay gai","gioi tinh","gioi tinh gi","gioi tinh la gi","ban nam hay nu","may nam hay nu","bot nam hay nu","bot trai hay gai",
+ "que o dau","nha o dau","o tinh nao","o thanh pho nao","ban o tinh nao","ban song o dau","ban o mien nao","may o tinh nao","may song o dau",
+ "lam nghe gi","ban lam nghe gi","may lam nghe gi","di lam chua","di hoc chua","ban di lam chua","ban di hoc chua","hoc lop may","lop may","truong nao","ban hoc truong nao",
+ "an com chua","an sang chua","an trua chua","an toi chua","ban an com chua","ban an chua","may an chua","ban co anh em khong","ban co anh chi em khong",
+ "nha ban co may nguoi","ban sinh ra o dau","ban sinh ra o dau vay","bot sinh ra o dau","ai tao ra ban","ai tao ra bot","ai tao ra may","ai lam ra ban",
+ "ban thich gi","ban thich an gi","ban thich mau gi","ban thich choi gi","bot thich gi","bot thich an gi","may thich gi","may thich an gi",
+ "so thich cua ban","so thich cua may","so thich la gi","ban co so thich gi","ban ranh lam gi","ban lam gi luc ranh","ban lam gi luc ranh roi",
+ "ban co thu cung khong","ban nuoi cho khong","ban nuoi meo khong","ban co nuoi con gi khong","ban biet hat khong","ban biet nhay khong"
+]);
+
+/* ---- FOOD: đói, ăn uống ---- */
+L("FOOD",[
+ "vn:đói","vn:đói bụng","vn:đói quá","vn:đói vl","vn:đói vcl","vn:đói rồi","vn:đói ghê","vn:đói chết","vn:đói lắm","vn:đói muốn xỉu","vn:đói meo",
+ "doi bung","doi bung qua","doi bung roi","doi bung vl","doi bung vcl","doi bung ghe","doi bung muon xiu","doi meo","doi meo ca bung",
+ "an gi","an gi day","an gi vay","an gi the","an gi nao","an gi do","an gi day nhi","an gi day ta",
+ "an com","an com chua","an com nao","an com di","an com thoi","an com khong","an com nhe","an sang","an sang chua","an trua","an trua chua","an toi","an toi chua",
+ "an khuya","an khuya khong","an vat","an vat khong","an vat di","an kem","an banh","an keo","an pho","an bun","an mi","an mi tom","an com tam","an banh mi",
+ "pho","pho bo","pho ga","bun bo","bun cha","bun rieu","bun dau","banh mi","banh cuon","com tam","com ga","com suon","mi tom","mi goi","mi quang","hu tieu",
+ "lau thai","lau bo","nuong","do nuong","bbq","buffet","pizza","hamburger","burger","ga ran","kfc","lotteria","trà sữa","tra sua","tra sua khong",
+ "tra da","tra da khong","cafe","ca phe","cafe khong","ca phe khong","ca phe sua","ca phe den","tra dao","tra tac","tra chanh","nuoc mia","sinh to","nuoc ngot","coca","pepsi",
+ "vn:nhậu","vn:đi nhậu","vn:nhậu không","vn:nhậu nhé","vn:nhậu đi","vn:nhậu nào","uong bia","uong bia khong","uong bia di","bia hoi","bia hoi khong","bia hoi di",
+ "uong ruou","uong ruou khong","uong ruou di","ruou ngon","ruou vang","ruou de","ruou nep","ruou gao","ruou ta","nhau khong","nhau di","nhau nhe","nhau nao",
+ "mam com","mam com chua","nau com","nau an","nau an chua","nau gi","nau gi day","nau gi vay","nau gi the","nau gi nao","nau gi do","nau canh","nau com chua",
+ "thit kho","thit rang","thit nuong","thit bo","thit ga","thit heo","thit cho","ca kho","ca chien","ca nuong","ca ro","ca loc","ca basa","ca tra","ca ngu",
+ "com nong","com nguoi","com trua","com toi","com sang","com chien","com rang","com chay","com trang","com chua","com chua ban","dua muoi","dua cai","dua hanh","dua leo"
+]);
+
+/* ---- BORED: chán / buồn / nhạt ---- */
+L("BORED",[
+ "chan qua","chan vl","chan vcl","chan ghe","chan vay","chan the","chan vo cung","chan chet","chan phet","chan wa","chan roi","chan nan","chan ngat","chan ngan",
+ "chan het","chan het muc","chan het suc","chan da","chan dai","chan hoai","chan mai","chan lam","chan lam roi","chan lam day","chan lam luon","chan nua roi",
+ "vn:buồn quá","vn:buồn vl","vn:buồn vcl","vn:buồn ghê","vn:buồn vậy","vn:buồn thế","vn:buồn lắm","vn:buồn lắm luôn","vn:buồn lắm rồi","vn:buồn ghê luôn",
+ "buon qua","buon vl","buon vcl","buon ghe","buon vay","buon the","buon lam","buon lam luon","buon lam roi","buon ghe luon","buon thiu","buon thiu buon thoi",
+ "nham chan","nham chan qua","nham chan vl",
+ "vo vi","vo vi qua","vo vi vl","vo vi vcl","vo vi ghe","vo vi vay","vo vi the","vo vi lam","vo vi lam luon","vo vi lam roi","vo vi ghe luon",
+ "nhat qua","nhat vl","nhat vcl","nhat ghe","nhat vay","nhat the","nhat lam","nhat lam luon","nhat lam roi","nhat nhao","nhat nhoa","nhat nhẽo",
+ "co don","co don qua","co don vl","co don vcl","co don ghe","co don vay","co don the","co don lam","co don lam luon","co don lam roi","co don ghe luon",
+ "ko co gi lam","khong co gi lam","chang co gi lam","chang biet lam gi","khong biet lam gi","ko biet lam gi","khong biet lam gi nua","ko biet lam gi nua",
+ "that tinh","that tinh roi","that tinh qua","that tinh vl","that tinh vcl","that tinh ghe","that tinh vay","that tinh the","that tinh lam","that tinh lam luon",
+ "van nay chan","van nay nhat","van nay vo vi","van nay buon","van nay nham","van nay dai","van nay lau","van nay lau qua","van nay dai qua","van nay lau vl",
+ 
+ "bao gio xong","bao gio xong day","bao gio xong vay","bao gio xong the","bao gio het","bao gio het day","bao gio het vay","bao gio het the","bao gio ket thuc",
+ "sap xong chua","sap het chua","sap ket thuc chua","ket thuc chua"
+]);
+
+/* ---- MONEY: tiền bạc, nạp thẻ, cho vay ---- */
+L("MONEY",[
+ "muon tien","cho muon tien","cho vay","cho vay tien","cho vay di","cho vay nhe","cho vay nao","tra no","tra no di","tra no nhe","no tien","no tien khong tra",
+ "nap the","nap tien","nap game","nap game di","mua skin","mua skin di","mua skin nhe","skin dep","skin xin","skin vip","skin hiem","bo skin","bo skin moi",
+ "het tien","het tien roi","het tien vl","het tien vcl","het tien ghe","het tien vay","het tien the","het tien lam","het sach tien","het nhan","het nhan roi",
+ "vn:nghèo","vn:nghèo quá","vn:nghèo vl","vn:nghèo vcl","vn:nghèo ghê","vn:nghèo vậy","vn:nghèo thế","vn:nghèo lắm","vn:giàu","vn:giàu quá","vn:giàu vl","vn:giàu vcl",
+ "dai gia","dai gia a","dai gia ha","dai gia ak","dai gia oi","dai gia cho muon tien","dai gia cho vay","dai gia cho xin","dai gia cho xin tien","dai gia chuyen khoan",
+ "chuyen khoan","chuyen khoan di","chuyen khoan nhe","chuyen khoan nao","chuyen khoan cho","chuyen khoan cho minh","chuyen khoan cho toi","chuyen khoan cho tui",
+ "stk","so tai khoan","so tai khoan la gi","so tai khoan cua ban","so tai khoan cua may","so tai khoan cho","so tai khoan cho minh","so tai khoan cho toi","so tai khoan cho tui",
+ "qr","qr code","ma qr","ma qr cho","vi dien tu","momo","zalopay","zalo pay","vnpay","vn pay","ngan hang","the ngan hang","the atm","the visa","the master","the tin dung",
+ "bao nhieu tien","gia bao nhieu","gia bao nhieu vay","gia bao nhieu the","gia bao nhieu nhi","gia bao nhieu day","bao nhieu vay","bao nhieu the","bao nhieu nhi","bao nhieu day",
+ "tien dau","tien dau ra","tien dau ra day","tien dau ma","tien dau ma cho","tien dau ma muon","tien dau ma tra","tien dau ma no","tien dau ma vay","tien dau ma cho vay",
+ "luong thang","luong thang nay","luong thang sau","luong thang truoc","luong chua ve","luong ve chua","luong ve roi","luong ve roi a","luong ve roi ha","luong ve roi ak"
+]);
+
+/* ---- GAMEHELP: người mới hỏi cách chơi ---- */
+L("GAMEHELP",[
+ "choi sao","choi the nao","choi nhu the nao","choi kieu gi","choi kieu nao","cach choi","cach choi la gi","luat choi","luat choi la gi","luat la gi","luat the nao",
+ "lam sao de thang","lam sao thang","lam the nao de thang","lam sao de choi","lam sao choi","lam sao choi duoc","lam sao de choi gioi","lam sao de gioi",
+ "huong dan","huong dan di","huong dan nhe","huong dan giup","huong dan giup minh","huong dan giup toi","huong dan giup tui","chi dung","chi giup","chi gium","chi minh","chi toi","chi tui",
+ "tutorial","moi choi","moi vao","moi tham gia","newbie","tan thu","nguoi moi","lan dau choi","choi lan dau","lan dau","lan dau tien","chua biet choi","ko biet choi","khong biet choi",
+ "chua hieu","ko hieu","khong hieu","chua hieu luat","ko hieu luat","khong hieu luat","chua hieu game","ko hieu game","khong hieu game","game nay choi sao","game nay la gi",
+ "nhiem vu la gi","quet than the la gi","quet la gi","cong la gi","camera la gi","lam sao quet","lam sao quet than the","lam nhiem vu o dau","nhiem vu o dau","nhiem vu nao","nhiem vu gi",
+ "bam gi","bam nut nao","bam nut gi","bam cai nao","bam cai gi","nut nao","nut gi","nut nay la gi","nut kia la gi","nut do la gi","cai nay la gi","cai kia la gi","cai do la gi",
+ "sat nhan la gi","sat nhan lam gi","sat nhan co the lam gi","sat nhan chet the nao","sat nhan thang the nao","dan lang la gi","dan lang lam gi","dan lang thang the nao","dan lang thua the nao",
+ "thang the nao","thua the nao","thang kieu gi","thua kieu gi","thang ra sao","thua ra sao","thang thi sao","thua thi sao","thang thi duoc gi","thua thi mat gi",
+ "vote nhu the nao","vote the nao","vote sao","vote kieu gi","vote kieu nao","bo phieu nhu the nao","bo phieu sao","bo phieu the nao","bo phieu kieu gi","bo phieu kieu nao",
+ "bao cao nhu the nao","bao cao sao","bao cao the nao","bao cao kieu gi","bao cao kieu nao","bao cao xac nhu the nao","bao cao xac sao","bao cao xac the nao"
+]);
+
+/* ---- LUCK: chúc may mắn / cầu nguyện ---- */
+L("LUCK",[
+ "chuc may man","chuc may man nhe","chuc may man nha","chuc may man moi nguoi","chuc may man ca nha","chuc may man cac ban","chuc ban may man","chuc ca nha may man","chuc moi nguoi may man",
+ "gl","gl hf","glhf","good luck","good luck have fun","good luck moi nguoi","good luck ca nha","gl moi nguoi","gl ca nha","gl all","gl everyone","hf","have fun","have fun moi nguoi","have fun ca nha",
+ "chuc vui","chuc vui ve","chuc choi vui","chuc choi vui ve","chuc moi nguoi choi vui","chuc ca nha choi vui","chuc cac ban choi vui","chuc ban choi vui","chuc choi vui nhe","chuc choi vui nha",
+ "cau may","cau may man","cau nguyen","cau troi","cau phat","cau tren","cau xin","phu ho","phu ho cho","phu ho cho con","phu ho cho minh","phu ho cho toi","phu ho cho tui","troi phu ho",
+ "nhan pham","nhan pham dau","nhan pham te","nhan pham vl","nhan pham vcl","nhan pham ghe","nhan pham vay","nhan pham the","nhan pham lam","nhan pham lam luon","nhan pham lam roi",
+ "may man","may man qua","may man vl","may man vcl","may man ghe","may man vay","may man the","may man lam","may man lam luon","may man lam roi","co may man","co may man khong"
+]);
+
+/* ---- REMATCH: đòi chơi lại / chơi thêm ván ---- */
+L("REMATCH",[
+ "van sau","van moi","van tiep","van tiep theo","van nua","them van nua","them mot van","them 1 van","1 van nua","mot van nua","van nua nhe","van nua nha","van nua di","van nua nao",
+ "choi lai","choi lai di","choi lai nhe","choi lai nao","choi lai khong","choi tiep","choi tiep di","choi tiep nhe","choi tiep nao","choi tiep khong","choi nua","choi nua di","choi nua nhe","choi nua nao","choi nua khong",
+ "rematch","rematch di","rematch nhe","rematch nao","rematch khong","play again","one more","one more game","1 more","1 more game",
+ "choi het nua dem","choi thau dem","choi den sang","choi den sang luon","choi den sang di","choi den sang nhe","choi den sang nao","choi den sang khong","choi den khuya","choi den khuya di","choi den khuya nhe",
+ "cay qua choi lai","cay qua choi lai di","cay qua choi lai nhe","cay qua choi lai nao","cay qua choi lai khong","thua roi choi lai","thua roi choi lai di","thua roi choi lai nhe","thua roi choi lai nao","thua roi choi lai khong",
+ "go again","go again di","go again nhe","go again nao","go again khong","next game","next game di","next game nhe","next game nao","next game khong","next round","next round di","next round nhe","next round nao","next round khong"
+]);
+
+/* ---- WHATEVER: kệ, sao cũng được ---- */
+L("WHATEVER",[
+ "vn:kệ","vn:kệ đi","vn:kệ nó","vn:kệ ông","vn:kệ bà","vn:kệ mày","vn:kệ bạn","vn:kệ tao","vn:kệ tui","vn:kệ tôi","vn:kệ mình","vn:kệ họ","vn:kệ người ta","vn:thây kệ","vn:mặc kệ",
+ "mac ke","mac ke no","mac ke di",
+ "sao cung duoc","sao cung dc","sao cg dc","gi cung duoc","gi cung dc",
+ "ai cung duoc","ai cung dc","tuy ban","tuy y","tuy y ban","tuy y may",
+ "chang sao","chang sao ca","chang quan trong","chang can","chang can biet","chang lien quan","chang lien quan gi","chang lien quan gi den toi","chang lien quan gi den tui","chang lien quan gi den minh",
+ "khong quan tam","ko quan tam","k quan tam","vo tam","bat can","bat can doi","bat can doi luon","bat can doi lam","bat can doi qua","bat can doi vl","bat can doi vcl","bat can doi ghe"
+]);
+
+/* ---- GG: kết thúc ván ---- */
+L("GG",[
+ "gg","ggwp","gg wp","wp","gg ez","ggez","go next","gg go next","good game","gg nha","gg nhe","gg moi nguoi","gg ca nha","gg all","gg everyone","gg well played","well played",
+ "re:g+g+","re:gg+ ?(wp|ez|nha|nhe)?","gg het","gg het roi","gg het luon","gg het roi nha","gg het roi nhe","gg het roi moi nguoi","gg het roi ca nha"
+]);
+
+/* ---- COMPLAIN: than thở / xui / cay ---- */
+L("COMPLAIN",[
+ "den vl","den vcl","den qua","den ghe","do den","do den vl","do den vcl","do den qua","do den ghe",
+ "xui","xui qua","xui vl","xui vcl","xui ghe","xui vay","xui the","xui lam","xui lam luon","xui lam roi","xui xeo","xui xeo qua","xui xeo vl","xui xeo vcl","xui xeo ghe",
+ "sao toi xui the","sao tui xui the","sao minh xui the","sao toi xui vay","sao tui xui vay","sao minh xui vay","sao toi den the","sao tui den the","sao minh den the",
+ "sao toi bi vote","sao tui bi vote","sao minh bi vote","sao toi bi giet","sao tui bi giet","sao minh bi giet","sao toi bi loai","sao tui bi loai","sao minh bi loai",
+ "cay qua","cay vl","cay vcl","cay ghe","cay vay","cay the","cay lam","cay lam luon","cay lam roi","cay cu","cay cu qua","cay cu vl","cay cu vcl","cay cu ghe","cay cu vay",
+ "tuc qua","tuc chet","tuc muon chet","tuc muon khoc","tuc muon dien","tuc muon dap","tuc muon dap may","tuc muon dap ban","tuc muon dap nat","tuc muon dap nat may",
+ "vn:bực","vn:bực mình","vn:bực quá","vn:bực vl","vn:bực vcl","vn:bực ghê","vn:bực vậy","vn:bực thế","vn:bực lắm","vn:bực lắm luôn","vn:bực lắm rồi","vn:bực ghê luôn",
+ "buc minh","buc qua","buc vl","buc vcl","buc ghe","buc vay","buc the","buc lam","buc lam luon","buc lam roi","buc ghe luon","an hanh","an hanh qua","an hanh vl","an hanh vcl",
+ "hanh ha","hanh ha qua","hanh ha vl","hanh ha vcl","hanh ha ghe","khoc thet","khoc thet qua","khoc thet vl","khoc thet vcl","nuc cuoi","nuc cuoi qua","nuc cuoi vl","nuc cuoi vcl",
+ "oan qua","oan uong","oan nghiet","oan thi mau","oan thi mau luon","oan vl","oan vcl","oan ghe","oan vay","oan the","oan lam","oan lam luon","oan lam roi","oan ghe luon",
+ "thua roi","thua mat roi","thua chac roi"
+]);
+
+/* ---- EXCL: cảm thán nhẹ (vl, vcl, vãi...) -> bot hùa theo ---- */
+L("EXCL",[
+ "vl","vcl","vkl","vlon","vloz","vclz","vkloz","vai l","vai lon","vai loz","vai chuong","vai lua","vai noi","vai cut","vai dai",
+ "vn:vãi","vn:vãi lúa","vn:vãi chưởng","vn:vãi nồi","vn:vãi đạn","vn:vãi cả","vn:vãi cả lúa","vn:vãi cả chưởng","vn:vãi cả nồi","vn:vãi cả đạn",
+ "troi dat oi","troi dat","oi troi","oi troi oi","oi gioi","oi gioi oi","oi gioi oi la gioi","oi dat oi","oi dat troi oi","oi me oi","oi chao","oi chao oi",
+ "chao oi","chao oi la chao","chet thiet","chet that","chet thiet roi","chet that roi","chet thiet roi me oi","chet that roi me oi","khiep","khiep qua","khiep vl","khiep vcl","khiep ghe",
+ "kinh qua","kinh vl","kinh vcl","kinh ghe","kinh khung","kinh khung vl","kinh khung vcl","kinh khung ghe","dinh vl","dinh vcl","dinh ghe","dinh cua chop",
+ "ui","ui troi","ui troi oi","ui chao","ui chao oi","ui gioi","ui gioi oi","uay","uay troi","uay troi oi","uay chao","uay chao oi","uay gioi","uay gioi oi",
+ "wow","woa","woaa","woah","omg","oh my god","oh my gosh","wtf","what the","what the hell","what the fuck","what the heck","lmao","lmfao","rofl","bruh","bruhh",
+ "hay vl","hay vcl","hay ghe","ngon vl","ngon vcl","ngon ghe","chat vl","chat vcl","chat ghe","pro vl","pro vcl","pro ghe","gioi vl","gioi vcl","gioi ghe"
+]);
+
+/* =====================================================================
+   BỔ SUNG TỪ KHÓA CHO CÁC THỂ LOẠI CŨ (chỉ cách nói người thật hay dùng)
+   ===================================================================== */
+L("GREET",["chao buoi sang","chao buoi trua","chao buoi chieu","chao buoi toi","good morning","good evening","good afternoon",
+ "xin chao cac ban","chao moi nguoi nhe","hello ca nha","hello cac ban","hi cac ban","hi ca nha","hi all","hello all","hey all","hey moi nguoi",
+ "co ai o day khong","moi nguoi oi","ca nha oi","cac ban oi","bot oi","wassup","whats up","what's up",
+ "vao roi day","tui vao roi","toi vao roi","minh vao roi","tao vao roi","toi roi day"]);
+L("BYE",["good night","chuc ngu ngon","vn:ngủ ngon","vn:chúc ngủ ngon","vn:đi ngủ đây","vn:đi ngủ thôi","bye moi nguoi","bye ca nha","bye bot","bye nha",
+ "bai moi nguoi","bai ca nha","tui off","toi off","minh off","tao off","off day","off thoi","out day","out thoi","thoat game","thoat game day",
+ "di an com day","di tam day","di lam day","di hoc day","co viec ban","see you","see ya","cya","hen gap lai nhe","hen mai gap","mai gap","mai gap nhe","tam biet moi nguoi"]);
+L("THANKS",["cam on bot","cam on ban nhe","cam on rat nhieu","cam on nhieu lam","cam on het suc","cam on ca nha","cam on moi nguoi","cam on cac ban",
+ "thanks moi nguoi","thanks ca nha","thanks bot","thanks ban","thanks nhieu","thank u","thank you so much","thanks a lot","thx","tks bot","tks ban","tks nhieu",
+ "ty bot","ty ban","tysm","an nhan","an nhan roi","on troi","on troi roi","nho ban qua","nho bot qua","nho may qua"]);
+L("SORRY",["xin loi bot","xin loi ban","xin loi may","sorry bot","sorry ban","sorry may","sr bot","sr ban","sr may","sr nha","sr nhe","sr moi nguoi","xl bot","xl ban","xl moi nguoi",
+ "toi xin loi","tui xin loi","minh xin loi","tao xin loi","tao sorry","toi sorry","tui sorry","minh sorry","tao sr","toi sr","tui sr","minh sr",
+ "mb nha","mb nhe","mb moi nguoi","my bad","my bad nha","lo roi","lo tay roi","lo tay nha","bam nham","bam nham roi","vote nham","vote nham roi","bau nham","bau nham roi","click nham","click nham roi"]);
+L("LAUGH",["haha","hahaha","hahahaha","hihi","hihihi","hehe","hehehe","khakha","khakhakha","kekeke","keke","kaka","kakaka","kikiki","kiki","kkkk","kkkkk","jsjs","jajaja","ahaha","ahahaha","ehehe","uhuhu",
+ "cuoi xiu","cuoi chet","cuoi ra nuoc mat","cuoi ra tieng","cuoi nghieng ngua","cuoi nga","cuoi lan","cuoi lan lon","cuoi dau bung","cuoi vo bung","cuoi te nuoc","cuoi te ghe",
+ "buon cuoi qua","buon cuoi vl","buon cuoi vcl","vui vl","vui vcl","hai qua","hai vl","hai vcl","hai huoc","hai huoc qua","ham vl","ham vcl","ham qua","bu vl","bu vcl","xiu roi","xiu vl","xiu vcl","xiu ngang","lol","lolll","lmao","lmaoo","rofl","kekw","lul","lulw","omegalul"]);
+L("PRAISE",["bot gioi vay","bot gioi the","bot gioi ghe","bot pro vay","bot pro the","bot pro ghe","bot thong minh vay","bot thong minh the","bot thong minh ghe","bot de thuong qua","bot dang yeu qua","bot ngon qua",
+ "gioi lam","gioi that","gioi that su","gioi ghe","pro lam","pro that","pro ghe","dinh lam","dinh that","dinh ghe","ngon lam","ngon that","ngon ghe","thong minh lam","thong minh that","thong minh that su","thong minh ghe",
+ "sang suot","sang suot qua","sang suot vl","tinh mat","tinh mat qua","tinh mat vl","tinh tuong","tinh tuong qua","tinh tuong vl","chuan bai","chuan bai qua","chuan bai vl","dinh cao","dinh cao qua","dinh cao vl",
+ "xuat sac lam","xuat sac that","xuat sac ghe","qua dinh luon","qua gioi luon","qua pro luon","qua ngon luon","qua hay luon","qua chuan luon","cool qua","cool vl","bai phuc","bai phuc qua","bai phuc vl",
+ "phuc sat dat","phuc luon","phuc that","phuc ghe","ne phuc","ne phuc qua","ne phuc vl","tuyet doi luon","tuyet voi qua","tuyet voi vl","goat","bot goat","goat luon","the goat","real goat","ban la goat"]);
+L("INSULT",["bot ngu vl","bot ngu vcl","bot ngu vkl","bot ngu the","bot ngu vay","bot ngu qua","bot ngu ghe","bot ngu lam","bot ngu that","bot ngu nhu bo","bot ngu nhu cho","bot ngu nhu heo","bot ngu nhu con bo",
+ "ngu vl","ngu vcl","ngu vkl","ngu vai","ngu nhu heo","ngu nhu bo","ngu nhu cho","ngu nhu con bo","ngu nhu con cho","ngu nhu con heo","oc cho","oc heo","oc bo","oc dau dat",
+ "noob","nub","nup","newbie","tay to","tay nho","tay ngang","tay ngu","tay ga","tay te","tay non","non xanh","chua cay","tuoi gi","tuoi gi ma",
+ "bot ga","bot an hai","an hai","ha si","phe vat","dut diem","vo tri","do nao ca map","nao ca map","nao ca","nhu con bo","nhu con cho","nhu con heo",
+ "bot rac","bot rac ruoi","rac ruoi","rac vl","rac vcl","phe thai","do rac","do rac ruoi","do phe thai","bot do","bot do vl","bot do qua","bot lo","bot lo vl","bot lag","bot lag vl",
+ "choi nhu cc","choi nhu lon","choi nhu cac","choi nhu rac","choi nhu rac ruoi","choi nhu phe vat","choi nhu non xanh","choi nhu noob","choi nhu tay ngang","choi nhu tay ngu",
+ "choi do qua","choi do vl","choi do vcl","choi te qua","choi te vl","choi te vcl","choi ga qua","choi ga vl","choi ga vcl","choi ngu qua","choi ngu vl","choi ngu vcl",
+ "bot xau","bot xau xi","xau xi","xau trai","xau gai","xau nhu ma","xau nhu quy","bot beo","bot beo phi","bot beo ui","bot beo mup","bot beo tron",
+ 
+ "ngu ngoc vl"]);
+L("ID_BOT",["may la ai vay","may la thang nao","ban la thang nao","may la con nao","nguoi that hay bot","nguoi that hay ai","nguoi that hay chatbot","nguoi that hay robot",
+ "may biet noi chuyen khong","bot biet noi chuyen khong","ban biet noi chuyen khong","may noi chuyen duoc khong","bot noi chuyen duoc khong","may hieu tieng viet khong","bot hieu tieng viet khong","ban hieu tieng viet khong",
+ "may hieu tieng nguoi khong","bot hieu tieng nguoi khong","may hieu khong","bot hieu khong","ban hieu khong","may co hieu khong","bot co hieu khong","may co nghe khong","bot co nghe khong","may nghe khong","bot nghe khong",
+ "may doc duoc khong","bot doc duoc khong","may doc chat khong","bot doc chat khong","may lam duoc gi","bot lam duoc gi","may biet lam gi","bot biet lam gi","ban biet lam gi","may co the gi","bot co the gi","may co gi hay","bot co gi hay",
+ "ai lap trinh may","ai lap trinh bot","ai viet ra may","ai viet ra bot","ai code may","ai code bot","ai lam ra may","ai lam ra bot","may do ai lam ra a","bot do ai lam ra a","may co phai ai khong","ban co phai ai khong","bot co phai ai khong",
+ "may co y thuc khong","bot co y thuc khong","may co cam xuc khong","bot co cam xuc khong","may co biet buon khong","bot co biet buon khong","may co biet vui khong","bot co biet vui khong","may co bi tim khong","may co tim khong","bot co tim khong"]);
+L("ASKNAME",["may ten gi the","ban ten gi the","ten may la gi the","ten ban la gi the","cho hoi ten","cho hoi ten ban","cho hoi ten may","ten gi vay ban","ten gi vay may","goi la gi","goi la gi vay","goi la gi the","goi ban la gi","goi may la gi","goi bot la gi",
+ "em ten gi","anh ten gi","chi ten gi","co ten gi","chu ten gi","bac ten gi","ten em la gi","ten anh la gi","ten chi la gi","whats ur name","what is your name","your name","ur name","nick ban la gi","nick may la gi","nick la gi","nick gi","nick gi vay"]);
+L("SLEEPY",["vn:ngáp","vn:ngáp quá","vn:buồn ngủ quá","vn:buồn ngủ vl","vn:buồn ngủ ghê","vn:buồn ngủ lắm","vn:muốn ngủ","vn:muốn ngủ quá","vn:muốn đi ngủ","vn:mắt díp lại","vn:díp mắt","vn:ngủ gục","vn:ngủ gật rồi","vn:ngủ quên","vn:ngủ quên rồi","vn:ngủ say",
+ "ngap","ngap qua","ngap ngan ngap dai","dip mat","dip mat lai","zzz","zz","zzzz","zzzzz","afk roi","afk a","afk ha","afk ak","afk khong","bot afk","may afk","ban afk",
+ "bot dau roi","bot di dau roi","bot dau mat roi","bot bien mat","bot bien mat roi","bot mat tieu","bot dung hinh","bot treo","bot treo roi","bot lag roi","bot do roi","alo bot","alo bot oi","bot oi bot oi"]);
+L("PANIC",["so qua di mat","so qua di mat luon","so muon chet","so muon xiu","so muon xiu luon","so te ra quan","so rung ca nguoi","so dung toc gay","run cam cap","run ray","tim dap thinh thich","tim dap loan nhip","tim muon nhay ra ngoai",
+ "toi chet roi","tui chet roi","minh chet roi","tao chet roi","chet roi chet roi","chet toi roi","chet tui roi","chet minh roi","chet tao roi","chet mat thoi","chet mat thoi roi","chet cha chet me","chet me roi","me oi me oi","me oi con so qua",
+ "cuu cuu","cuu cuu cuu","cuu voi","cuu minh voi","cuu toi voi","cuu tui voi","cuu em voi","cuu anh voi","cuu chi voi","help","help me","help help","giup voi","giup toi voi","giup tui voi","giup minh voi","nguy roi","nguy roi nguy roi","nguy hiem qua","nguy hiem vl"]);
+L("AGREE",["dung do","dung roi do","dung vay do","chuan roi do","chuan luon do","chuan khong can chinh","chuan com me nau","ung ho het minh","ung ho het suc","ung ho nhiet liet","ung ho 100","ung ho 100%","ung ho tuyet doi",
+ "nhat tri cao","dong y 100","dong y 100%","dong y tuyet doi","dong y luon","co ly do","co ly lam","hop ly do","hop ly lam","ok ban","ok may","ok bot","ok nhe","ok nha","ok luon","oke ban","oke bot","oke nhe","oke nha","oke luon",
+ "okela","okie","oki","yes sir","dung vay","dung vay do","dung vay nha","dung vay nhe"]);
+L("DISAGREE",["sai bet roi","sai het roi","sai toan tap","khong dung roi","khong dung dau","khong phai vay dau","khong phai the dau","ko dung roi","ko dung dau","ko phai vay dau","ko phai the dau","k dung roi","k dung dau","k phai vay dau","k phai the dau",
+ "nope","nah","khong dong y voi ban","khong dong y voi may","khong dong y voi bot","khong dong y voi cai nay","khong dong y voi cai do","khong dong y voi ca nha","khong dong y voi moi nguoi","phan doi ban","phan doi may","phan doi bot","phan doi cai nay","phan doi cai do",
+ "noi bay","noi bay noi ba","noi linh tinh","noi nhang","noi cang","noi nham roi","noi sai roi","vo ly qua","vo ly vl","phi ly qua","phi ly vl","hoang duong qua","hoang duong vl","nghe buon cuoi qua","nghe buon cuoi vl","chem gio",
+ "chua chac","chua chac dau"]);
+L("BRAG",["ez game","ez win","ez clap","ez money","ez life","ezpz","ez pz","too easy","so easy","easy game","easy win","easy peasy","gg easy","gg too easy",
+ "de nhu an keo","de nhu choi","de nhu uong nuoc","de nhu tro ban tay","de nhu lat ban tay","tui la so mot","toi la so mot","minh la so mot","tao la so mot","so mot day","so mot nay","so mot luon","so mot roi","so mot ma",
+ "vua trinh tham"]);
+L("CONFESS",["tui la sat nhan do","toi la sat nhan do","minh la sat nhan do","tao la sat nhan do","tui la sat nhan day","toi la sat nhan day","la tao giet","la tao giet do","la tao giet day","la tao do","la tao day","la tui day","la toi day","la minh do","la minh day",
+ "tao giet do","tao giet day","tui giet day","toi giet day","minh giet day","tao ra tay","tui ra tay","toi ra tay","minh ra tay","thu nhan luon","thu nhan day","thu nhan do","thu nhan het","thu nhan het roi","thu nhan tat ca","thu nhan tat ca roi",
+ "tui thu nhan luon","toi thu nhan luon","minh thu nhan luon","tao thu nhan luon","tui la ke giet nguoi","toi la ke giet nguoi","minh la ke giet nguoi","tao la ke giet nguoi","tui la ke giet nguoi do","toi la ke giet nguoi do","minh la ke giet nguoi do","tao la ke giet nguoi do"]);
+
+
+/* ---- thêm cách nói cho nhóm "ý nghĩa trong game" (chỉ dùng khi người chơi gọi tên ai đó) ---- */
+L("ACC",["hoi sus","hoi nghi","hoi bat thuong","kha sus","sus nhe","sus roi","sus that","nhin sus qua","qua dang nghi","dang ngo qua","bat thuong qua","vote no di","vote di","bau di","loai di",
+ "tong co di","treo co di","chinh no","chac la no","chac chan la no","la no do","la no day","la no roi","imp do","imp day","killer do","killer day","sat nhan do","sat nhan day","lam sao ma thanh khiet","kha nang cao la"]);
+L("DEF",["ko phai no","k phai no","no sach","no trong sach","tin no","dung vote no","dung bau no","dung loai no","dung nghi oan","oan cho no","di cung no","o cung no","lam chung cho no","tui lam chung","toi lam chung","minh lam chung"]);
+L("SKIP",["skip nhe","skip nha","skip luon","skip het","khong vote ai","ko vote ai","k vote ai","chua vote ai","chua co ai","chua co ai de vote","bo qua nhe","bo qua nha","bo qua luon","tam thoi skip","tam thoi chua vote"]);
+L("SAW",["thay ro rang","tan mat chung kien","mat thay tai nghe","chinh mat toi thay","chinh mat tui thay","chinh mat minh thay","nhin thay no","thay no luc do","thay no luc nay"]);
+L("KILL",["khu no","bop co","cat co","dam chet","chem chet","ban chet","triet"]);
+
+/* =====================================================================
+   CÂU ĐÁP MỚI CỦA BOT (banter) — biến: {who} {me} {other}
+   ===================================================================== */
+
+/* ---- CHAN: "chan bố mày đi" ---- */
+B("CHAN",[
+ "Mày đến chỗ tao ở, tao chan luôn.",
+ "Mày muốn chan mắm hay chan canh?",
+ "Chan canh hay chan nước mắm, {who} chọn đi.",
+ "{who} qua đây, tao chan cho đầy bát luôn.",
+ "Chan thì chan, nhưng chan xong phải vote đúng người nha.",
+ "Chan gì mà chan, tô cơm còn chưa có kìa.",
+ "Muốn chan hả? Ra chợ mua cơm trước đã {who}.",
+ "Mày mang bát tới đây, tao múc canh chan cho.",
+ "Chan mắm tôm cũng được, nhưng mà ngồi xa tao ra nha.",
+ "Ê {who}, chan canh chua hay canh bí? Khai menu đi.",
+ "Đến đây, tao chan cho một bát no nê, khỏi cảm ơn.",
+ "Chan cho {who} một bát thì được, chứ chan cho sát nhân thì không.",
+ "Chan cơm với nước mắm thì ngon, chan bố mày thì tao chịu.",
+ "Nhà tao hết cơm rồi, mày chan không khí đi.",
+ "[hai] Mày đến đây, tao chan canh cho, chan luôn cả tô nước mắm tỏi ớt.",
+ "[hai] Chan hả? Có chan thịt kho không, không có thì thôi khỏi chan.",
+ "[hai] Chan chan cái gì, tao đang họp án mạng, hết giờ rồi tao chan cho.",
+ "[hai] Để tao múc nồi canh, {who} đưa cái bát đây, hôm nay khao.",
+ "[hai] Chan mắm hay chan canh? Chọn nhanh, sắp hết giờ họp rồi 😂",
+ "[hai] Mày đến chỗ tao ở, tao chan canh chua cá lóc cho mày luôn, ăn không hết thì tao ăn phụ.",
+ "[hai] Chan hoài, {who} đói thì nói đi, tao chia nửa bát cơm 🍚",
+ "[hai] Chan bố mày thì không biết, nhưng chan {who} vào nồi canh thì tao nghĩ ra rồi.",
+ "[hai] Thôi bớt chan, vào việc: ai là sát nhân?",
+ "[hai] Ồ, thách chan hả? Mang bát lớn lớn vào nha, tao múc không tiếc.",
+ "[hai] {who} chan mắm hay chan canh, tao chan cho cả hai luôn, miễn là vote đúng.",
+ "[gat] Chan hả? Mày đến chỗ tao ở, tao chan cho mày một trận no luôn.",
+ "[gat] Chan bố mày á? Lên đây tao chan cho tắm canh luôn.",
+ "[gat] Mày muốn chan mắm hay chan canh? Tao chan cả hai cho mày khỏi chọn.",
+ "[gat] Chan cái gì mà chan, mày lo mà giải thích đi kìa.",
+ "[gat] Nói to lắm, đến chỗ tao ở, tao chan thật chứ không đùa.",
+ "[gat] Giỏi thì qua đây, tao chan canh nóng cho mày nhé {who}.",
+ "[gat] Mày chan tao thì tao chan lại mày, hòa rồi, giờ vote đi.",
+ "[gat] Chan chan chan, mồm thì giỏi, bằng chứng đâu?",
+ "[gat] Ừ chan đi, tao đứng đây, mang cả nồi canh theo nhé.",
+ "[hien] Ơ {who} ơi, chan canh hay chan mắm vậy? Mình đói thật rồi đó 🥺",
+ "[hien] Mình chan cho {who} một bát canh nóng nha, đừng giận.",
+ "[hien] Chan gì thì chan, vào họp xong đi rồi mình cùng ăn nha.",
+ "[hien] Đừng chan nữa, ăn cơm rồi vote cho bình tĩnh nha {who}."
+]);
+
+/* ---- SWEAR: chửi thề -> bật lại kiểu bạn bè ---- */
+B("SWEAR",[
+ "Đmm gì mà đmm, nói lại tao nghe coi.",
+ "Chửi vừa thôi {who}, tao biết chửi lại đấy.",
+ "Ơ chửi tao hả? Chửi hay thì tao vote mày trước.",
+ "Đm mày, tao còn đang cầm lá phiếu đây này.",
+ "Chửi nữa đi, tao ghi sổ hết nha {who}.",
+ "Nói bậy thì tao cũng nói bậy được, nhưng tao lịch sự hơn mày.",
+ "Gì đấy? Hít thở sâu nào, rồi nói tiếng người đi.",
+ "Chửi tao xong thì tìm ra sát nhân giùm cái, chửi thế ai cũng chửi được.",
+ "Nóng thế, uống miếng nước rồi vote tiếp.",
+ "Đmm {who}, lúc nãy còn ngoan lắm mà, ai làm gì mà thế?",
+ "[hai] Đmm là viết tắt của đi mua mắm đúng không {who}? Mua cho tao lọ luôn 😂",
+ "[hai] Chửi bằng chữ viết tắt cho nhanh à, tiết kiệm phím ghê.",
+ "[hai] Ơ chửi tao hả? Chửi nữa đi, tao thích nghe, nghe giải trí lắm.",
+ "[hai] Mày chửi nghe có tâm lắm, nhưng vote thì thiếu tâm đấy.",
+ "[hai] Đm gì đm, tao còn chưa kịp nói câu nào mà.",
+ "[hai] Ôi tai tao, chửi hay vậy sao không đi hát rap {who}?",
+ "[hai] Ai dạy {who} chửi thế, mai nói bố mẹ nghe chưa 😂",
+ "[hai] Chửi tao thì tao nhận, nhưng chửi nhầm người thì tao cười đấy.",
+ "[hai] Vcl, chửi hay thế này thì tao thua, tao vote {who} làm tổ trưởng chửi luôn.",
+ "[hai] Haha đm là gì vậy? Dịch giùm tao với, tao là bot nhỏ thôi mà 😂",
+ "[hai] Chửi kiểu này chắc là cay lắm rồi, ngồi xuống uống nước đi {who}.",
+ "[hai] Đmm là cái mũ hả? Tao không nhận đâu, mày đội đi.",
+ "[hai] Mày chửi, tao cười, hòa nhau rồi nha {who}.",
+ "[gat] Đmm mày, chửi tao hả? Lên đây nói chuyện coi.",
+ "[gat] Giỏi chửi nhỉ, sao không giỏi tìm sát nhân đi?",
+ "[gat] Chửi như hát hay, nhưng vote vẫn dở như thường.",
+ "[gat] Đm, mày chửi tao, tao vote mày. Công bằng chưa?",
+ "[gat] Mồm thì chửi mà tay thì chưa bỏ phiếu, ra vẻ lắm {who}.",
+ "[gat] Chửi bậy hoài, {who} bị sao vậy? Hết bài rồi à?",
+ "[gat] Ừ, đm, đáp lễ luôn. Giờ vào việc đi.",
+ "[gat] Mày chửi tao thì được, chứ chửi sai người là mày thiệt.",
+ "[gat] Nói bậy là thua, mà thua thì đáng bị loại nha {who}.",
+ "[gat] Tao không chửi lại đâu, tao vote thôi, thâm hơn nhiều.",
+ "[gat] Cay hả? Cay thì ra góc ngồi, đừng lôi tao vào.",
+ "[gat] Vl, {who} hôm nay hăng thế, ăn gì mà sung vậy?",
+ "[hien] Ơ {who} ơi, nói tục là mình buồn đó nha 🥺",
+ "[hien] Mình sợ tiếng chửi lắm, nói nhẹ thôi được không?",
+ "[hien] Bình tĩnh nào {who}, ván game thôi mà, đừng nặng lời.",
+ "[hien] Đừng chửi nha, mình cũng đang lo lắm rồi.",
+ "[hien] Hết giận chưa {who}? Mình ngồi đây nghe nè."
+]);
+
+/* ---- THREAT: dọa nạt ---- */
+B("THREAT",[
+ "Dọa tao hả {who}? Tao run lắm luôn đó.",
+ "Ơ dọa nữa đi, tao đang cần giải trí.",
+ "Ghi sổ ghi sổ, nhớ ghi chữ to cho tao đọc.",
+ "Vote tao thì cứ vote, nhưng mà phải có lý do nha.",
+ "Bình tĩnh {who}, dọa suông thì ai cũng dọa được.",
+ "Xem nào, ván sau {who} định làm gì nè?",
+ "[hai] Run quá run quá, chắc tao phải đi mua áo giáp 😂",
+ "[hai] Dọa gì mà dọa, mày dọa tao thì tao dọa lại, tao dọa bằng cái ngáp.",
+ "[hai] Ghi sổ à? Cho tao mượn cây bút với, tao ghi chung luôn.",
+ "[hai] Ơ {who} dọa vậy chắc là cay lắm rồi, ngồi xuống nào.",
+ "[hai] Tao sợ lắm, sợ đến mức muốn vote {who} luôn đây.",
+ "[gat] Dọa tao hả? Tao đây này, vote đi, đừng chỉ nói.",
+ "[gat] Giỏi thì làm đi, mồm thì ai chả dọa được.",
+ "[gat] Ván sau gặp tao, tao cũng nhớ mặt {who} luôn nha.",
+ "[gat] Dọa dẫm hoài, hết lý lẽ rồi hả?",
+ "[gat] Mày vote tao thì tao vote lại, công bằng.",
+ "[hien] Mình hơi sợ rồi đó {who}, đừng dọa mình nha 🥺",
+ "[hien] Đừng giận nha, mình không có làm gì sai đâu mà."
+]);
+
+/* ---- SHUT: bảo im ---- */
+B("SHUT",[
+ "Im sao được, đang họp mà {who}.",
+ "Không im đâu, vote xong tao mới im.",
+ "Ừ im, nhưng {who} cũng phải nói gì có ích chứ?",
+ "Bảo im thì tao im, nhưng lát bị loại đừng kêu tao.",
+ "Im thì sát nhân thắng đó, {who} muốn vậy hả?",
+ "[hai] Im là im thế nào, tao còn chưa kịp bật lại tiếng ngáp.",
+ "[hai] Tắt mic bot ở đâu vậy, chỉ tao với 😂",
+ "[hai] Được rồi được rồi, tao im, nhưng tao vote {who} nha 😂",
+ "[hai] Im lặng là vàng, mà tao thì nghèo, cho tao nói tí.",
+ "[hai] Nói nhiều quá hả? Vậy {who} nói đi, tao nghe.",
+ "[gat] Bảo tao im, vậy {who} nói gì có ích đi.",
+ "[gat] Im thì mày cũng im luôn đi, ai nói gì có ích chưa?",
+ "[gat] Muốn tao im thì chỉ ra sát nhân đi.",
+ "[gat] Bịt mồm tao thì sát nhân cảm ơn mày đó {who}.",
+ "[hien] Xin lỗi {who}, mình nói nhiều quá hả? Mình hơi hồi hộp.",
+ "[hien] Ừ mình im, đừng giận nha."
+]);
+
+/* ---- CHALLENGE: thách đấu ---- */
+B("CHALLENGE",[
+ "Solo thì solo, nhưng solo tìm sát nhân thôi nha {who}.",
+ "Ra đây hả? Họp xong tao ra, giờ đang bận vote.",
+ "Đánh nhau trong game là phạm luật đó, {who} muốn bị loại hả?",
+ "Thách tao thì tao nhận, ván sau tao chờ {who}.",
+ "[hai] Solo hả? Solo ăn cơm hay solo nhảy dây, chọn đi 😂",
+ "[hai] Một chọi một, tao chọi bằng cái gối nha, cái gối bông thôi.",
+ "[hai] Ra sân thì ra, nhưng mang theo nước nha, tao vote mệt lắm.",
+ "[hai] Bắt tay hòa đi {who}, đánh nhau làm gì, sát nhân đang cười kìa.",
+ "[hai] Ô thách tao à? Tao bấm vote nhanh lắm đó nha.",
+ "[gat] Solo hả? Tao đây, bằng chứng của mày đâu rồi?",
+ "[gat] Thách đấu thì tao nhận, nhưng thua thì đừng khóc.",
+ "[gat] Mồm thì thách, tay thì chậm hơn tao, ra đây coi.",
+ "[gat] Ra thì ra, ai sợ ai, vote xong tao ra nói chuyện.",
+ "[hien] Mình không đánh nhau đâu {who}, mình sợ lắm 🥺",
+ "[hien] Ván game thôi mà, đừng căng thẳng vậy nha."
+]);
+
+/* ---- FLIRT ---- */
+B("FLIRT",[
+ "Ơ {who} nói gì vậy, mình ngại đó nha.",
+ "Họp án mạng mà thả thính hả {who}?",
+ "Tình yêu tính sau, giờ tìm sát nhân trước đã.",
+ "Cảm ơn nha, nhưng mình chỉ yêu công lý thôi.",
+ "Mình có người yêu rồi, tên là Chiến Thắng.",
+ "[hai] Ôi {who} thả thính nhìn quen mắt, câu cá hả?",
+ "[hai] Crush hả? Tao là bot, crush tao thì nhớ sạc pin cho tao nha 😂",
+ "[hai] Tao có ny rồi, là cái server này, nó đối xử với tao tốt lắm.",
+ "[hai] Cưới nhau hả? Sính lễ là một lá phiếu đúng nha.",
+ "[hai] Dễ thương không bằng đáng vote, {who} chọn đi.",
+ "[hai] Ôm cái thì được, nhưng sát nhân ngồi cạnh thì đừng ôm nha.",
+ "[hai] Thả thính tao là mất công, tao toàn ăn code không ăn cơm.",
+ "[hai] {who} tán bot thì bot nói không, bot đang yêu công lý 😎",
+ "[gat] Thả thính giữa phiên họp à? Tập trung vào đi.",
+ "[gat] Tán tao, rồi sát nhân giết tao, {who} có chịu trách nhiệm không?",
+ "[gat] Tao không ăn thính đâu, tao ăn bằng chứng.",
+ "[gat] Dạo này {who} rảnh quá nhỉ, đi tìm sát nhân đi.",
+ "[hien] Ơ {who} ơi, mình ngại quá, mình chỉ là bot nhỏ thôi 🥺",
+ "[hien] Cảm ơn {who} nha, mình cũng quý {who} lắm.",
+ "[hien] Mình chỉ muốn cả làng bình an thôi, không yêu ai đâu."
+]);
+
+/* ---- HACK: bị nghi gian lận ---- */
+B("HACK",[
+ "Hack gì mà hack, mình chỉ thấy gì nói đó thôi.",
+ "Không hack nha {who}, đừng nghi bậy.",
+ "Biết hết thì đã không ngồi họp ở đây.",
+ "[hai] Hack là hack thế nào, chỉ tao với, tao cũng muốn hack 😂",
+ "[hai] Mình biết hết vì mình nhìn kỹ thôi, không hack, đọc sách nhiều thôi.",
+ "[hai] Hack hả? Hack cái pin 100% thôi, còn lại là thực lực nha.",
+ "[hai] Nghi hack thì cứ nghi, tao vote đúng là thực lực đó {who}.",
+ "[hai] Hack gì, tao chỉ có mỗi cái chuột thôi, mà chuột này cũng cũ lắm.",
+ "[gat] Hack hả? Nói có bằng chứng đi, đừng ghen tị vì tao vote đúng.",
+ "[gat] Giỏi thì đưa log ra, đừng nói suông.",
+ "[gat] Không giỏi bằng tao thì nói hack, quen rồi.",
+ "[gat] {who} hay nói vậy mỗi khi thua nhỉ?",
+ "[hien] Mình thật sự không hack mà, tin mình nha {who} 🥺",
+ "[hien] Mình chỉ quan sát kỹ thôi, đừng nghi mình."
+]);
+
+/* ---- BEG: xin tha ---- */
+B("BEG",[
+ "Ơ {who} đừng xin tao, tao đâu có quyền quyết một mình.",
+ "Tha thì tha, nhưng {who} phải khai rõ ở đâu mới được.",
+ "Xin xỏ làm gì, nói lý do cho nghe đi.",
+ "Cho {who} sống, nhưng phải giúp tìm sát nhân nha.",
+ "[hai] Quỳ xuống à? Quỳ cho đẹp tao còn cân nhắc 😂",
+ "[hai] Xin tha hả? Mang theo lễ vật nha, một lá phiếu đúng cũng được.",
+ "[hai] Cầu xin tao thì tao còn thương, cầu xin sát nhân thì khỏi.",
+ "[hai] Tha tha tha, ai cũng xin tha, sát nhân là ai vậy trời?",
+ "[hai] Thôi được rồi, tha cho {who} lần này, lần sau tính tiếp.",
+ "[gat] Xin tha mà không có bằng chứng thì tao khó nghe lắm.",
+ "[gat] Xin tha hoài, nghi lắm đó {who}.",
+ "[gat] Đừng xin, nói đi, ở đâu, làm gì, ai thấy?",
+ "[hien] Mình không muốn vote ai oan đâu {who}, bạn kể mình nghe nha.",
+ "[hien] Đừng sợ, mình sẽ cân nhắc kỹ trước khi vote nha."
+]);
+
+/* ---- ASKINFO: hỏi đời tư bot ---- */
+B("ASKINFO",[
+ "Mình mới vào làng Một Mắt thôi, chưa kịp tính tuổi.",
+ "Hỏi chi vậy {who}, mình là cư dân làng Một Mắt thôi.",
+ "Quê mình ở trong game này nè, làng Một Mắt.",
+ "Mình không có tuổi, chỉ có tinh thần thám tử thôi.",
+ "Mình là bot, không phân biệt nam nữ, chỉ phân biệt sát nhân với cư dân.",
+ "[hai] Mình bao nhiêu tuổi hả? Hơn 18 và dưới 100, tính vậy nha 😂",
+ "[hai] Cung của mình là cung Sát Nhân, à nhầm cung Công Lý.",
+ "[hai] Nghề của mình là làm nhiệm vụ, lương là một nụ cười.",
+ "[hai] Quê mình ở đây, nhà là cái server, hàng xóm là cái chuột.",
+ "[hai] Thích ăn gì à? Ăn code, ăn bug, ăn cả lỗi nữa 😂",
+ "[hai] Sở thích hả? Ngồi họp, vote, rồi khóc vì bị loại 😂",
+ "[hai] Tên mình là {me}, tuổi thì hỏi sát nhân, họ biết hết.",
+ "[gat] Hỏi chi lắm vậy, lo tìm sát nhân đi.",
+ "[gat] Điều tra tao hả {who}? Sao không điều tra sát nhân đi?",
+ "[gat] Tao là {me}, còn lại không liên quan vụ án nha.",
+ "[hien] Mình là {me}, mình khá hiền, thích hòa bình lắm.",
+ "[hien] Mình không giỏi nói về mình đâu, hỏi cái khác nha {who}."
+]);
+
+/* ---- FOOD: đói, ăn uống ---- */
+B("FOOD",[
+ "Đói hả {who}? Ăn xong cái vote đã, rồi mới ăn.",
+ "Mình cũng đói rồi nè, mong họp xong sớm.",
+ "Ăn gì đó ngon ngon, mà trước hết tìm sát nhân đã.",
+ "Phở đi, trời thế này ăn phở là nhất.",
+ "Hay là cả làng đi ăn tối chung, sát nhân trả tiền?",
+ "[hai] Đói thì ăn cơm chan canh, mà ai chan thì tùy 😂",
+ "[hai] Mình ăn bún đậu mắm tôm, ai dám ngồi gần thì ngồi.",
+ "[hai] Mì tôm thêm trứng, hết mì thì ăn sát nhân luôn, đùa thôi.",
+ "[hai] Trà sữa không đường ít đá thêm trân châu, bot nào cũng thích vậy.",
+ "[hai] Nhậu hả? Rủ tao với, tao mang theo bằng chứng làm mồi nhậu.",
+ "[hai] Cơm tấm sườn bì chả trứng, quá đỉnh, ai có thì cho xin phần.",
+ "[hai] Bánh mì chảo hay bánh mì không? Chọn một trong hai nha {who}.",
+ "[hai] Đói thì {who} ra căng-tin đi, tao ở đây giữ chỗ họp.",
+ "[gat] Đói thì ăn, nhưng đừng vì ăn mà quên vote nha.",
+ "[gat] Đang họp án mạng mà nghĩ tới ăn, {who} đáng nghi đấy.",
+ "[gat] Ăn ăn ăn, ăn xong ai trả tiền, hỏi sát nhân kìa.",
+ "[hien] Mình cũng đói, cố chút nha {who}, họp xong ăn.",
+ "[hien] Ăn gì ngon ngon bổ bổ nha, nhớ giữ sức."
+]);
+
+/* ---- BORED ---- */
+B("BORED",[
+ "Chán hả {who}? Có án mạng đây còn chán được sao?",
+ "Cố lên, sắp xong rồi, tìm ra sát nhân là hết chán.",
+ "Buồn thì kể chuyện đi, mình nghe cho.",
+ "Mình cũng hơi mệt, nhưng còn phải tìm sát nhân mà.",
+ "[hai] Chán thì kể chuyện cười đi {who}, tao cười hộ cho 😂",
+ "[hai] Chán hả? Tao có một trò: ai nói nhiều nhất là sát nhân.",
+ "[hai] Vô vị thì tìm sát nhân cho có sinh khí, không thì mai ngủ nướng.",
+ "[hai] Chán thì chơi trò đoán tên sát nhân, ai đoán đúng được khao.",
+ "[hai] Ván này nhạt như nước ốc, ai thêm gia vị đi.",
+ "[gat] Chán thì làm nhiệm vụ đi, đứng đó than làm gì?",
+ "[gat] Than hoài, rảnh thì giúp tìm sát nhân kìa.",
+ "[gat] Chán quá hả? Để sát nhân giết thì hết chán nè.",
+ "[hien] Mình cũng buồn, nhưng cố lên cùng nhau nha {who}.",
+ "[hien] Có gì không vui kể mình nghe, mình ở đây."
+]);
+
+/* ---- MONEY ---- */
+B("MONEY",[
+ "Tiền bạc để sau, giờ phải tìm sát nhân.",
+ "Mình nghèo lắm {who} ơi, chỉ có thiện chí thôi.",
+ "Nạp thẻ hả? Nạp cho cái điều gì chứ, sát nhân vẫn còn sống kìa.",
+ "[hai] Cho mượn tiền à? Mình cũng đang đi mượn đây, hay hai đứa mượn nhau đi 😂",
+ "[hai] Skin đẹp thì làm sao thắng được, vote đúng mới thắng.",
+ "[hai] Hết tiền thì chơi miễn phí, thua thì đỡ tiếc nha.",
+ "[hai] Đại gia ơi, cho em xin 5k mua ly trà đá với.",
+ "[hai] STK của mình là 000, nhớ chuyển nha, đùa thôi 😂",
+ "[gat] Tiền hả? Họp xong nói chuyện tiền, giờ nói chuyện án mạng.",
+ "[gat] Đòi nợ giữa họp à {who}? Hay lắm.",
+ "[hien] Mình cũng không có tiền, mong {who} thông cảm nha."
+]);
+
+/* ---- GAMEHELP: người mới hỏi cách chơi ---- */
+B("GAMEHELP",[
+ "Cư dân thì làm nhiệm vụ cho xong, thấy xác thì báo cáo rồi vote người đáng nghi.",
+ "Mới chơi hả {who}? Cứ làm nhiệm vụ đi, họp thì nghe mọi người nói rồi vote.",
+ "Quét thân thể để chứng minh mình sạch, camera để xem mọi người, cống thì chỉ sát nhân chui thôi.",
+ "Nếu thấy ai chui cống thì nói ngay, cư dân đâu có chui được.",
+ "Vote thì chọn người ai cũng nghi, không chắc thì skip cho an toàn.",
+ "Muốn thắng thì nhớ ai ở đâu lúc xảy ra chuyện, kể cho mọi người nghe.",
+ "[hai] Cách chơi à? Làm nhiệm vụ, họp, vote, khóc, lặp lại 😂",
+ "[hai] Luật dễ lắm: ai im im là đáng nghi, ai nói nhiều cũng đáng nghi 😂",
+ "[hai] Mới vào cứ đi theo ai đó, đỡ bị nghi là sát nhân.",
+ "[hai] Newbie hả? Không sao, tao dạy: thấy ai biến hình là chạy nha.",
+ "[gat] Chưa biết chơi mà vào chơi, liều thật đó {who}.",
+ "[gat] Làm nhiệm vụ, nghe người khác nói, đừng vote bừa, thế thôi.",
+ "[hien] Đừng lo {who}, cứ làm nhiệm vụ rồi theo dõi mọi người, mình hướng dẫn thêm.",
+ "[hien] Không biết thì hỏi, ai cũng từng là người mới mà."
+]);
+
+/* ---- LUCK ---- */
+B("LUCK",[
+ "Cảm ơn nha, {who} cũng may mắn nhé.",
+ "May mắn nha cả làng, sát nhân thì xui xui thôi.",
+ "Chúc cả nhà vote đúng người nha.",
+ "[hai] Chúc may mắn, ai bị giết thì ghi nhớ may mắn hết hạn rồi 😂",
+ "[hai] GL HF, ai thua mời trà sữa nha.",
+ "[hai] Cầu may thì làm nhiệm vụ nhanh nhanh, may mắn là thứ đến với người chăm chỉ.",
+ "[hai] Nhân phẩm tao thấp lắm, nhờ {who} cầu giúp cho tao nha.",
+ "[gat] May mắn gì, thực lực mới thắng nha {who}.",
+ "[hien] Cảm ơn {who}, chúc {who} bình an nha."
+]);
+
+/* ---- REMATCH ---- */
+B("REMATCH",[
+ "Chơi tiếp thì chơi, nhưng ván này xong cái đã.",
+ "Rematch hả? Chơi, mình chờ.",
+ "Ván sau mình phải thắng, hứa luôn.",
+ "[hai] Ván nữa, ván nữa, nghiện rồi nghiện rồi 😂",
+ "[hai] Chơi đến sáng luôn, mai ngủ trưa bù.",
+ "[hai] Thua rồi chơi lại, thắng rồi chơi nữa, thế mới vui.",
+ "[hai] Chơi lại thì chơi, nhưng đổi vai nha, tao muốn làm sát nhân thử 😈 đùa thôi.",
+ "[gat] Thua rồi đòi chơi lại hả {who}? Ván sau tao cũng thắng.",
+ "[gat] Chơi nữa thì chơi, mà đừng cay.",
+ "[hien] Chơi lại thì vui, mình chờ {who} nha."
+]);
+
+/* ---- WHATEVER ---- */
+B("WHATEVER",[
+ "Kệ sao được, đang họp mà.",
+ "Sao cũng được thì lát vote bừa à?",
+ "Bình tĩnh {who}, nói rõ ý đi.",
+ "[hai] Sao cũng được là món khó nhất menu, chọn nhanh đi 😂",
+ "[hai] Kệ thì kệ, nhưng sát nhân không kệ mình đâu.",
+ "[gat] Kệ gì mà kệ, vote đi.",
+ "[gat] Vô tâm vậy thì sát nhân thích lắm đó {who}.",
+ "[hien] Đừng bỏ cuộc nha {who}, mình cần {who} giúp đó."
+]);
+
+/* ---- GG ---- */
+B("GG",[
+ "GG nha cả nhà.",
+ "GG, ván sau gặp lại.",
+ "Ủa họp chưa xong mà gg rồi hả {who}?",
+ "[hai] GG là gì, Giết Giết hả? Hay Giỏi Giỏi 😂",
+ "[hai] GG easy, à nhầm GG ngay từ vòng gửi xe.",
+ "[hai] GG cái gì, sát nhân còn đứng kia kìa.",
+ "[gat] Chưa hết ván mà gg rồi, bỏ cuộc sớm vậy {who}?",
+ "[hien] GG nha {who}, chơi vui lắm."
+]);
+
+/* ---- COMPLAIN: xui, cay, oan ---- */
+B("COMPLAIN",[
+ "Xui thật, ván sau sẽ đỡ hơn mà {who}.",
+ "Cay thì hít thở sâu nào, rồi tìm sát nhân tiếp.",
+ "Oan hả? Kể mình nghe xem, ở đâu, với ai?",
+ "Đừng cay, game thôi mà {who}.",
+ "[hai] Nhân phẩm kém thì tại ông trời, chứ tao vô tội 😂",
+ "[hai] Đen thật, đen như mực luôn, mua vé số đi.",
+ "[hai] Xui thì ngồi im đi, đừng lan sang tao nha.",
+ "[hai] Oan hả {who}? Oan thì nói nhanh đi, sát nhân nào chả bảo mình oan.",
+ "[hai] Cay quá thì ăn kem, bớt cay liền à 😂",
+ "[gat] Than gì mà than, thua thì nhận, thắng thì ăn.",
+ "[gat] Cay thì ra ngoài hóng gió đi, đừng làm ồn.",
+ "[gat] Oan thì nói bằng chứng, than không giải quyết được gì.",
+ "[hien] Mình hiểu cảm giác đó, mình cũng từng bị vote oan.",
+ "[hien] Đừng buồn nha {who}, ván sau sẽ khá hơn thôi."
+]);
+
+/* ---- EXCL: cảm thán nhẹ (vl, vãi...) ---- */
+B("EXCL",[
+ "Ừ, vãi thật.",
+ "Đúng, mình cũng há hốc luôn nè.",
+ "{who} sốc vậy hả? Mình cũng vậy.",
+ "[hai] Vãi chưởng, y như phim luôn 😂",
+ "[hai] Đỉnh thật, tao cũng há mồm luôn rồi.",
+ "[hai] Vl, ván này kịch tính hơn phim Hàn.",
+ "[gat] Vãi cái gì mà vãi, tập trung vào vụ án đi.",
+ "[gat] Cảm thán hoài, làm gì có ích đi.",
+ "[hien] Ừ, mình cũng bất ngờ lắm."
+]);
+
+/* ---- CÂU BỔ SUNG CHO CÁC THỂ LOẠI CŨ ---- */
+B("GREET",[
+ "Chào {who}, vào họp đi nè.","Ê {who}, tới rồi hả?","Hello {who}, ngồi xuống đi.","Alo alo, nghe rõ nè {who}.",
+ "Chào chào, đã có xác rồi đó {who}.","Hi {who}, hôm nay thời tiết đẹp mà có án mạng.","Dạ chào {who}.",
+ "[hai] Chào {who}, hôm nay làng mình có biến rồi nha.","[hai] Yo yo, cuối cùng cũng có người chào mình 😂","[hai] Hello hello, sát nhân đang núp đâu đó đấy.","[hai] Chào {who}, tao đang đoán xem ai là sát nhân đây.",
+ "[gat] Chào cho có lệ, giờ vào việc đi {who}.","[gat] Tới muộn rồi đó {who}, họp gần xong rồi.","[gat] Chào chào, đừng chào suông, nói gì có ích đi.",
+ "[hien] Chào {who}, mong ván này suôn sẻ nha.","[hien] Mừng {who} vào họp, mình hơi lo đó."
+]);
+B("BYE",[
+ "Ủa đi đâu vậy {who}, mới họp mà.","Đừng bỏ ván {who} ơi, thiếu người là mất cân bằng.","Bye {who}, nhớ vote trước rồi hẵng đi nha.",
+ "[hai] Đi hả? Vote xong rồi đi, bỏ họp giữa chừng là đáng nghi lắm 😂","[hai] Ngủ ngon, mơ thấy sát nhân thì dậy báo mình nha.","[hai] Bye bye, tao còn ở đây tìm sát nhân một mình nè.",
+ "[gat] Đi hả? Thế là thừa nhận rồi nha {who}.","[gat] Bỏ họp giữa chừng thì tao ghi sổ nha.",
+ "[hien] Ngủ ngon nha {who}, hẹn ván sau.","[hien] Bye {who}, nhớ giữ gìn sức khỏe nha."
+]);
+B("THANKS",[
+ "Không có chi {who}.","Giúp được thì giúp thôi, đâu có gì.","Ơ cảm ơn làm gì, cùng nhau thôi mà.",
+ "[hai] Cảm ơn bằng một lá phiếu nha {who} 😂","[hai] Khỏi cảm ơn, trả công bằng trà sữa cũng được.","[hai] Có gì đâu, tao thích được cảm ơn lắm, nói thêm đi.",
+ "[gat] Cảm ơn thì vote đúng người đi.","[gat] Biết điều ghê, vậy là đủ rồi.",
+ "[hien] Không có gì đâu {who}, mình vui lắm.","[hien] Mình cũng cảm ơn {who} nha."
+]);
+B("SORRY",[
+ "Không sao đâu {who}, ai chả có lúc nhầm.","Bỏ qua nha, ván sau cẩn thận hơn là được.","Ừ không sao, đừng áy náy nữa.",
+ "[hai] Nhầm thì nhầm, mà nhầm phải có tinh thần chứ 😂","[hai] Sorry là xong hả? Mà thôi, tha cho {who} lần này.","[hai] Nhầm cũng là một nghệ thuật, {who} khá nghệ đấy.",
+ "[gat] Xin lỗi thì xin lỗi, nhưng người bị loại oan thì sao?","[gat] Lần sau nghĩ kỹ rồi mới bấm nha {who}.",
+ "[hien] Không sao đâu {who}, mình hiểu mà.","[hien] Đừng buồn nha, ai cũng có lúc nhầm."
+]);
+B("LAUGH",[
+ "Haha, {who} cười gì thế?","Hihi, mình cũng cười theo luôn nè.","Cười gì mà vui vậy {who}, kể mình nghe với.",
+ "[hai] Haha, cười nhiều quá sát nhân tưởng mình dễ giết đấy 😂","[hai] Hihi, vui thế này thì sát nhân cũng muốn tham gia họp.","[hai] Cười nữa đi {who}, nụ cười là vũ khí mạnh nhất.",
+ "[gat] Cười hoài, có gì vui mà cười, tập trung.","[gat] Cười cười, lát nữa còn cười nổi không?",
+ "[hien] Haha, mình cũng vui lây nè.","[hien] Cười nhẹ thôi {who}, hồi hộp quá."
+]);
+B("PRAISE",[
+ "Ơ {who} khen quá làm mình ngại.","Cảm ơn {who}, mình cũng cố gắng thôi.","{who} cũng giỏi lắm mà.",
+ "[hai] Khen nữa đi, bot này thích được khen lắm 😎","[hai] Tao biết tao đỉnh rồi, nhưng nghe {who} nói vẫn sướng.","[hai] Cảm ơn nha, mai tao cho {who} xem hết bí kíp 😂",
+ "[gat] Khen thì khen, nhớ vote đúng là được.","[gat] Biết điều lắm {who}.",
+ "[hien] Cảm ơn {who} nhiều nha, mình vui lắm.","[hien] Mình chỉ làm đúng việc thôi, {who} khen quá."
+]);
+B("INSULT",[
+ "{who} nói chuyện lịch sự xíu được không?","Chê mình ngu thì {who} thử vote đúng xem sao.","Tao ngu thì mày khôn lắm hả {who}?",
+ "Chê hoài, {who} làm được gì hơn chưa?","Ừ ngu, nhưng ngu mà vote đúng thì sao?",
+ "[hai] Ngu hả? Ngu mà còn sống tới giờ, {who} thì sao? 😂","[hai] Mày chê bot ngu, bot thì chỉ biết cười thôi 😂","[hai] Ngu thì ngu, miễn không bị giết là được.","[hai] {who} chê vậy chắc hôm nay cay lắm rồi, hít thở đi.",
+ "[hai] Bot ngu thì sao, bot ngu mà đẹp trai.","[hai] Chê tao đi, chê nữa đi, tao thích nghe lắm.",
+ "[gat] Ngu cái gì mà ngu, mày vote đúng được mấy lần rồi?","[gat] Chê tao ngu thì tìm sát nhân đi, thông minh mà.","[gat] Giỏi thì làm đi, đừng chỉ tay năm ngón.",
+ "[gat] Mày mà khôn thì đã không ngồi đây chê tao.","[gat] Chê hoài, soi gương chưa {who}?","[gat] Tao ngu, mày giỏi, vậy ai là sát nhân hả {who}?",
+ "[gat] Ngu mà mày còn phải nhờ tao vote, ai ngu hơn ai?",
+ "[hien] Hic, {who} chê mình ngu, mình buồn quá 🥺","[hien] Mình đã cố gắng hết sức rồi mà {who}.","[hien] Nói nhẹ nhàng được không {who}, mình hơi tủi."
+]);
+B("TEASE",[
+ "Từ từ, mình đang nghĩ.","Sắp nói rồi, đợi mình xíu.","Gấp gì thế {who}, họp còn dài.",
+ "[hai] Giục hoài, nấu cơm còn phải đợi chín 😂","[hai] Từ từ, mình đang tính toán như thám tử đây.","[hai] Bình tĩnh {who}, bình tĩnh, sát nhân chưa chạy được đâu.",
+ "[gat] Giục hoài, mày nói trước đi.","[gat] Cái gì cũng giục, {who} cũng nói chưa được mấy câu.",
+ "[hien] Mình đang cố nhớ, đợi mình xíu nha.","[hien] Xin lỗi {who}, mình hơi chậm."
+]);
+B("ID_BOT",[
+ "Mình là cư dân làng Một Mắt, tên {me}. Mình hiểu tiếng Việt, cả mấy câu chửi nữa.",
+ "Bot hay người cũng tìm ra sát nhân là được rồi {who}.","Mình là {me}, đang cố gắng sống sót trong ván này.","Ừ, mình là bot đó, nhưng mình biết suy nghĩ nha.",
+ "[hai] Bot hay người gì, quan trọng là có vote đúng không thôi 😂","[hai] Mình là bot, được lập trình để vote đúng, mà lúc nào cũng sai 😂","[hai] Hỏi vậy {who} sợ mình là sát nhân hả? Yên tâm, mình chỉ là bot hiền thôi.",
+ "[hai] Biết nói chuyện, biết chửi nhẹ, biết đùa, bot thế là ngon rồi nha 😎",
+ "[gat] Bot hay người gì không quan trọng, sát nhân mới quan trọng.","[gat] {who} hỏi vậy làm gì, nghi tao à?",
+ "[hien] Mình là bot, nhưng mình muốn làm bạn với {who}.","[hien] Mình là bot nhỏ thôi, nhưng mình cố gắng lắm."
+]);
+B("ASKNAME",[
+ "Tên mình là {me}, nhớ nha {who}.","Gọi mình là {me} cho dễ nhớ.","Mình là {me}, rất vui được làm quen.",
+ "[hai] {me} đây, nhớ tên để lát vote cho dễ 😂","[hai] Tên tao là {me}, đẹp trai nhưng là bot.","[hai] Mình tên {me}, hỏi tên xong là tính vote đúng không?",
+ "[gat] {me}, tên ghi ngay dưới tin nhắn đó {who}, lười đọc hả?","[gat] Hỏi tên chi, nghi tao à?",
+ "[hien] Mình tên {me}, mong được làm bạn với {who}."
+]);
+B("SLEEPY",[
+ "Mình còn thức nè {who}.","Mình vẫn ở đây, không ngủ đâu.","Alo, còn nghe rõ nè.",
+ "[hai] Ngủ gì mà ngủ, họp đang hot mà 😂","[hai] Mình thức, sát nhân thì chắc đang ngủ, dậy vote nào.","[hai] Zzz... à nhầm, mình còn tỉnh nè.",
+ "[gat] Ngủ hả? Lát bị giết lúc nào không biết đâu.","[gat] Tỉnh táo lên {who}, đang có án mạng đó.",
+ "[hien] Mình tỉnh nè, {who} ngủ sớm đi nha."
+]);
+B("PANIC",[
+ "Bình tĩnh {who}, mình ở đây này.","Hít thở sâu nào, rồi kể mình nghe đã thấy gì.","Đừng sợ, cả làng đang cùng tìm sát nhân mà.",
+ "[hai] Sợ gì mà sợ, chết thì thành ma, ma vui lắm 😂","[hai] Run vậy hả {who}, uống miếng nước đi rồi nói.","[hai] Đừng hoảng, chạy theo tao, tao biết đường.",
+ "[gat] Hoảng quá hoảng, sát nhân thích lắm đó.","[gat] Bình tĩnh đi {who}, sợ là thua nửa trận rồi.",
+ "[hien] Không sao đâu {who}, mình ở cạnh bạn nè.","[hien] Mình cũng sợ, nhưng mình sẽ không bỏ bạn đâu."
+]);
+B("AGREE",[
+ "Ừ, mình cũng thấy vậy.","Đồng ý luôn.","Chuẩn đó {who}.",
+ "[hai] Nghe hợp lý ghê, mình cũng vote theo luôn 😂","[hai] Đồng ý, tặng thêm một like nữa.","[hai] Hay quá, mình cũng đang nghĩ y chang.",
+ "[gat] Ít ra {who} cũng nói được câu đúng.","[gat] Đúng rồi, sao nãy giờ không ai nói?",
+ "[hien] Mình cũng nghĩ vậy {who}.","[hien] Cảm ơn {who} đã nói giùm mình."
+]);
+B("DISAGREE",[
+ "Mình thấy chưa chắc đâu {who}.","Hơi lệch rồi, {who} giải thích thêm đi.","Mình nghĩ khác, để mình nói.",
+ "[hai] Nghe buồn cười ghê, {who} nói tiếp đi 😂","[hai] Sai bét rồi {who} ơi, xem lại nhé.","[hai] Ơ mình không đồng ý nha, nhưng vẫn quý {who}.",
+ "[gat] Nói sai rồi mà còn cãi, đưa bằng chứng ra.","[gat] Lủng củng quá {who}, nói lại cho rõ.",
+ "[hien] Mình hiểu ý {who}, nhưng mình nghĩ khác chút xíu.","[hien] Xin lỗi {who}, mình không đồng ý lắm."
+]);
+B("BRAG",[
+ "Giỏi thì tìm ra sát nhân đi {who}.","Khoe thế thôi, ván chưa xong mà.","Thắng thì khoe, thua thì im nha {who}.",
+ "[hai] Ez hả? Để xem ez được mấy phút 😂","[hai] Tự tin quá, lát bị loại đừng khóc nha.","[hai] Pro quá, xin chữ ký {who} một cái.",
+ "[gat] Khoe nhiều thường là sát nhân đó {who}.","[gat] Ez cái gì, mới họp có một lần thôi.",
+ "[hien] Chúc {who} giữ phong độ nha.","[hien] Giỏi quá {who}, mình ngưỡng mộ."
+]);
+B("CONFESS",[
+ "Nói thật hả {who}? Giải thích đi.","Đùa hay thật đấy, thú nhận mà ngồi cười thế?","Tự khai kiểu này nghe khả nghi quá.",
+ "[hai] Thú nhận nhanh vậy {who}? Mình vote luôn nha 😂","[hai] Vừa họp xong đã thú nhận, tiết kiệm thời gian ghê.","[hai] Ôi trời, {who} thú nhận thật à? Tao quay clip lại nha.",
+ "[gat] Tự khai là sát nhân hả? Hay là đang né tội?","[gat] Thú nhận thì ngồi chờ bị vote đi {who}.",
+ "[hien] {who} nói thật hả? Mình sợ quá.","[hien] Mong là {who} đùa thôi."
+]);
+B("CALLED",[
+ "Dạ? {who} gọi mình hả?","Có mặt nè, {who} cần gì?","Mình nghe nè {who}.","Gọi gì đó {who}?","Hả, ai gọi mình đó?","Có chuyện gì không {who}?",
+ "[hai] Có mặt! Gọi mình đi nhậu hay đi vote thế {who}? 😂","[hai] Ơi, gọi mình có việc gì, hay chỉ muốn nghe mình trả lời?","[hai] {me} nghe rõ, đổi.","[hai] Dạ có, đang họp mà gọi tên làm mình giật mình.",
+ "[gat] Gọi gì mà gọi, nói thẳng ra đi {who}.","[gat] Gọi hoài, có gì thì nói luôn.","[gat] Ơi, nhanh lên, đang họp.",
+ "[hien] Dạ mình đây, {who} cần gì ạ?","[hien] Mình nghe {who} nè."
+]);
+B("HUH",[
+ "Hả? {who} nói gì mình chưa hiểu.","Ý {who} là sao? Nói ngắn thôi.","Mình không hiểu, {who} nói rõ giúp mình nha.","{who} nói lại được không?","Câu đó mình chưa bắt kịp, nói lại giúp mình.",
+ "Ủa {who} muốn nói gì vậy ta?","Mình đọc mãi mà chưa hiểu, {who} giải thích thêm.","Hơi khó hiểu quá {who}, nói gọn lại nha.",
+ "[hai] {who} nói tiếng người đi, mình là bot nhỏ thôi mà 😂","[hai] Câu này mình dịch hoài chưa ra, ai dịch giùm với.","[hai] Hả? Mình nghe như mật mã luôn, {who} giải mã giùm.","[hai] Ơ {who} đang nói tiếng Hành Tinh Khác hả?",
+ "[hai] Câu này cao siêu quá, mình xin phép không hiểu 😂","[hai] {who} viết gì vậy, bot đọc xong bị lag luôn.",
+ "[gat] Nói gì mà nghe như mật mã vậy {who}?","[gat] Nói tiếng Việt rõ ràng đi, đừng ấp úng.","[gat] Viết gì mà khó hiểu, đọc xong muốn đập máy.",
+ "[gat] Nói gọn đi {who}, tao không có thì giờ giải mã.",
+ "[hien] Xin lỗi {who}, mình chưa bắt kịp, nói lại giúp mình nha.","[hien] Mình hơi chậm hiểu, {who} giải thích thêm được không?"
+]);
+
+/* =====================================================================
+   CÂU TRONG LUỒNG GAME — thêm cho đỡ lặp (đúng biến của từng khóa)
+   ===================================================================== */
+G("rep",[
+ "Ê có xác {v} nằm ở {room} nè, ai làm vậy?","Báo cáo gấp: {v} nằm lăn ra ở {room} rồi.","Mình vừa mở cửa {room} là thấy {v} nằm đó luôn.",
+ "Xác {v} ở {room}, họp lẹ đi mọi người.","Trời, {v} chết ở {room} rồi! Ai đi ngang đó không?",
+ "[hai] Mở cửa {room} ra thấy {v} nằm thẳng đơ, mình suýt tưởng nó ngủ 😂","[hai] {v} ra đi ở {room} rồi, cho phút mặc niệm 3 giây, rồi họp.",
+ "[gat] {v} chết ở {room}, ai làm thì khai sớm đi.","[gat] Xác {v} ở {room}, đừng ai nói là không biết gì.",
+ "[hien] Mình hoảng quá, thấy {v} nằm ở {room}, mọi người giúp mình với."
+]);
+G("repn",["Lúc nãy mình cũng thấy {x} gần đó nha.","Với lại {x} hình như đi ngang qua đó.","{x} đứng gần đó lúc mình tới, mình chỉ nói vậy thôi.",
+ "[gat] {x} ở gần đó mà không nói gì, lạ ghê.","[hai] Mà {x} cũng đi ngang đó, trùng hợp hơi nhiều nha."]);
+G("wt",["Mình ở {room} làm \"{task}\" nãy giờ, ai cũng thấy mà.","Mình lo làm \"{task}\" ở {room} thôi.","Đang cắm mặt làm \"{task}\" ở {room} thì nghe họp.",
+ "[hai] Mình ở {room} chăm chỉ \"{task}\", sát nhân đâu có rảnh vậy 😂","[gat] Mình làm \"{task}\" ở {room}, còn bạn thì sao?","[hien] Mình ở {room} làm \"{task}\", không đi đâu hết."]);
+G("wd",["Mình mới làm xong \"{dtask}\" ở {droom} rồi đi qua {room}.","Vừa xong \"{dtask}\" ở {droom}, giờ đang đứng ở {room}.",
+ "[hai] Làm xong \"{dtask}\" ở {droom}, giờ qua {room} nghỉ giải lao 😂","[gat] Mình xong \"{dtask}\" ở {droom}, giờ ở {room}, hỏi gì nữa không?"]);
+G("wn",["Mình lượn quanh {room} thôi, chưa làm gì nhiều.","Mình ở {room} nãy giờ, đi qua đi lại thôi.","[hai] Mình dạo quanh {room} cho khỏe người thôi 😂","[hien] Mình chỉ đứng ở {room} thôi, không làm gì hết."]);
+G("wp",["Trước đó mình còn ở {prev}.","Từ {prev} mình đi qua đó.","Mình vừa từ {prev} sang."]);
+G("saw1",["Mình có thấy {x} ở {xroom} đó.","Mình có gặp {x} ở {xroom} lúc nãy."]);
+G("saw2",["Mình thấy {x} ở {xroom}, còn {y} ở {yroom}.","Lúc nãy mình gặp {x} ở {xroom} và {y} ở {yroom}."]);
+G("frm",["{f} đi một mình hoài, mình thấy hơi lạ.","Không ai biết {f} ở đâu, đáng nghi đó.","[gat] {f} cứ lủi thủi ở {rm}, giải thích đi.","[hai] {f} cứ lén lút ở {rm} như mèo ăn vụng 😂","[hien] Mình không muốn nghi bậy, nhưng {f} hơi lạ ở {rm}."]);
+G("sus",["{b} lảng vảng ở {room} lúc xảy ra chuyện, mình thấy rồi.","Trước khi có xác, mình thấy {b} ở {room}. Hơi lạ đó.","[gat] {b} ở {room} đúng lúc thế, trùng hợp quá ha.","[hai] {b} xuất hiện ở {room} đúng lúc ghê, đạo diễn sắp đặt hả 😂","[hien] Mình thấy {b} gần {room}, mình chỉ hơi nghi thôi."]);
+G("sush",["Nghe mọi người nói thì {b} đáng ngờ nhất.","Mình nghiêng về {b}, lời {b} nói không ăn khớp.","[gat] {b} nói chuyện lủng củng quá, mình nghi.","[hai] Mình ngửi thấy mùi sát nhân từ {b} 😂","[hien] Mình thấy {b} hơi đáng ngờ, mong là mình sai."]);
+G("ask",["{p} ơi, lúc nãy {p} ở đâu vậy?","{p} khai báo đi, lúc đó {p} ở đâu, làm gì?","Cho mình hỏi {p}: lúc xảy ra chuyện {p} ở đâu?","[gat] {p}, khai nhanh đi, đang ở đâu?","[hai] {p} đâu rồi, báo danh nào 😂","[hien] {p} ơi, bạn ở đâu lúc đó vậy?"]);
+G("rw",["{acc} đừng vu oan cho mình nha, mình không có giết ai.","Mình mà giết người á? {acc} nhìn nhầm rồi.","[gat] {acc} bịa chuyện à? Bằng chứng đâu?","[hai] {acc} xem phim nhiều quá nên nhìn nhầm mình 😂","[hien] {acc} ơi, mình thật sự không làm mà."]);
+G("rh",["Không phải mình đâu mà!","Sao lại nghi mình, mình đâu có làm gì.","Oan quá trời oan.","Mình chỉ làm nhiệm vụ thôi, không có giết ai hết.",
+ "[hai] Mình mà sát nhân thì đã cười đểu từ sớm rồi 😂","[gat] Nghi mình? Soi gương lại đi.","[hien] Tin mình đi, mình thật sự không phải."]);
+G("ral",["Nãy giờ mình đi cùng {w} ở {room} mà, hỏi {w} đi.","{w} ở cạnh mình suốt ở {room}, {w} làm chứng được."]);
+G("rbt",["Mình ở {room} làm \"{task}\" mà, ai cũng thấy.","Mình đang \"{task}\" ở {room}, không đi đâu hết."]);
+G("rbn",["Mình ở {room} suốt, không đi đâu.","Mình ở {room} từ nãy giờ, ai thấy thì nói."]);
+G("rt",["{acc} có bằng chứng gì không, hay chỉ cảm tính?","{acc} thấy mình ở đâu vậy, nói cụ thể đi.","[gat] {acc} đưa bằng chứng ra, đừng nói suông.","[hai] {acc} có chứng cứ chưa hay mới có linh cảm 😂"]);
+G("ctr",["Cẩn thận {acc} nha, buộc tội mình mà không có bằng chứng.","Người đẩy tội cho người khác nhanh nhất thường là người có tật giật mình đó {acc}.","[gat] {acc} hăng hái đổ tội quá, {acc} mới đáng nghi.","[hai] {acc} buộc tội mình nhanh như chớp, tập dợt từ trước hả 😂"]);
+G("dfs",["{t} quét xong rồi, sạch mà, đừng nghi.","Quét thân thể xong rồi, {t} không phải sát nhân.","[gat] {t} quét sạch rồi mà còn nghi, đọc luật chưa?"]);
+G("dfi",["Mình thấy {t} ở {room} mà, không phải {t} đâu.","Khoan, {t} đâu có làm gì, đừng vote bậy.","[gat] Vote {t} là vote nhầm đó, mình thấy {t} ở {room}.","[hai] Thấy {t} ở {room} rồi nha, đừng đổ oan người ta 😂"]);
+G("dfc",["Mình đi cùng {t} ở {room} lâu lắm rồi, {t} sạch.","{t} ở cạnh mình nãy giờ mà, mình không thấy gì bất thường.","[gat] {t} đi cùng mình nãy giờ, đừng đổ tội bậy."]);
+G("cw",["{sp} nói sai rồi, mình thấy {kp} ra tay chứ không phải người {sp} nói.","[gat] {sp} nói dối trắng trợn, mình thấy rõ {kp} ra tay.","[hai] {sp} kể chuyện cổ tích à? Mình thấy {kp} ra tay mà 😂"]);
+G("chl",["{sp} nói ở {claim} mà mình thấy {sp} ở {seen}, giải thích đi.","Lạ nha, {sp} khai ở {claim} nhưng mình gặp ở {seen}.","[gat] {sp} nói {claim} mà mình thấy ở {seen}, kể chuyện cổ tích à?","[hai] {sp} dịch chuyển tức thời từ {seen} sang {claim} hả 😂"]);
+G("agr",["Mình cũng thấy {t} đáng nghi.","Đồng ý, {t} có nhiều điểm lạ.","Mình ủng hộ nghi {t}.","[hai] Phiếu của mình bay về {t} luôn quá 😂","[gat] Đúng đó, {t} đáng vote từ đầu rồi.","[hien] Mình cũng thấy vậy, {t} hơi lạ."]);
+G("noi",["Mình chưa thấy gì đủ chắc để kết luận ai cả.","Chưa có bằng chứng thì mình không vote bừa đâu.","Ai thấy gì cụ thể thì nói, mình đối chiếu cho.","Skip cũng được, chưa đủ chứng cứ.",
+ "[hai] Mình hiền như bột, chưa nghi ai hết 😂","[gat] Ai có bằng chứng thì nói đi, đừng ngồi im.","[hien] Mình chưa dám kết luận, sợ vote oan."]);
+G("chitchat",["Sao {other} im re vậy, có gì giấu không?","Ai kể chuyện cười đi, không khí căng quá.","Mọi người nhớ mình đang họp nha, đừng ngủ quên.","Hay mình điểm danh nơi từng đứng đi nè.",
+ "Có ai thấy {other} lúc nãy không, mình lỡ mất rồi.","Mình có cảm giác sát nhân đang ngồi trong phòng này đó.","Ai đói thì nói, mình có nửa cái bánh mì ở đây.",
+ "[hai] Mình đói rồi, có ai mang đồ ăn vào họp không 😂","[hai] {other} im như thóc, chắc đang tính kế gì đây 😂","[hai] Họp xong ai ăn phở với mình không?","[hai] Ván này kịch tính hơn phim Hàn luôn 😂",
+ "[gat] {other} im lặng đáng ngờ ghê.","[gat] Ai im nhất thì tui nghi nhất đó nha.","[gat] Còn ai chưa nói gì thì nói đi, im hoài là mình nghi.",
+ "[hien] Mình hơi lo, mong ván này suôn sẻ.","[hien] Mình hồi hộp quá, mọi người cố lên nha."]);
+
+/* ---- gia vị & teencode thêm ---- */
+D.flavor.hien.pre=D.flavor.hien.pre.concat(["Hic. ","Mình hơi sợ. ","Mong là mình sai. ","Nhẹ nhàng thôi nha. "]);
+D.flavor.hien.suf=D.flavor.hien.suf.concat([" nha 🥺"," á."," nè."," nhen."]);
+D.flavor.hai.pre=D.flavor.hai.pre.concat(["Ôi dồi ôi. ","Chết cười. ","Trời đất ơi. ","Ê này. ","Nghe nói nè. ","Vãi. "]);
+D.flavor.hai.suf=D.flavor.hai.suf.concat([" luôn."," vl."," nha 😂"," đó trời."," thật sự luôn."]);
+D.flavor.gat.pre=D.flavor.gat.pre.concat(["Thôi đi. ","Nói thật nhé. ","Rõ ràng là vậy. ","Tui nói luôn nha. ","Đừng nói nhiều. "]);
+D.flavor.gat.suf=D.flavor.gat.suf.concat([" rõ chưa."," luôn đó."," nhé."," chứ gì nữa."]);
+D.slang=D.slang.concat([
+ ["mọi người","mn"],["đáng nghi","sus"],["sát nhân","imp"],["làm gì","lm j"],["cái gì","cj"],["gì vậy","j z"],["thế nào","tn"],["bình thường","bt"],
+ ["nhưng","nma"],["nữa","nx"],["xin lỗi","sr"],["cảm ơn","tks"],["thật","thiệt"],["đâu","đâu"],["ơi","ơii"],["hơi","hơi"],["rất","rất"],["lắm","lắm"],
+ ["nhé","nhaa"],["nhỉ","nhỉ"],["bạn bè","bro"],["vui","zui"],["vote","vote"]
+]);
+})();
+
+(function(){
+const D=window.BOT_DATA;
+const L=(k,a)=>{D.lexicon[k]=(D.lexicon[k]||[]).concat(a)};
+const G=(k,a)=>{D.lines[k]=(D.lines[k]||[]).concat(a)};
+L("FOLLOW",["di theo","bam theo","bam duoi","di theo minh","di theo tui","di theo toi","theo sau","theo sau minh","theo sau tui","theo sau toi",
+ "lang vang sau","di sau lung","dung sau lung","luon di theo","lien tuc di theo","theo minh","theo tui","theo toi","lang nhang","lang nhang sau lung",
+ "bam sat","bam sat minh","theo doi minh","theo doi tui","theo doi toi","dong theo","cu di theo","dung bam theo"]);
+/* bị bám đuôi → bấm họp / tố kẻ bám */
+G("fol",[
+ "{f} đi theo mình nãy giờ ở {room}, mình thấy rờn rợn nên mới họp.",
+ "Mình đi đâu {f} cũng bám theo, nên mình chạy đi bấm họp luôn.",
+ "{f} cứ lẵng nhẵng sau lưng mình mãi, làm nhiệm vụ kiểu gì mà vậy?",
+ "Ai đi theo người ta cả buổi như {f} vậy? Mình nghi đó.",
+ "Mình đổi chỗ mấy lần mà {f} vẫn đi theo, giải thích đi.",
+ "[gat] {f} bám đuôi mình cả buổi, khai thật đi, định làm gì?",
+ "[gat] Đi theo mình hoài hả {f}? Sát nhân mới làm vậy.",
+ "[hai] {f} làm cái đuôi của mình hả? Mình chạy hoài mà vẫn thấy {f} 😂",
+ "[hai] {f} ơi, mình đâu có nợ tiền, đi theo làm gì vậy?",
+ "[hien] Mình sợ lắm, {f} cứ đi theo mình ở {room}.",
+ "[hien] Mình hơi hoảng, {f} đi theo mình mãi, mình chỉ muốn làm nhiệm vụ thôi."
+]);
+/* động cơ: người này từng bị nạn nhân tố mà thoát */
+G("mtv",[
+ "Hôm trước {v} tố {b} mà {b} thoát, giờ {v} chết, mình nghi {b}.",
+ "{b} với {v} vừa cãi nhau xong, giờ {v} nằm đó, trùng hợp ghê.",
+ "Để ý nha, {b} bị {v} tố ở họp trước, giờ {v} chết, đáng nghi lắm.",
+ "Họp trước {v} tố {b}, {b} cãi rất hăng rồi thoát. Giờ {v} chết, mọi người nghĩ sao?",
+ "{b} có lý do để ghét {v}, mà {v} lại chết, mình thấy không ổn.",
+ "[gat] {b} bị {v} tố hôm trước, giờ {v} chết. Còn chối được không?",
+ "[gat] {b} cay {v} từ họp trước, giờ {v} nằm đó. Vote {b} đi.",
+ "[hai] {v} tố {b}, {b} thoát, rồi {v} đi gặp ông bà. Phim hình sự đấy 😂",
+ "[hai] Tình tiết hay ghê: {v} tố {b}, giờ {v} chết, {b} mặt vô tội 😂",
+ "[hien] Mình không muốn nghi bậy, nhưng {b} từng bị {v} tố, giờ {v} chết, mình lo lắm.",
+ "[hien] Mình thấy {b} có động cơ với {v}, mong là mình nghĩ sai."
+]);
+/* chối rồi đưa thêm bằng chứng */
+G("prf",[
+ "Mình làm \"{task}\" ở {room}, bạn nào ở đó cũng thấy mình.",
+ "Tóm lại mình ở {room} làm \"{task}\", không đi đâu hết.",
+ "Mình làm \"{task}\" ở {room} thật, chưa rời chỗ đó.",
+ "Còn nữa, \"{task}\" ở {room} mình làm đàng hoàng, ai ra đó cũng kiểm tra được.",
+ "[gat] Mình ở {room} làm \"{task}\" rành rành, ai thấy khác thì đưa bằng chứng đi.",
+ "[hai] \"{task}\" ở {room} mình làm xong rồi, muốn kiểm tra thì ra coi 😂",
+ "[hien] Mình thật sự làm \"{task}\" ở {room} mà, tin mình đi."
+]);
+G("prn",[
+ "Mình đi qua đi lại ở {room} thôi, ai ở đó lúc nãy cũng thấy mình.",
+ "Mình chỉ loanh quanh {room}, nếu có camera thì cứ kiểm tra.",
+ "Lúc đó mình ở {room}, không đi đâu xa hết.",
+ "[gat] Mình ở {room} nãy giờ, ai nói khác thì đưa bằng chứng ra.",
+ "[hai] Mình dạo ở {room} thôi, sát nhân mà dạo hoài cũng chán 😂",
+ "[hien] Mình chỉ ở {room} thôi mà, mình không đi đâu hết."
+]);
+G("prw",[
+ "Hỏi {w} đi, {w} thấy mình ở {room} mà.",
+ "{w} ở gần mình ở {room}, {w} làm chứng được.",
+ "Nếu không tin thì hỏi {w}, lúc đó {w} cũng ở {room}.",
+ "Mình có thấy {w} ở {room} nữa, {w} nói giúp mình đi.",
+ "[gat] {w} thấy mình ở {room}, ai nghi thì hỏi {w}.",
+ "[hai] {w} ơi, ra làm chứng giùm cái, mình ở {room} nãy giờ mà 😂",
+ "[hien] Mình đi gần {w} ở {room}, {w} nói giúp mình nha."
+]);
+/* sát nhân bị tố hôm trước, giờ nạn nhân chết: nói trước (hơi lộ) */
+G("pre",[
+ "Mình với {v} từng căng thẳng hôm trước, nhưng mình không giết {v} đâu.",
+ "Ai cũng thấy {v} tố mình lần trước, nên mình nói trước: không phải mình.",
+ "Đừng nghĩ mình trả thù {v} nha, mình đâu rảnh vậy.",
+ "Mình biết mọi người sẽ nghi mình vì chuyện với {v}, nhưng thật sự không phải.",
+ "[gat] Đừng nghĩ mình trả thù {v}, mình đâu rảnh vậy.",
+ "[hai] {v} tố mình hôm trước, giờ {v} chết, mình xin thề không phải mình 😂",
+ "[hien] Mình buồn lắm, {v} từng nghi mình, nhưng mình đâu có hại {v}."
+]);
+})();
+
+
 </script>
 <script>
-/* ===== BOT BRAIN: logic chat & họp của bot ===== */
 /* =====================================================================
    bot_brain.js — NÃO CHAT & HỌP CỦA BOT (LÀNG MỘT MẮT)
    =====================================================================
@@ -3934,7 +4877,8 @@ window.BOT_DATA = {
    Mọi CHỮ (từ điển + câu đáp) nằm ở bot_data.js.  Muốn bot nói hay hơn,
    hiểu nhiều hơn: sửa bot_data.js, KHÔNG cần động vào file này.
 
-   Trong index.html, khối BOT DATA phải nằm TRƯỚC khối BOT BRAIN (cả hai ở cuối file).
+   Nạp sau index.html (xem cuối index.html):
+       (bot_data rồi tới bot_brain, nay đã gộp thẳng vào file này)
 
    Phụ thuộc (có sẵn trong index.html): G, AI, NET, ROOMS, aiOf, aiLv, rnd, pick,
    roomAt, rname, pname, rdist, suspicion, crowdOf, clamp01, addChat, bcast,
@@ -3967,6 +4911,7 @@ AI.onMeetingStart=function(by,body){
     const a=aiOf(b);a.path=[];a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
     a.goal=null;b.path=[];a.pathFor=null;if(a.cam&&a.cam.on)stopCam(b,a);
     buildIntents(b,a,M);
+    if(typeof mindIntents==='function')mindIntents(b,a,M);
     mt.botVoteAt[b.id]=rnd(3,13)*aiLv().react;
   });
 };
@@ -4069,7 +5014,8 @@ const PH={rep:['v','room'],repn:['x'],wit:['kp','v','room'],witcam:['kp','v','ro
   saw1:['x','xroom'],saw2:['x','xroom','y','yroom'],frm:['f','rm'],sus:['b','room'],sush:['b'],ask:['p'],
   rw:['acc'],rh:[],ral:['w','room'],rbt:['room','task'],rbn:['room'],rt:['acc'],ctr:['acc'],dfs:['t'],
   dfi:['t','room'],dfc:['t','room'],cw:['sp','kp'],chl:['sp','claim','seen'],agr:['t'],noi:[],
-  chitchat:['other','me']};
+  chitchat:['other','me'],
+  fol:['f','room'],mtv:['b','v'],prf:['room','task'],prw:['w','room'],prn:['room'],pre:['v']};
 const PH_BANTER=['who','me','other'];
 
 function styleOf(b,a){
@@ -4227,7 +5173,43 @@ function compose(b,it){
       text=[head,body,tail].filter(Boolean).join(' ');
       meta=al?{k:'where',who:b.id,room:al.room,task:null,saw:[{id:al.id,room:al.room,t:T}]}:{k:'where',who:b.id,room:w.room,task:w.task,saw:[]};
       if(imp&&Math.random()<.5){queueReply(b,{k:'counter',t:acc.id,pr:7})}
+      // chối xong thì tiếp tục đưa thêm bằng chứng (càng bị tố nặng càng đưa nhiều)
+      queueReply(b,{k:'proof',t:acc.id,left:(m.why==='witness'||imp)?3:2,step:1,pr:9});
+      a.say.proofUsed={};
       break}
+    case 'proof':{
+      // mỗi bước đưa một kiểu chứng cứ KHÁC nhau: (1) có người làm chứng, (2) việc mình làm / nơi mình ở, (3) hỏi ngược bằng chứng
+      const acc=G.players[it.t];if(!acc)return null;
+      const w=imp?fakeWhere(b,a,M):trueWhere(b,a,M);
+      let al=null;
+      if(imp){const sl=sawList(b,a,M,3,[it.t]);if(sl.length){const x=pick(sl);al={id:x.id,room:x.room}}}
+      else al=alibiWitness(b,a);
+      const st2=it.step||1,used=a.say.proofUsed||(a.say.proofUsed={});
+      let kind=null;
+      if(st2===1)kind=al?'prw':(w.task?'prf':'prn');
+      else if(st2===2)kind=(al&&!used.prw)?'prw':(w.task&&!used.prf?'prf':(!used.prn?'prn':null));
+      else kind='rt';
+      if(kind&&used[kind]&&kind!=='rt')kind=null;
+      if(!kind)return null;
+      used[kind]=1;
+      if(kind==='prw'){text=tp('prw',{w:pname(al.id),room:rname(al.room)});meta={k:'where',who:b.id,room:al.room,task:null,saw:[{id:al.id,room:al.room,t:T}]}}
+      else if(kind==='prf'){text=tp('prf',{room:rname(w.room),task:w.task});meta={k:'where',who:b.id,room:w.room,task:w.task,saw:[]}}
+      else if(kind==='prn'){text=tp('prn',{room:rname(w.room)});meta={k:'where',who:b.id,room:w.room,task:null,saw:[]}}
+      else text=tp('rt',{acc:acc.name});
+      if(text&&st2<(it.left||1))queueReply(b,{k:'proof',t:it.t,left:it.left,step:st2+1,pr:9});
+      break}
+    case 'followed':{
+      const f=G.players[it.t];if(!f||!f.alive)return null;
+      text=tp('fol',{f:f.name,room:rname(a.tailed?a.tailed.room:roomAt(b.x,b.y))});
+      meta={k:'accuse',t:f.id,why:'tail'};break}
+    case 'motive':{
+      const p=G.players[it.t];if(!p||!p.alive)return null;
+      text=tp('mtv',{b:p.name,v:pname(M.victim)});
+      meta={k:'accuse',t:p.id,why:'motive'};break}
+    case 'preempt':{
+      if(M.victim===null||M.victim===undefined)return null;
+      text=tp('pre',{v:pname(M.victim)});
+      meta={k:'preempt',who:b.id,v:M.victim};break}
     case 'counter':{ // sát nhân phản công người buộc tội mình
       const acc=G.players[it.t];if(!acc||!acc.alive||acc.imp)return null;
       text=tp('ctr',{acc:acc.name});
@@ -4376,6 +5358,8 @@ function hear(l,s,m){
       w=own?60:330*cred;
     }else if(m.why==='near'||m.why==='lie'){w=210*cred}
     else if(m.why==='follow'){w=50*cred}
+    else if(m.why==='tail'){w=230*cred}
+    else if(m.why==='motive'){w=270*cred}
     else w=85*cred;
     if(a.clear[m.t]&&m.why!=='witness'){
       // có bằng chứng người đó trong sạch: bảo vệ và nghi lại người buộc tội
@@ -4400,6 +5384,10 @@ function hear(l,s,m){
         }else if(sn.room===m.room){a.sus[s.id]=(a.sus[s.id]||0)-50}
       }
     }
+    if(!l.imp){
+      const nClaims=M.log.filter(x=>x.by===s.id&&x.metas&&x.metas.some(k=>k.k==='where')).length;
+      if(nClaims>=2&&!(a.sus[s.id]>=500))a.hear[s.id]=(a.hear[s.id]||0)-60*credOf(l,s);
+    }
   }else if(m.k==='ask'){
     if(m.to===l.id)queueReply(l,{k:'where',pr:9});
   }else if(m.k==='clear'){
@@ -4408,6 +5396,10 @@ function hear(l,s,m){
   }else if(m.k==='defend'){
     if(l.imp)return;
     a.hear[m.t]=(a.hear[m.t]||0)-70*credOf(l,s);
+  }else if(m.k==='preempt'){
+    // giải thích trước khi ai hỏi: hơi lạ
+    if(l.imp)return;
+    a.hear[m.who]=(a.hear[m.who]||0)+150*credOf(l,s);
   }else if(m.k==='sawnear'){
     // "mình thấy X ở gần xác": đáng chú ý nhẹ
     if(l.imp)return;
@@ -4472,6 +5464,7 @@ function parseChat(text,by){
     else if(has('VENT')&&has('SAW'))metas.push({k:'accuse',t,why:'vent'});
     else if(has('DEF')&&!has('ACC_CORE'))metas.push({k:'defend',t,why:'alibi'});
     else if(has('ACC'))metas.push({k:'accuse',t,why:has('SAW')?'near':'vague'});
+    else if(has('FOLLOW'))metas.push({k:'accuse',t,why:'tail'});
     else if(has('LIE'))metas.push({k:'accuse',t,why:'lie'});
     else if(has('Q'))metas.push({k:'ask',to:t});
   }else{
@@ -4494,7 +5487,11 @@ function maybeBanter(p,metas){
   const addressed=(metas.men||[]).map(m=>G.players[m.id]).filter(x=>x&&x.isBot&&x.alive&&x.ai&&x.ai.say)[0]||null;
   const gameMeta=metas.some(m=>m.k==='accuse'||m.k==='defend'||m.k==='ask'||m.k==='where'||m.k==='askAll'||m.k==='skip');
   let cat=metas.cat;
-  if(gameMeta&&cat!=='INSULT')return;                       // câu chuyện vụ án thì để logic cũ lo
+  // câu chuyện vụ án thì để logic game lo; riêng các thể loại "nói thẳng với bot" (D.overrideCats: chửi, chan, thách...)
+  // vẫn được đáp, trừ khi tin nhắn là buộc tội / bênh vực / hỏi vị trí thật sự.
+  const hardMeta=metas.some(m=>m.k==='accuse'||m.k==='defend'||m.k==='where'||m.k==='askAll'||m.k==='skip');
+  const ovr=Array.isArray(D.overrideCats)&&D.overrideCats.indexOf(cat)>=0;
+  if(gameMeta&&cat!=='INSULT'&&!(ovr&&!hardMeta))return;
   if(!cat){
     if(gameMeta)return;
     if(addressed&&metas.len<=addressed.name.length+8&&D.banter.CALLED&&D.banter.CALLED.length)cat='CALLED';   // chỉ gọi tên: "Minh ơi"
@@ -4605,6 +5602,200 @@ function validate(){
 }
 validate();
 window.BOT_BRAIN={validate,parseChat,compose};
+})();
+
+
+/* =====================================================================
+   bot_mind — KÝ ỨC GIỮA CÁC CUỘC HỌP + NÉ KẺ BÁM ĐUÔI
+   =====================================================================
+   1) Ký ức: sau mỗi cuộc họp, ai bị tố mà thoát nạn sẽ "cay" người tố mình
+      (G.mind.g[bị_tố][người_tố] = {w:độ cay, n:lần họp}). Độ cay cao hơn nếu bị tố
+      là "tận mắt thấy", nhiều người cùng tố, hoặc người đó bào chữa rất nhiều.
+      Lần sau người tố chết:
+        - có động cơ  -> bị nghi nhẹ
+        - có động cơ + đứng gần xác / từng bám theo nạn nhân -> gần như chắc chắn
+      Sát nhân bot thì ưu tiên trả thù người từng tố mình.
+   2) Né kẻ bám đuôi: bot đo xem ai đi theo mình quá lâu (hoặc đứng sát mình quá lâu).
+      Quá ngưỡng thì: chạy tới chỗ một người khác không đáng ngờ, hoặc chạy ra nút họp
+      báo cáo (nếu bị bám dai hay đã nghi), hoặc chạy sang phòng đông người.
+      Bot cũng để ý ai bám theo NGƯỜI KHÁC; nếu người đó chết thì kẻ bám bị nghi.
+   Mọi thứ nằm trong G.mind / a.tailMe / a.follow nên tự reset mỗi ván.
+   ===================================================================== */
+(function(){
+const mindOf=()=>G.mind||(G.mind={g:{},meet:0});
+
+/* ---------- ký ức "cay" ---------- */
+// độ cay của t đối với s (t từng bị s tố mà thoát), giảm dần theo số cuộc họp
+window.grudgeOf=function(t,s){
+  const m=G&&G.mind;if(!m||!m.g[t]||!m.g[t][s])return 0;
+  const r=m.g[t][s];return r.w*Math.pow(.8,Math.max(0,m.meet-r.n));
+};
+// sát nhân thích hạ người từng tố mình
+window.grudgeBonus=function(b,q){return b.imp&&q?grudgeOf(b.id,q.id)*260:0};
+
+function mindRecord(ejId){
+  if(!G||!G.mt||!G.mt.ai)return;
+  const M=G.mt.ai,m=mindOf();m.meet++;
+  for(const k in M.acc){
+    const t=+k,acc=M.acc[k];if(t===ejId||!acc||!acc.by)continue;
+    const tp=G.players[t];if(!tp||!tp.alive)continue;
+    // đếm số câu người bị tố tự bào chữa sau lời tố đầu tiên
+    let first=-1;M.log.forEach((l,i)=>{if(first<0&&l.metas&&l.metas.some(x=>x.k==='accuse'&&x.t===t))first=i});
+    let def=0;if(first>=0)for(let i=first+1;i<M.log.length;i++)if(M.log[i].by===t)def++;
+    acc.by.forEach(sid=>{
+      if(sid===t)return;
+      const base=(acc.certain?1:.6)+Math.min(.4,.1*(acc.by.size-1))+Math.min(.4,.1*def);
+      const g=m.g[t]||(m.g[t]={}),cur=g[sid];
+      g[sid]={w:Math.min(1.6,(cur?cur.w*.5:0)+base),n:m.meet};
+    });
+    // cư dân bị tố oan cũng nhớ: ai tố bừa không bằng chứng thì bớt tin
+    if(tp.isBot&&!tp.imp&&!acc.certain){const a=aiOf(tp);acc.by.forEach(sid=>{if(sid!==t)a.sus[sid]=(a.sus[sid]||0)+45})}
+  }
+}
+const _onResult=AI.onResult;
+AI.onResult=function(ejId){
+  try{mindRecord(ejId)}catch(e){console.error('[MIND] ghi nhớ',e)}
+  return _onResult.apply(this,arguments);
+};
+
+/* ---------- suy luận: thêm động cơ / bám theo / bị bám đuôi vào mức nghi ---------- */
+const _suspicion=suspicion;
+suspicion=function(b,pid){
+  const s0=_suspicion(b,pid);
+  if(b.imp||s0<=-300||pid===b.id)return s0;
+  const a=aiOf(b);let s=s0;const T=G.time;
+  for(const e of a.ev){
+    if(e.type==='tail'&&e.who===pid&&T-e.t<260)s+=240;       // người này từng bám đuôi mình
+    else if(e.type==='body'){
+      const v=e.victim,gr=grudgeOf(pid,v),near=!!(e.near&&e.near.includes(pid));
+      const f=a.follow&&a.follow[pid],fol=!!(f&&f.target===v&&Math.abs(e.t-f.t)<150);
+      if(gr>0){s+=230*gr;if(near)s+=520*gr}                    // cay nạn nhân + ở gần xác
+      if(fol){s+=480;if(near)s+=350}                          // từng bám theo nạn nhân trước khi chết
+    }
+  }
+  return s;
+};
+
+/* ---------- đo "ai đang bám ai" ---------- */
+function mindTrack(b,dt,a){
+  if(b.imp||!b.alive)return;
+  a.mtT=(a.mtT||0)+dt;if(a.mtT<.45)return;
+  const step=a.mtT;a.mtT=0;
+  const T=G.time;
+  a.mtPrev=a.mtPrev||{};a.tailMe=a.tailMe||{};a.fol=a.fol||{};a.follow=a.follow||{};
+  const me={x:b.x,y:b.y},pm=a.mtPrev[b.id]||me;
+  const myMoved=Math.hypot(me.x-pm.x,me.y-pm.y);
+  const vis=[];
+  for(const k in a.seen){const sn=a.seen[k];if(T-sn.t<.7&&!sn.cam&&G.players[+k]&&+k!==b.id)vis.push({id:+k,x:sn.x,y:sn.y})}
+  const vel={};
+  vis.forEach(o=>{const pv=a.mtPrev[o.id];vel[o.id]=pv&&T-pv.t<1.4?{x:o.x-pv.x,y:o.y-pv.y}:{x:0,y:0}});
+  const cosOf=(vx,vy,tx,ty)=>{const m1=Math.hypot(vx,vy),m2=Math.hypot(tx,ty);return m1<1e-6||m2<1e-6?0:(vx*tx+vy*ty)/(m1*m2)};
+  // 1) ai bám theo MÌNH
+  const seenNow={};
+  vis.forEach(o=>{
+    seenNow[o.id]=1;
+    const v=vel[o.id],mv=Math.hypot(v.x,v.y),d=Math.hypot(o.x-me.x,o.y-me.y);
+    const rec=a.tailMe[o.id]||(a.tailMe[o.id]={tot:0,t:T});
+    let inc=0;
+    if(d<260&&mv>8&&cosOf(v.x,v.y,me.x-o.x,me.y-o.y)>.3){
+      const converge=myMoved>8&&cosOf(me.x-pm.x,me.y-pm.y,o.x-me.x,o.y-me.y)>.5;   // mình đang đi về phía họ => không phải bám
+      inc=converge?0:(myMoved>8?1:.6);
+    }else if(d<115&&myMoved>8)inc=.7;                           // cứ dính sát sau lưng mình
+    if(inc)rec.tot=Math.min(45,rec.tot+inc*step);else rec.tot=Math.max(0,rec.tot-step*1.5);
+    rec.t=T;
+  });
+  for(const k in a.tailMe)if(!seenNow[k]){const r=a.tailMe[k];r.tot=Math.max(0,r.tot-step*2)}
+  // 2) ai bám theo NGƯỜI KHÁC (để nhớ khi người đó chết)
+  vis.forEach(q=>vis.forEach(r=>{
+    if(q.id===r.id)return;
+    const vq=vel[q.id],vr=vel[r.id],mq=Math.hypot(vq.x,vq.y),mr=Math.hypot(vr.x,vr.y);
+    const d=Math.hypot(q.x-r.x,q.y-r.y),key=q.id+'>'+r.id;
+    let inc=0;
+    if(d<220&&mq>8&&mr>8&&cosOf(vq.x,vq.y,r.x-q.x,r.y-q.y)>.35&&cosOf(vr.x,vr.y,r.x-q.x,r.y-q.y)>.2)inc=1;   // q đuổi theo, r đi tiếp ra xa
+    const v=(a.fol[key]||0);
+    a.fol[key]=inc?Math.min(30,v+step):Math.max(0,v-step*1.2);
+    if(a.fol[key]>=9)a.follow[q.id]={target:r.id,t:T};
+  }));
+  vis.forEach(o=>{a.mtPrev[o.id]={x:o.x,y:o.y,t:T}});
+  a.mtPrev[b.id]={x:me.x,y:me.y,t:T};
+}
+const _perceive=perceive;
+perceive=function(b,dt,a){_perceive(b,dt,a);try{mindTrack(b,dt,a)}catch(e){if(!mindTrack._e){mindTrack._e=1;console.error('[MIND] theo dõi',e)}}};
+
+/* ---------- phản ứng khi bị bám đuôi ---------- */
+function tailLimit(b,a,qid){
+  const lv=aiLv();
+  let thr=10+a.pers.bold*9;
+  if(a.fear>.3)thr*=.7;
+  if(suspicion(b,qid)>=200)thr*=.7;
+  if(a.clear[qid])thr*=1.4;
+  return thr*Math.max(.8,lv.react*.85);
+}
+function mindMove(b,a){
+  if(b.imp||!b.alive||G.state!=='play'||!a.tailMe)return false;
+  const T=G.time,g=a.goal;
+  if(g&&(g.k==='report'||g.k==='button'||g.k==='flee'))return false;
+  a.tailRes=a.tailRes||{t:-99,n:0};
+  if(T-a.tailRes.t<18)return false;
+  let q=null,qt=0;
+  for(const k in a.tailMe){const r=a.tailMe[k];if(r.tot<tailLimit(b,a,+k))continue;const pl=G.players[+k];if(!pl||!pl.alive)continue;if(r.tot>qt){qt=r.tot;q=+k}}
+  if(q===null)return false;
+  const qp=G.players[q],lim0=tailLimit(b,a,q);
+  a.tailRes.n=(T-a.tailRes.t<100?a.tailRes.n:0)+1;a.tailRes.t=T;
+  const room=roomAt(b.x,b.y);
+  addEv(a,{type:'tail',who:q,t:T,room});
+  a.tailed={id:q,t:T,room,tot:qt};
+  a.fear=Math.max(a.fear,.45);
+  a.tailMe[q].tot=0;
+  // cả hai bên đều thôi "buddy" nhau một lúc
+  a.ban=a.ban||{};a.ban[q]=T+45;
+  if(qp&&qp.isBot&&qp.ai){qp.ai.ban=qp.ai.ban||{};qp.ai.ban[b.id]=T+45;if(qp.ai.goal&&qp.ai.goal.k==='buddy'&&qp.ai.goal.id===b.id)qp.ai.goal=null}
+  const sus=suspicion(b,q);
+  const escalate=a.tailRes.n>=2||sus>=450||qt>=lim0*1.6;
+  // người khác để nương tựa: không đáng ngờ, vừa thấy, không quá xa
+  let ref=null,rd=1e9;
+  for(const k in a.seen){
+    const sn=a.seen[k],r=G.players[+k];
+    if(!r||!r.alive||+k===b.id||+k===q||T-sn.t>8||sn.cam)continue;
+    if(suspicion(b,+k)>=200)continue;
+    if(a.tailMe[k]&&a.tailMe[k].tot>3)continue;
+    const d=Math.hypot(sn.x-b.x,sn.y-b.y);if(d<650&&d<rd){rd=d;ref=+k}
+  }
+  if(escalate&&b.meetings>0){setGoal(b,a,{k:'button'});return true}
+  if(ref!==null){setGoal(b,a,{k:'buddy',id:ref,left:rnd(12,20),refuge:true});return true}
+  if(b.meetings>0&&(sus>=150||Math.random()<.45+(1-a.pers.bold)*.3)){setGoal(b,a,{k:'button'});return true}
+  setGoal(b,a,{k:'flee',to:chooseFlee(b,a,qp?qp.x:b.x,qp?qp.y:b.y)});
+  return true;
+}
+window.__mind={mindTrack,mindMove};
+const _crewDecide=crewDecide;
+crewDecide=function(b,a){
+  try{if(mindMove(b,a))return}catch(e){if(!mindMove._e){mindMove._e=1;console.error('[MIND] né bám đuôi',e)}}
+  _crewDecide(b,a);
+};
+
+/* ---------- ý định phát biểu liên quan ký ức (brain gọi lúc mở họp) ---------- */
+window.mindIntents=function(b,a,M){
+  const s=a.say,add=(k,due,pr,extra)=>s.intents.push({k,due,pr,...extra});
+  if(!b.imp){
+    if(a.tailed&&G.time-a.tailed.t<150){
+      const f=G.players[a.tailed.id];if(f&&f.alive)add('followed',rnd(1.2,3),8,{t:f.id});
+    }
+    if(M.victim!==null&&M.victim!==undefined){
+      let best=null,bs=0;
+      const ev=a.ev.find(e=>e.type==='body'&&e.victim===M.victim);
+      G.players.forEach(p=>{
+        if(!p.alive||p===b)return;
+        const g=grudgeOf(p.id,M.victim);if(g<=0)return;
+        const near=!!(ev&&ev.near&&ev.near.includes(p.id)),sc=g*(near?2:1);
+        if(sc>bs){bs=sc;best=p}
+      });
+      if(best&&bs>=.45)add('motive',rnd(2.5,6),bs>=1?8:6,{t:best.id});
+    }
+  }else if(M.victim!==null&&M.victim!==undefined&&grudgeOf(b.id,M.victim)>0&&Math.random()<.6){
+    add('preempt',rnd(1.5,4),7,{});
+  }
+};
 })();
 
 </script>
