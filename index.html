@@ -342,6 +342,7 @@ canvas{display:block;width:100%;height:100%}
         <div class="ability-grid">
           <label class="ability-check"><input id="abilSpeed" type="checkbox" checked> ⚡ Tăng tốc (3 giây)</label>
           <label class="ability-check"><input id="abilCrewVent" type="checkbox" checked> 🕳️ Chui cống</label>
+          <label class="ability-check"><input id="abilShield" type="checkbox" checked> 🛡️ Khiên an toàn (10 giây)</label>
         </div>
       </div>
     </div>
@@ -941,7 +942,7 @@ function leaveNet(){try{NET.peer&&NET.peer.destroy()}catch(e){}NET.role='offline
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function botCount(h){const requested=Math.max(0,Math.min(S.nb,10-h));return h>=4?requested:Math.max(requested,5-h)}
 function readDisc(){let v=Math.round(+$('discT').value);if(!isFinite(v)||v<5)v=5;if(v>3600)v=3600;return v}
-function readAbilities(){const light=!!$('abilLight').checked,oxygen=!!$('abilOxygen').checked;return {copy:!!$('abilCopy').checked,doors:!!$('abilDoors').checked,sab:light||oxygen,light,oxygen,vent:!!$('abilVent').checked,clean:!!$('abilClean').checked,invis:!!$('abilInvis').checked,speed:!!$('abilSpeed').checked,crewVent:!!$('abilCrewVent').checked}}
+function readAbilities(){const light=!!$('abilLight').checked,oxygen=!!$('abilOxygen').checked;return {copy:!!$('abilCopy').checked,doors:!!$('abilDoors').checked,sab:light||oxygen,light,oxygen,vent:!!$('abilVent').checked,clean:!!$('abilClean').checked,invis:!!$('abilInvis').checked,speed:!!$('abilSpeed').checked,crewVent:!!$('abilCrewVent').checked,shield:!!$('abilShield').checked}}
 function updateAbilities(){if(NET.role==='client')return;S.abilities=readAbilities();if(NET.role==='host')broadcastLobby();else renderLobby()}
 function openLobby(code){saveProfile();S.code=code;$('roomCode').textContent=code;show('lobby');renderLobby()}
 
@@ -999,7 +1000,7 @@ $('ni').onchange=()=>{S.ni=+$('ni').value;NET.role==='host'?broadcastLobby():ren
 $('aiLv').onchange=()=>{S.ai=+$('aiLv').value;NET.role==='host'?broadcastLobby():renderLobby()};
 $('discT').onchange=()=>{S.dt=readDisc();$('discT').value=S.dt;NET.role==='host'?broadcastLobby():renderLobby()};
 $('discInf').onchange=()=>{S.dInf=$('discInf').checked;NET.role==='host'?broadcastLobby():renderLobby()};
-['abilCopy','abilDoors','abilLight','abilOxygen','abilVent','abilClean','abilInvis','abilSpeed','abilCrewVent'].forEach(id=>$(id).addEventListener('change',updateAbilities));
+['abilCopy','abilDoors','abilLight','abilOxygen','abilVent','abilClean','abilInvis','abilSpeed','abilCrewVent','abilShield'].forEach(id=>$(id).addEventListener('change',updateAbilities));
 
 /* --- lobby --- */
 let lobbyBotNames=[];
@@ -1008,7 +1009,7 @@ function renderLobby(){
   $('vipPanel').style.display=(cl||NET.role==='host')?'flex':'none';
   $('bStart').style.display=cl?'none':'';$('discT').disabled=cl||(!cl&&S.dInf);$('discInf').disabled=cl;$('nb').disabled=cl;$('ni').disabled=cl;$('aiLv').disabled=cl;$('mp').disabled=cl;
   const ab=(cl&&v&&v.abilities)?v.abilities:S.abilities;
-  [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilVent','vent'],['abilClean','clean'],['abilInvis','invis'],['abilSpeed','speed'],['abilCrewVent','crewVent']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
+  [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilVent','vent'],['abilClean','clean'],['abilInvis','invis'],['abilSpeed','speed'],['abilCrewVent','crewVent'],['abilShield','shield']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
   let humans,nbots;
   if(cl&&v){humans=v.players;nbots=v.bots;$('nb').value=v.nb;$('nbV').textContent=v.nb;$('ni').value=v.ni;if(v.ai!==undefined)$('aiLv').value=v.ai;$('mp').value=v.mp;if(v.dt!==undefined){$('discT').value=v.dt;$('discInf').checked=!!v.dInf;$('discT').disabled=true}}
   else if(NET.role==='host'){humans=NET.lobby.map(l=>({name:l.name,ci:l.ci}));nbots=botCount(humans.length)}
@@ -1081,6 +1082,7 @@ function hostMsg(conn,d){
     case 'clean': hostClean(p);break;
     case 'invis': hostInvis(p);break;
     case 'boost': hostBoost(p);break;
+    case 'shield': hostShield(p);break;
     case 'shift': hostShift(p,d.id);break;
     case 'door': hostCloseDoor(p,d.i);break;
     case 'vent': hostVent(p,d.vid,d.act);break;
@@ -1116,7 +1118,7 @@ function clientMsg(d){
     case 'start': clientStart(d);break;
     case 's':
       if(!G)break;
-      d.p.forEach((a,i)=>{const p=G.players[i];if(!p)return;if(p!==G.me){p.tx=a[0];p.ty=a[1];p.face=a[2]}p.alive=!!a[3];p.disg=a[4];p.sft=a[5]||0;p.shiftPhase=a[6]||'none';p.shiftAnim=a[7]||0;p.ventT=a[8]||0;p.inVent=!!a[9];p.ventPop=a[10]||0;p.ventCd=a[11]||0;p.ventFrom=a[12]??-1;p.ventTo=a[13]??-1;p.invT=a[14]||0;p.boostT=a[15]||0;p.invCd=a[16]||0;p.boostCd=a[17]||0;p.cleanCd=a[18]||0;p.cleanN=a[19]||0});
+      d.p.forEach((a,i)=>{const p=G.players[i];if(!p)return;if(p!==G.me){p.tx=a[0];p.ty=a[1];p.face=a[2]}p.alive=!!a[3];p.disg=a[4];p.sft=a[5]||0;p.shiftPhase=a[6]||'none';p.shiftAnim=a[7]||0;p.ventT=a[8]||0;p.inVent=!!a[9];p.ventPop=a[10]||0;p.ventCd=a[11]||0;p.ventFrom=a[12]??-1;p.ventTo=a[13]??-1;p.invT=a[14]||0;p.boostT=a[15]||0;p.invCd=a[16]||0;p.boostCd=a[17]||0;p.cleanCd=a[18]||0;p.cleanN=a[19]||0;p.shT=a[20]||0;p.shCd=a[21]||0});
       G.closedDoors=(d.doors||[]).map(a=>({i:a[0],until:G.time+a[1],owner:a[2]}));
       G.bodies=d.b.map(b=>({x:b[0],y:b[1],color:b[2],name:b[3],weapon:b[4]||'knife'}));
       {const pv=G.scan,fresh=pv&&pv.by===G.me.id&&G.time-pv.t0<.8;if(d.sn)G.scan={by:d.sn[0],t0:G.time-d.sn[1],dur:d.sn[2],until:G.time-d.sn[1]+d.sn[2]+3};else if(!fresh)G.scan=null}
@@ -1552,7 +1554,7 @@ function pickSab(k){closeModal();if(NET.role==='client')sendHost({t:'sab',k});el
 function hostKill(k){
   if(!k.imp||!k.alive||k.cd>0||k.inVent||k.ventT>0)return;
   let v=null,bd=95;
-  G.players.forEach(q=>{if(q.alive&&!q.imp){const d=dist(q,k);if(d<bd){bd=d;v=q}}});
+  G.players.forEach(q=>{if(q.alive&&!q.imp&&!(q.shT>0)){const d=dist(q,k);if(d<bd){bd=d;v=q}}});
   if(v){k.invT=0;kill(k,v)}
 }
 function kill(k,v,weapon){
@@ -2914,7 +2916,7 @@ function update(dt){
   updateHUD();
 }
 function snapshot(){
-  const base={t:'s',p:G.players.map(p=>[Math.round(p.x),Math.round(p.y),p.face,p.alive?1:0,p.disg,Math.round(p.sft*10)/10,p.shiftPhase,p.shiftAnim,Math.round(p.ventT*10)/10,p.inVent?1:0,Math.round(p.ventPop*10)/10,Math.round(p.ventCd*10)/10,p.ventFrom??-1,p.ventTo??-1,Math.round((p.invT||0)*10)/10,Math.round((p.boostT||0)*10)/10,Math.ceil(p.invCd||0),Math.ceil(p.boostCd||0),Math.ceil(p.cleanCd||0),p.cleanN||0]),
+  const base={t:'s',p:G.players.map(p=>[Math.round(p.x),Math.round(p.y),p.face,p.alive?1:0,p.disg,Math.round(p.sft*10)/10,p.shiftPhase,p.shiftAnim,Math.round(p.ventT*10)/10,p.inVent?1:0,Math.round(p.ventPop*10)/10,Math.round(p.ventCd*10)/10,p.ventFrom??-1,p.ventTo??-1,Math.round((p.invT||0)*10)/10,Math.round((p.boostT||0)*10)/10,Math.ceil(p.invCd||0),Math.ceil(p.boostCd||0),Math.ceil(p.cleanCd||0),p.cleanN||0,Math.round((p.shT||0)*10)/10,Math.ceil(p.shCd||0)]),
     b:G.bodies.map(b=>[Math.round(b.x),Math.round(b.y),b.color,b.name,b.weapon||'knife']),d:G.done,sb:[G.sab.l?1:0,Math.ceil(G.sab.p),Math.ceil(G.sab.d),Math.round(G.sab.dx),Math.round(G.sab.dy),Math.ceil(Math.max(0,G.sab.cd))],doors:G.closedDoors.map(d=>[d.i,Math.max(0,d.until-G.time),d.owner]),sn:scanActive()?[G.scan.by,Math.round((G.time-G.scan.t0)*100)/100,G.scan.dur]:0};
   G.players.forEach(p=>{if(p.conn)send(p.conn,Object.assign({c:Math.ceil(Math.max(0,p.cd)),mt:p.meetings,sc:Math.ceil(Math.max(0,p.scd))},base))});
 }
@@ -6098,6 +6100,64 @@ function tick(){
   if(now-MM.t0>600){if(Math.hypot(m.x-MM.px,m.y-MM.py)<3&&!MM.down){stop();return}MM.px=m.x;MM.py=m.y;MM.t0=now}
 }
 requestAnimationFrame(tick);
+})();
+</script>
+<script>
+/* ===== BỔ SUNG 5: Khiên an toàn cho DÂN (10 giây, sát nhân không giết được) ===== */
+(function(){
+window.hostShield=function(p){
+  if(!G||G.state!=='play'||G.abilities.shield===false||p.imp||!p.alive||p.inVent||(p.shT||0)>0||(p.shCd||0)>0)return false;
+  p.shT=10;p.shCd=45;beep(560,.2,'sine',.07);if(p===G.me)toast('🛡️ Khiên an toàn 10 giây!');return true};
+const _skill=skillAction;
+skillAction=function(a){
+  if(a!=='shield')return _skill.apply(this,arguments);
+  if(!G)return;const m=G.me;closeModal();
+  if(NET.role==='client')sendHost({t:'shield'});else if(!hostShield(m))toast('Chưa dùng được lúc này');
+};
+/* chặn giết */
+const _kill=kill;
+kill=function(k,v){
+  if(v&&(v.shT||0)>0){if(k){k.cd=Math.max(k.cd||0,4)}if(k===G.me||v===G.me){toast('🛡️ Khiên chặn đòn giết!');beep(900,.12,'square',.06)}return}
+  return _kill.apply(this,arguments)};
+/* menu kỹ năng của dân: tăng tốc + khiên */
+const _menu=openSkillMenu;
+openSkillMenu=function(){
+  if(!G||!G.me||G.me.imp)return _menu.apply(this,arguments);
+  if(!canAct())return;const m=G.me;
+  if(!m.alive){toast('Hồn ma không dùng được kỹ năng');return}
+  const A=G.abilities,it=[];
+  const add=(on,label,st,act,dis)=>{if(on)it.push(`<button class="skill-option" style="margin:0;min-height:72px;font-size:15px;text-align:center" ${dis?'disabled':''} onclick="skillAction('${act}')">${label}<small>${st}</small></button>`)};
+  add(A.speed!==false,'⚡ Tăng tốc',(m.boostT||0)>0?'Còn '+Math.ceil(m.boostT)+'s':(m.boostCd||0)>0?'Chờ '+Math.ceil(m.boostCd)+'s':'3 giây','speed',(m.boostT||0)>0||(m.boostCd||0)>0);
+  add(A.shield!==false,'🛡️ Khiên',(m.shT||0)>0?'Còn '+Math.ceil(m.shT)+'s':(m.shCd||0)>0?'Chờ '+Math.ceil(m.shCd)+'s':'An toàn 10 giây','shield',(m.shT||0)>0||(m.shCd||0)>0);
+  if(!it.length){toast('Chủ phòng đã khóa kỹ năng của dân');return}
+  G.busy=true;const b=$('mbox');b.className='box';
+  b.innerHTML='<div style="font-size:20px;font-weight:900">🧑‍🌾 KỸ NĂNG DÂN</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%">'+it.join('')+'</div><div style="font-size:11px;opacity:.65">🕳️ Chui cống: đứng cạnh miệng cống rồi nhấn E</div><button class="gray" style="width:100%" onclick="closeModal()">Đóng</button>';
+  $('modal').classList.add('on')};
+/* nhãn nút */
+const _hud=updateHUD;
+updateHUD=function(){
+  _hud.apply(this,arguments);
+  try{const m=G.me,b=$('btnShift');if(!m||m.imp||b.hidden)return;
+    const A=G.abilities;if(A.speed===false&&A.shield===false){b.hidden=true;return}
+    const t=(m.shT||0)>0?'🛡️ '+Math.ceil(m.shT)+'s':(m.boostT||0)>0?'⚡ '+Math.ceil(m.boostT)+'s':'KỸ NĂNG<br>(F)';
+    if(b._lb!==t){b._lb=t;b.innerHTML=t}b.style.opacity=1}catch(e){}};
+/* đếm thời gian khiên */
+let lt=performance.now();
+(function loop(){requestAnimationFrame(loop);const n=performance.now(),dt=Math.min(.1,(n-lt)/1000);lt=n;
+  if(!G||G.state!=='play')return;G.players.forEach(p=>{if(p.shT>0)p.shT=Math.max(0,p.shT-dt);if(p.shCd>0)p.shCd=Math.max(0,p.shCd-dt)})})();
+/* vòng khiên bay quanh người */
+const _dc=drawChar;
+drawChar=function(x,y,color,face,alpha,name,dead,nameCol){
+  _dc.apply(this,arguments);
+  try{if(!G||dead||!ctx)return;const p=G.players.find(q=>q.color===color&&q.alive);if(!p||!(p.shT>0))return;
+    const t=performance.now()/1000,blink=p.shT<2&&Math.floor(t*6)%2===0;if(blink)return;
+    ctx.save();ctx.globalAlpha=(alpha==null?1:alpha)*.9;ctx.translate(x,y-4);
+    ctx.shadowColor='#4de3ff';ctx.shadowBlur=14;ctx.strokeStyle='#8df0ff';ctx.lineWidth=3;
+    ctx.beginPath();ctx.ellipse(0,0,36,40,0,0,7);ctx.stroke();
+    ctx.fillStyle='#4de3ff22';ctx.fill();
+    for(let i=0;i<3;i++){const a=t*2.6+i*Math.PI*2/3;ctx.save();ctx.translate(Math.cos(a)*38,Math.sin(a)*42);ctx.rotate(a+Math.PI/2);
+      ctx.fillStyle='#d8fbff';ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(6,-2);ctx.lineTo(4,7);ctx.lineTo(0,10);ctx.lineTo(-4,7);ctx.lineTo(-6,-2);ctx.closePath();ctx.fill();ctx.restore()}
+    ctx.restore()}catch(e){}};
 })();
 </script>
 </body>
