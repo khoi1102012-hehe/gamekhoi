@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Làng Một Mắt - Săn Sát Nhân</title>
+<title>WhoIsKill - Săn Sát Nhân</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:#05070d;color:#e8ecf4;font-family:system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden;user-select:none}
@@ -213,8 +213,8 @@ canvas{display:block;width:100%;height:100%}
 @media(prefers-reduced-motion:reduce){#cin2 *,#end *{animation-duration:.01s!important;animation-delay:0s!important}}
 
 /* Nút Nhiệm vụ -> bản đồ nhiệm vụ */
-#mbox:has(#taskMapCanvas){width:min(980px,96vw);max-height:94vh;overflow-y:auto;align-items:stretch;padding:12px}
-#taskMapCanvas{display:block;width:100%;height:auto;max-height:50vh;object-fit:contain;background:#050912;border:1px solid #587081;border-radius:9px}
+#mbox:has(#admCv),#mbox:has(#taskMapCanvas){width:min(980px,96vw);max-height:94vh;overflow-y:auto;align-items:stretch;padding:12px}
+#admCv,#taskMapCanvas{display:block;width:100%;height:auto;max-height:50vh;object-fit:contain;background:#050912;border:1px solid #587081;border-radius:9px}
 .task-list-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%}
 .task-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #657b8a;background:#111c2b;border-radius:8px;font-size:12px;text-align:left;line-height:1.3}
 .task-item.done{opacity:.5;border-color:#3a8f5a}.task-item.done .tn{text-decoration:line-through}
@@ -286,13 +286,19 @@ canvas{display:block;width:100%;height:100%}
 #cin2 .weapon-note{display:inline-block;margin-top:7px;padding:4px 10px;border:1px solid #ff9aa655;border-radius:14px;background:#120710aa;color:#ffe0b0;font-size:clamp(10px,1.8vw,14px);font-weight:800}
 @media(prefers-reduced-motion:reduce){#killCine,#killCanvas{animation:none!important}}
 
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;width:100%}
+.vit{display:flex;align-items:center;gap:8px;background:#0b1a24;border:1px solid #2c5c66;border-radius:10px;padding:6px 8px;font-size:13px}
+.vit .cs{width:36px;height:38px;flex:none}.vit small{display:block;font-size:11px;opacity:.9}
+.vit.alive small{color:#5dff9a}.vit.alive small b{display:inline-block;animation:vbeat .8s infinite}
+.vit.dead{border-color:#7a2a35;background:#1a0b10}.vit.dead small{color:#ff6b7c}
+@keyframes vbeat{0%,100%{transform:scale(1)}40%{transform:scale(1.5)}}
 </style>
 </head>
 <body>
 
 <!-- MENU -->
 <div id="menu" class="screen on">
-  <h1>LÀNG <span>MỘT MẮT</span></h1>
+  <h1>WHO<span>ISKILL</span></h1>
   <div class="sub">Tìm ra kẻ sát nhân trước khi quá muộn</div>
   <div class="panel">
     <div><label>Tên của bạn</label><input id="name" type="text" maxlength="12" placeholder="Nhập tên..."></div>
@@ -324,26 +330,23 @@ canvas{display:block;width:100%;height:100%}
       <div class="row"><label style="flex:2">Bản đồ</label><select id="mp" style="flex:3;padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a"><option value="0">Hang Nấm Phát Sáng</option><option value="1">Thị Trấn Hơi Nước Trên Mây</option><option value="2">Đại Lục Rễ Trời — Siêu Bản Đồ</option><option value="3">Trạm Vũ Trụ Tinh Vân</option><option value="4">Ngẫu nhiên</option></select></div>
       <div class="row"><label style="flex:2">⏱ Thời gian bàn luận</label><div class="disc-row"><input type="number" id="discT" min="5" max="3600" step="5" value="60"><span style="font-size:13px">giây</span><label class="ability-check" style="padding:6px 9px"><input id="discInf" type="checkbox"> Vô hạn</label></div></div>
       <div class="settingsBlock">
-        <label>⚙️ 🗡️ KỸ NĂNG SÁT NHÂN — chủ phòng tùy chỉnh</label>
+        <label>⚙️ KỸ NĂNG SÁT NHÂN — chủ phòng tùy chỉnh</label>
         <div class="ability-grid">
           <label class="ability-check"><input id="abilCopy" type="checkbox" checked> Sao chép hình dạng</label>
           <label class="ability-check"><input id="abilDoors" type="checkbox" checked> Đóng cửa (tối đa 2)</label>
           <label class="ability-check"><input id="abilLight" type="checkbox" checked> Tắt đèn</label>
           <label class="ability-check"><input id="abilOxygen" type="checkbox" checked> Phá hoại oxy</label>
           <label class="ability-check"><input id="abilVent" type="checkbox" checked> Chui cống + hoạt ảnh</label>
-          <label class="ability-check"><input id="abilClean" type="checkbox" checked> 🧹 Dọn xác</label>
           <label class="ability-check"><input id="abilInvis" type="checkbox" checked> 👻 Tàng hình</label>
-          
+          <label class="ability-check"><input id="abilReactor" type="checkbox" checked> ☢️ Phá hoại lò phản ứng</label>
+        </div>
+        <label style="margin-top:10px;display:block">🎭 VAI PHỤ CỦA DÂN — chủ phòng tùy chỉnh</label>
+        <div class="ability-grid">
+          <label class="ability-check"><input id="roleEng" type="checkbox" checked> 🔧 Kỹ sư (chui cống)</label>
+          <label class="ability-check"><input id="roleSci" type="checkbox" checked> 🧪 Nhà khoa học (xem sinh hiệu)</label>
+          <label class="ability-check"><input id="roleAng" type="checkbox" checked> 😇 Thiên thần (khiên khi chết)</label>
         </div>
         <div class="sub" style="font-size:12px;margin:6px 0 0">Tắt ô nào thì sát nhân không thể dùng kỹ năng đó. Tối đa 4 người thật (bạn + 3 bạn bè). Mặc định ưu tiên chơi đúng nhóm 4 người; phòng ít người có thể tự thêm bot, hoặc chủ phòng tăng bot bằng thanh trượt.</div>
-      </div>
-    <div class="settingsBlock">
-        <label>🧑‍🌾 KỸ NĂNG DÂN — chủ phòng tùy chỉnh</label>
-        <div class="ability-grid">
-          <label class="ability-check"><input id="abilSpeed" type="checkbox" checked> ⚡ Tăng tốc (3 giây)</label>
-          <label class="ability-check"><input id="abilCrewVent" type="checkbox" checked> 🕳️ Chui cống</label>
-          <label class="ability-check"><input id="abilShield" type="checkbox" checked> 🛡️ Khiên an toàn (10 giây)</label>
-        </div>
       </div>
     </div>
     <div class="row lobby-actions"><button class="gray" id="bBack">⬅ Rời phòng</button><button class="green" id="bStart">▶ Bắt đầu</button></div>
@@ -356,7 +359,7 @@ canvas{display:block;width:100%;height:100%}
   <div id="hudTop"><div id="bar"><div id="barf"></div></div><div id="tasks"></div></div>
   <div id="roleTag"></div>
   <div id="toast"></div>
-  <div id="hint">WASD/mũi tên di chuyển • E dùng / camera / chui cống • R báo cáo • Q giết • T nhiệm vụ • F hoặc X mở Kỹ năng</div>
+  <div id="hint">WASD/mũi tên di chuyển • E dùng / camera / chui cống • R báo cáo • Q giết • T nhiệm vụ • F hoặc X mở Kỹ năng • G năng lực vai phụ • E dùng Camera / Admin / Sinh hiệu</div>
   <div id="joy"><div id="knob"></div></div>
   <div id="ventUI"></div><div id="btns">
     <button id="btnTask" hidden>NHIỆM VỤ<br>(T)</button>
@@ -364,6 +367,7 @@ canvas{display:block;width:100%;height:100%}
     <button id="btnShift" hidden>KỸ NĂNG<br>(F)</button>
     <button id="btnKill" hidden>GIẾT<br>(Q)</button>
     <button id="btnRep" hidden>BÁO CÁO<br>(R)</button>
+    <button id="btnRole" hidden>VAI PHỤ<br>(G)</button>
     <button id="btnUse" hidden>DÙNG<br>(E)</button>
   </div>
 </div>
@@ -384,7 +388,7 @@ canvas{display:block;width:100%;height:100%}
 
 <div id="end" class="ov"><div id="endRays"></div><div id="endIn"><div id="endT"></div><div id="endLine"></div><div id="endS" style="max-width:560px;line-height:1.7"></div><button id="endBtn">Về menu</button></div></div>
 
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const COLORS=['#e53935','#1e88e5','#43a047','#fdd835','#8e24aa','#fb8c00','#00acc1','#ec407a','#8d6e63','#cfd8dc'];
@@ -677,12 +681,13 @@ function drawGameDevices(T){
     const open=G.players.some(p=>(p.inVent&&p.ventT>0&&(p.ventFrom===i||p.ventTo===i))||(p.ventPop>0&&Math.hypot(p.x-v.x,p.y-v.y)<45));
     ctx.save();ctx.translate(v.x,v.y);
     if(open)ventArt(ctx,true);
-    else if(me.imp&&me.alive&&G.abilities.vent&&!me.inVent){const pl=.5+.5*Math.sin(T*3+i);ctx.strokeStyle=`rgba(255,90,100,${.25+.35*pl})`;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect?ctx.roundRect(-31,-20,62,40,7):ctx.rect(-31,-20,62,40);ctx.stroke()}
+    else if(canVent(me)&&me.alive&&G.abilities.vent&&!me.inVent){const pl=.5+.5*Math.sin(T*3+i);ctx.strokeStyle=me.imp?`rgba(255,90,100,${.25+.35*pl})`:`rgba(255,176,74,${.25+.35*pl})`;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect?ctx.roundRect(-31,-20,62,40,7):ctx.rect(-31,-20,62,40);ctx.stroke()}
     ctx.restore();
   });
   if(me.inVent&&me.ventFrom>=0){const cur=GAME_VENTS[me.ventFrom];if(cur){ctx.save();ctx.lineWidth=3;ctx.setLineDash([10,8]);ctx.lineDashOffset=-T*30;ctx.strokeStyle='rgba(120,255,235,.75)';(cur.links||[]).forEach(j=>{const t=GAME_VENTS[j];ctx.beginPath();ctx.moveTo(cur.x,cur.y);ctx.lineTo(t.x,t.y);ctx.stroke();ctx.fillStyle='rgba(120,255,235,.9)';ctx.beginPath();ctx.arc(t.x,t.y,9,0,7);ctx.fill()});ctx.restore()}}
   ctx.save();ctx.translate(SECURITY.x,SECURITY.y);ctx.fillStyle='#06131e';ctx.strokeStyle='#7bece1';ctx.lineWidth=2.5;ctx.beginPath();ctx.roundRect?ctx.roundRect(-19,-15,38,29,5):ctx.rect(-19,-15,38,29);ctx.fill();ctx.stroke();
   ctx.fillStyle='#2be0d6';ctx.fillRect(-12,-9,24,15);ctx.fillStyle='#082735';ctx.fillRect(-9,-6,18,9);ctx.fillStyle='#d4fffa';ctx.font='bold 9px system-ui';ctx.textAlign='center';ctx.fillText('CAM',0,-21);ctx.restore();
+  drawInfoDevices(T);
   const camWatching=Object.values(G.camWatchers||{}).some(Boolean);
   CAM_POINTS.forEach((c,i)=>{const blink=camWatching&&Math.floor(G.time*3.8+i*.2)%2===0;ctx.save();ctx.translate(c.x,c.y);ctx.strokeStyle='#829ca8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-3,6);ctx.lineTo(-3,1);ctx.lineTo(1,-2);ctx.stroke();ctx.fillStyle='#09131e';ctx.strokeStyle=blink?'#ff5262':'#82eae1';ctx.lineWidth=1.8;ctx.beginPath();ctx.roundRect?ctx.roundRect(-9,-8,14,11,3):ctx.rect(-9,-8,14,11);ctx.fill();ctx.stroke();ctx.fillStyle='#142a38';ctx.beginPath();ctx.moveTo(5,-6);ctx.lineTo(12,-9);ctx.lineTo(12,2);ctx.lineTo(5,0);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle=blink?'#ff3348':'#9effed';ctx.beginPath();ctx.arc(2,-3,2.2,0,Math.PI*2);ctx.fill();if(blink)lglow(2,-3,24,'#ff3048',.55);ctx.restore()});
 }
@@ -798,6 +803,7 @@ const VENT_SETS=[
  {r:[0,4,8,12,14,16,2,6,10,13,17],g:[[0,6,2],[1,3,5,10],[4,9],[7,8]]},
  {r:[0,5,6,2,3,4,9,13,8,10,11,12,1,7],g:[[0,1,2],[3,4,5],[6,7,8],[9,10,11],[12,13]]}];
 let SECURITY={x:0,y:0,room:0},CAM_POINTS=[],GAME_VENTS=[];
+let ADMIN={x:0,y:0,room:0},VITALS={x:0,y:0,room:0};
 let camTimer=null,camSelection=0,CAM_VIEWING=false,CAM_SWITCHING_UNTIL=0;
 // Select vent locations with a full character-sized clearance, not merely a point
 // inside the room polygon. This prevents exiting the vent with the hitbox inside a wall.
@@ -846,7 +852,7 @@ function setMap(i){const M=MAPS[i]||MAPS[0];MAPI=MAPS.indexOf(M);ST=M.style!==un
  });
  GAME_VENTS.forEach((v,i)=>{v.links=[];VENT_SETS[MAPI].g.forEach(g=>{if(g.includes(i))g.forEach(j=>{if(j!==i)v.links.push(j)})})});
  TASKDEFS.forEach(t=>t.room=roomAt(t.x,t.y));
- const doorCorr=ST===2?CORR.filter(c=>Math.max(c[2],c[3])<550):CORR;DOORS=doorCorr.map(c=>c[2]>c[3]?[c[0]+c[2]/2-9,c[1],18,c[3]]:[c[0],c[1]+c[3]/2-9,c[2],18]);buildMap();}
+ const doorCorr=ST===2?CORR.filter(c=>Math.max(c[2],c[3])<550):CORR;DOORS=doorCorr.map(c=>c[2]>c[3]?[c[0]+c[2]/2-9,c[1],18,c[3]]:[c[0],c[1]+c[3]/2-9,c[2],18]);placeExtraDevices(securityRoom);buildMap();}
 function doorShut(r){
  const i=DOORS.indexOf(r);
  if(G&&i>=0&&G.closedDoors&&G.closedDoors.some(d=>d.i===i&&d.until>G.time))return true;
@@ -925,7 +931,7 @@ let AC=null;
 function beep(f=440,d=.15,type='sine',v=.08){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch(e){}}
 
 /* ===== MENU / LOBBY ===== */
-let S={name:'',color:0,code:'',nb:0,ni:1,ai:1,mp:0,dt:60,dInf:false,vipArmed:false,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true,clean:true,invis:true,speed:true}};
+let S={name:'',color:0,code:'',nb:0,ni:1,ai:1,mp:0,dt:60,dInf:false,vipArmed:false,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,reactor:true,vent:true,invis:true,rEng:true,rSci:true,rAng:true}};
 try{S.name=localStorage.getItem('tkg_name')||'';S.color=+localStorage.getItem('tkg_color')||0}catch(e){}
 $('name').value=S.name;
 function drawSwatches(){$('colors').innerHTML='';COLORS.forEach((c,i)=>{const d=document.createElement('div');d.className='sw'+(i===S.color?' sel':'');d.style.background=c;d.onclick=()=>{S.color=i;drawSwatches()};$('colors').appendChild(d)})}
@@ -942,7 +948,7 @@ function leaveNet(){try{NET.peer&&NET.peer.destroy()}catch(e){}NET.role='offline
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function botCount(h){const requested=Math.max(0,Math.min(S.nb,10-h));return h>=4?requested:Math.max(requested,5-h)}
 function readDisc(){let v=Math.round(+$('discT').value);if(!isFinite(v)||v<5)v=5;if(v>3600)v=3600;return v}
-function readAbilities(){const light=!!$('abilLight').checked,oxygen=!!$('abilOxygen').checked;return {copy:!!$('abilCopy').checked,doors:!!$('abilDoors').checked,sab:light||oxygen,light,oxygen,vent:!!$('abilVent').checked,clean:!!$('abilClean').checked,invis:!!$('abilInvis').checked,speed:!!$('abilSpeed').checked,crewVent:!!$('abilCrewVent').checked,shield:!!$('abilShield').checked}}
+function readAbilities(){const light=!!$('abilLight').checked,oxygen=!!$('abilOxygen').checked,reactor=!!$('abilReactor').checked;return {copy:!!$('abilCopy').checked,doors:!!$('abilDoors').checked,sab:light||oxygen||reactor,light,oxygen,reactor,vent:!!$('abilVent').checked,invis:!!$('abilInvis').checked,rEng:!!$('roleEng').checked,rSci:!!$('roleSci').checked,rAng:!!$('roleAng').checked}}
 function updateAbilities(){if(NET.role==='client')return;S.abilities=readAbilities();if(NET.role==='host')broadcastLobby();else renderLobby()}
 function openLobby(code){saveProfile();S.code=code;$('roomCode').textContent=code;show('lobby');renderLobby()}
 
@@ -1000,7 +1006,7 @@ $('ni').onchange=()=>{S.ni=+$('ni').value;NET.role==='host'?broadcastLobby():ren
 $('aiLv').onchange=()=>{S.ai=+$('aiLv').value;NET.role==='host'?broadcastLobby():renderLobby()};
 $('discT').onchange=()=>{S.dt=readDisc();$('discT').value=S.dt;NET.role==='host'?broadcastLobby():renderLobby()};
 $('discInf').onchange=()=>{S.dInf=$('discInf').checked;NET.role==='host'?broadcastLobby():renderLobby()};
-['abilCopy','abilDoors','abilLight','abilOxygen','abilVent','abilClean','abilInvis','abilSpeed','abilCrewVent','abilShield'].forEach(id=>$(id).addEventListener('change',updateAbilities));
+['abilCopy','abilDoors','abilLight','abilOxygen','abilReactor','abilVent','abilInvis','roleEng','roleSci','roleAng'].forEach(id=>$(id).addEventListener('change',updateAbilities));
 
 /* --- lobby --- */
 let lobbyBotNames=[];
@@ -1009,7 +1015,7 @@ function renderLobby(){
   $('vipPanel').style.display=(cl||NET.role==='host')?'flex':'none';
   $('bStart').style.display=cl?'none':'';$('discT').disabled=cl||(!cl&&S.dInf);$('discInf').disabled=cl;$('nb').disabled=cl;$('ni').disabled=cl;$('aiLv').disabled=cl;$('mp').disabled=cl;
   const ab=(cl&&v&&v.abilities)?v.abilities:S.abilities;
-  [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilVent','vent'],['abilClean','clean'],['abilInvis','invis'],['abilSpeed','speed'],['abilCrewVent','crewVent'],['abilShield','shield']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
+  [['abilCopy','copy'],['abilDoors','doors'],['abilLight','light'],['abilOxygen','oxygen'],['abilReactor','reactor'],['abilVent','vent'],['abilInvis','invis'],['roleEng','rEng'],['roleSci','rSci'],['roleAng','rAng']].forEach(([id,k])=>{if($(id)){$(id).checked=ab[k]===undefined?true:!!ab[k];$(id).disabled=cl}});
   let humans,nbots;
   if(cl&&v){humans=v.players;nbots=v.bots;$('nb').value=v.nb;$('nbV').textContent=v.nb;$('ni').value=v.ni;if(v.ai!==undefined)$('aiLv').value=v.ai;$('mp').value=v.mp;if(v.dt!==undefined){$('discT').value=v.dt;$('discInf').checked=!!v.dInf;$('discT').disabled=true}}
   else if(NET.role==='host'){humans=NET.lobby.map(l=>({name:l.name,ci:l.ci}));nbots=botCount(humans.length)}
@@ -1072,24 +1078,23 @@ function hostMsg(conn,d){
       break;
     case 'task':{
       const t=p.tasks.find(t=>t.di===d.di&&!t.done);
-      if(t&&Math.hypot(t.x-p.x,t.y-p.y)<140&&G.sab.p<=0){if(t.type==='scan')scanRelease(p.id);completeTask(p,t)}
+      if(t&&Math.hypot(t.x-p.x,t.y-p.y)<140&&!critSab()){if(t.type==='scan')scanRelease(p.id);completeTask(p,t)}
       break}
     case 'scan':
       if(d.on){if(scanBusy(p.id)){send(p.conn,{t:'scandeny'})}else scanStart(p.id,Math.min(15,+d.dur||SCAN_TIME))}else scanRelease(p.id);
       break;
     case 'kill': if(G.state==='play')hostKill(p);break;
     case 'sab': hostSab(p,d.k);break;
-    case 'clean': hostClean(p);break;
     case 'invis': hostInvis(p);break;
-    case 'boost': hostBoost(p);break;
-    case 'shield': hostShield(p);break;
     case 'shift': hostShift(p,d.id);break;
     case 'door': hostCloseDoor(p,d.i);break;
     case 'vent': hostVent(p,d.vid,d.act);break;
     case 'camUse':
       if(G){G.camWatchers=G.camWatchers||{};G.camWatchers[p.id]=!!d.active;bcast({t:'camUse',id:p.id,active:!!d.active})}
       break;
-    case 'fix': if(p.alive&&!p.imp&&FIXP[d.k]&&Math.hypot(FIXP[d.k][0]-p.x,FIXP[d.k][1]-p.y)<170){if(d.k==='l')G.sab.l=0;else G.sab.p=0}break;
+    case 'hold': if(p.alive&&!p.imp&&(d.k==='r1'||d.k==='r2')){p.holdK=d.k;p.holdT=G.time}break;
+    case 'ang': hostAngel(p,d.id);break;
+    case 'fix': if(p.alive&&!p.imp&&(d.k==='l'||d.k==='p')&&Math.hypot(FIXP[d.k][0]-p.x,FIXP[d.k][1]-p.y)<170){if(d.k==='l')G.sab.l=0;else G.sab.p=0}break;
     case 'report':{
       if(G.state!=='play'||!p.alive)break;
       const b=G.bodies.find(b=>Math.hypot(b.x-p.x,b.y-p.y)<110);
@@ -1118,16 +1123,18 @@ function clientMsg(d){
     case 'start': clientStart(d);break;
     case 's':
       if(!G)break;
-      d.p.forEach((a,i)=>{const p=G.players[i];if(!p)return;if(p!==G.me){p.tx=a[0];p.ty=a[1];p.face=a[2]}p.alive=!!a[3];p.disg=a[4];p.sft=a[5]||0;p.shiftPhase=a[6]||'none';p.shiftAnim=a[7]||0;p.ventT=a[8]||0;p.inVent=!!a[9];p.ventPop=a[10]||0;p.ventCd=a[11]||0;p.ventFrom=a[12]??-1;p.ventTo=a[13]??-1;p.invT=a[14]||0;p.boostT=a[15]||0;p.invCd=a[16]||0;p.boostCd=a[17]||0;p.cleanCd=a[18]||0;p.cleanN=a[19]||0;p.shT=a[20]||0;p.shCd=a[21]||0});
+      d.p.forEach((a,i)=>{const p=G.players[i];if(!p)return;if(p!==G.me){p.tx=a[0];p.ty=a[1];p.face=a[2]}p.alive=!!a[3];p.disg=a[4];p.sft=a[5]||0;p.shiftPhase=a[6]||'none';p.shiftAnim=a[7]||0;p.ventT=a[8]||0;p.inVent=!!a[9];p.ventPop=a[10]||0;p.ventCd=a[11]||0;p.ventFrom=a[12]??-1;p.ventTo=a[13]??-1;p.invT=a[14]||0;p.boostT=a[15]||0;p.invCd=a[16]||0;p.boostCd=a[17]||0;p.cleanCd=a[18]||0;p.cleanN=a[19]||0;p.shT=a[20]||0});
+       if(d.er){G.me.engLeft=d.er[0];G.me.engCd=d.er[1];G.me.engT=d.er[2]}G.me.angCd=d.an||0;
       G.closedDoors=(d.doors||[]).map(a=>({i:a[0],until:G.time+a[1],owner:a[2]}));
       G.bodies=d.b.map(b=>({x:b[0],y:b[1],color:b[2],name:b[3],weapon:b[4]||'knife'}));
       {const pv=G.scan,fresh=pv&&pv.by===G.me.id&&G.time-pv.t0<.8;if(d.sn)G.scan={by:d.sn[0],t0:G.time-d.sn[1],dur:d.sn[2],until:G.time-d.sn[1]+d.sn[2]+3};else if(!fresh)G.scan=null}
-      G.done=d.d;G.me.cd=d.c;G.me.meetings=d.mt;G.me.scd=d.sc;Object.assign(G.sab,{l:d.sb[0],p:d.sb[1],d:d.sb[2],dx:d.sb[3],dy:d.sb[4],cd:d.sb[5]});
+      G.done=d.d;G.me.cd=d.c;G.me.meetings=d.mt;G.me.scd=d.sc;Object.assign(G.sab,{l:d.sb[0],p:d.sb[1],d:d.sb[2],dx:d.sb[3],dy:d.sb[4],cd:d.sb[5],r:d.sb[6]||0,rh:d.sb[7]||0,rp:d.sb[8]||0});
       break;
     case 'tp': if(G){G.me.x=G.me.tx=d.x;G.me.y=G.me.ty=d.y;G.me.path=[];G.me.goalTask=null;G.me.atTask=null;if(!d.keep){G.me.inVent=false;G.me.ventT=0;G.me.ventFrom=-1;G.me.ventTo=-1;G.me.ventPop=.55}}break;
     case 'scandeny': if(G){G.scan=null;closeModal();toast('🔬 Máy quét đang có người dùng — đợi một chút!')}break;
     case 'camUse': if(G){G.camWatchers=G.camWatchers||{};G.camWatchers[d.id]=!!d.active}break;
     case 'sabn': if(G)sabNote(d.k);break;
+    case 'blocked': if(G){toast('🛡️ Mục tiêu có khiên thiên thần — đòn tấn công bị chặn!');beep(300,.3,'square',.1)}break;
     case 'killed': if(G){closeModal();G.flash=1;G.shake=1;deathCinematic({weapon:d.weapon,killerName:d.killerName,killerColor:d.killerColor,victimName:d.victimName||G.me.name,victimColor:d.victimColor||G.me.color})}break;
     case 'meetStart': if(G)clientMeetStart(d);break;
     case 'voted': if(G&&G.mt){if(G.mt.votes[d.id]===undefined)G.mt.votes[d.id]='x';renderCards()}break;
@@ -1166,7 +1173,7 @@ function startGame(){
     const a=i/total*Math.PI*2,x=MEETBTN[0]+Math.cos(a)*80,y=MEETBTN[1]+Math.sin(a)*70,h=humans[i];
     pl.push({id:i,name:h?h.name:names[i-humans.length],color:COLORS[h?h.ci:free[i-humans.length]],x,y,tx:x,ty:y,
       isBot:!h,conn:h?h.conn:null,imp:false,alive:true,face:1,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,
-      ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,tasks:[],path:[],wait:rnd(0,2),atTask:null,goalTask:null,meetings:1,seen:{}});
+      ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,tasks:[],path:[],wait:rnd(0,2),atTask:null,goalTask:null,meetings:1,seen:{},role:'',engLeft:3,engCd:0,engT:0,sciBat:20,angCd:0,shT:0,holdK:null,holdT:0});
   }
   // Mã VIP: ai nhập đúng mã (chủ phòng hoặc người vào phòng) thì chắc chắn làm sát nhân ở ván này.
   // Quá số sát nhân cho phép thì bốc ngẫu nhiên trong số người có mã; thiếu thì bốc thêm ngẫu nhiên.
@@ -1179,9 +1186,12 @@ function startGame(){
   // Mã chỉ có tác dụng một ván: dọn sạch để ván sau phải nhập lại.
   S.vipArmed=false;if(NET.lobby)NET.lobby.forEach(l=>{l.vip=false});
   if($('vipCode'))$('vipCode').value='';if($('vipStatus')){$('vipStatus').textContent='Mã riêng của chủ phòng';$('vipStatus').style.color=''}
+  {const cids=shuffle(pl.filter(p=>!p.imp).map(p=>p.id)),ab=S.abilities,want=[];
+   if(ab.rEng!==false)want.push('eng');if(ab.rSci!==false)want.push('sci');if(ab.rAng!==false)want.push('ang');
+   shuffle(want).slice(0,Math.max(0,cids.length-2)).forEach((r,i)=>{pl[cids[i]].role=r})}
   pl.forEach(p=>{p.tasks=shuffle(TASKDEFS.map((t,i)=>i)).slice(0,taskCount).map(i=>({...TASKDEFS[i],done:false,di:i}))});
-  G={players:pl,me:pl[0],aiLevel:S.ai|0,discT:S.dInf?0:S.dt,bodies:[],state:'reveal',done:0,total:pl.filter(p=>!p.imp).length*taskCount,ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{...S.abilities},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
-  pl.forEach(p=>{if(p.conn)send(p.conn,{t:'start',disc:G.discT,mp:MAPI,me:p.id,imp:p.imp,ni,total:G.total,abilities:{...G.abilities},
+  G={players:pl,me:pl[0],aiLevel:S.ai|0,discT:S.dInf?0:S.dt,bodies:[],state:'reveal',done:0,total:pl.filter(p=>!p.imp).length*taskCount,ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{...S.abilities},ventEventSeq:0,closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0,r:0,rp:0,rh:0}};
+  pl.forEach(p=>{if(p.conn)send(p.conn,{t:'start',disc:G.discT,mp:MAPI,me:p.id,imp:p.imp,role:p.role||'',ni,total:G.total,abilities:{...G.abilities},
     mates:p.imp?pl.filter(q=>q.imp&&q!==p).map(q=>q.id):[],
     players:pl.map(q=>({id:q.id,name:q.name,color:q.color,x:Math.round(q.x),y:Math.round(q.y)})),
     tasks:p.tasks.map(t=>t.di)})});
@@ -1191,10 +1201,10 @@ function clientStart(d){
   S.vipArmed=false;if($('vipCode'))$('vipCode').value='';if($('vipStatus')){$('vipStatus').textContent='Mã riêng của chủ phòng';$('vipStatus').style.color=''}
   setMap(d.mp||0);
   const pl=d.players.map(q=>({id:q.id,name:q.name,color:q.color,x:q.x,y:q.y,tx:q.x,ty:q.y,face:1,alive:true,imp:d.mates.includes(q.id),
-    isBot:false,conn:null,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,meetings:1,tasks:[],path:[],seen:{}}));
-  const me=pl[d.me];me.imp=!!d.imp;
+    isBot:false,conn:null,cd:15,disg:-1,scd:8,sft:0,shiftPhase:'none',shiftAnim:0,ventT:0,inVent:false,ventFrom:-1,ventTo:-1,ventPop:0,ventCd:0,doorCd:0,meetings:1,tasks:[],path:[],seen:{},role:'',engLeft:3,engCd:0,engT:0,sciBat:20,angCd:0,shT:0}));
+  const me=pl[d.me];me.imp=!!d.imp;me.role=d.role||'';
   me.tasks=d.tasks.map(i=>({...TASKDEFS[i],done:false,di:i}));
-  G={players:pl,me,discT:d.disc||0,bodies:[],state:'reveal',done:0,total:d.total,ni:d.ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,vent:true,...(d.abilities||{})},closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0}};
+  G={players:pl,me,discT:d.disc||0,bodies:[],state:'reveal',done:0,total:d.total,ni:d.ni,busy:false,snapT:0,posT:0,flash:0,shake:0,mt:null,time:0,abilities:{copy:true,doors:true,sab:true,light:true,oxygen:true,reactor:true,vent:true,rEng:true,rSci:true,rAng:true,...(d.abilities||{})},ventEventSeq:0,closedDoors:[],camWatchers:{},sab:{l:0,p:0,d:0,dx:0,dy:0,cd:30,bf:0,r:0,rp:0,rh:0}};
   enterGameUI();
 }
 function enterGameUI(){
@@ -1202,11 +1212,12 @@ function enterGameUI(){
   ['end','meet','modal'].forEach(i=>$(i).classList.remove('on'));
   const imp=G.me.imp;
   const mates=G.players.filter(p=>p.imp&&p!==G.me).map(p=>p.name);
-  $('roleTag').textContent=imp?'🔪 SÁT NHÂN':'👁 CƯ DÂN';
-  $('roleTag').style.color=imp?'#ff4b5c':'#6fd0ff';
-  $('revealT').textContent=imp?'BẠN LÀ SÁT NHÂN':'BẠN LÀ CƯ DÂN';
-  $('revealT').style.color=imp?'#ff4b5c':'#6fd0ff';
-  $('revealS').textContent=imp?('Đồng đội: '+(mates.join(', ')||'không có')+' — hãy hạ gục mọi người!'):('Hoàn thành nhiệm vụ & tìm ra '+G.ni+' sát nhân!');
+  const rl=roleLabel(G.me);
+  $('roleTag').textContent=imp?'🔪 SÁT NHÂN':(rl?rl.e+' '+rl.n:'👁 CƯ DÂN');
+  $('roleTag').style.color=imp?'#ff4b5c':(rl?rl.c:'#6fd0ff');
+  $('revealT').textContent=imp?'BẠN LÀ SÁT NHÂN':(rl?'BẠN LÀ '+rl.n:'BẠN LÀ CƯ DÂN');
+  $('revealT').style.color=imp?'#ff4b5c':(rl?rl.c:'#6fd0ff');
+  $('revealS').textContent=imp?('Đồng đội: '+(mates.join(', ')||'không có')+' — hãy hạ gục mọi người!'):(rl?rl.d+' Tìm ra '+G.ni+' sát nhân!':'Hoàn thành nhiệm vụ & tìm ra '+G.ni+' sát nhân!');
   const g=G;
   if($('revealChar')){$('revealChar').innerHTML=critter(G.me.color,{look:'r'});paintCineAvatars($('revealChar'));}
   $('reveal').classList.remove('on');cineStop();
@@ -1221,7 +1232,7 @@ addEventListener('keydown',e=>{
   if(!G)return;
   const k=e.key.toLowerCase();
   if(G.state==='play'&&G.me.inVent&&G.me.ventT<=0&&k>='1'&&k<='4'){const L=(GAME_VENTS[G.me.ventFrom]||{}).links||[];if(L[+k-1]!==undefined)ventGo(L[+k-1])}
-  if(k==='e')doUse();if(k==='r')doReport();if(k==='q')doKill();if(k==='f'||k==='x')openSkillMenu();if(k==='t'){if($('modal').classList.contains('on')&&$('taskMapCanvas'))closeModal();else openTaskMap()}
+  if(k==='e')doUse();if(k==='r')doReport();if(k==='q')doKill();if(k==='f'||k==='x')openSkillMenu();if(k==='g')roleAction();if(k==='t'){if($('modal').classList.contains('on')&&$('taskMapCanvas'))closeModal();else openTaskMap()}
   if(k==='escape')closeModal();
 });
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
@@ -1233,6 +1244,164 @@ let joy={x:0,y:0};
  const up=()=>{on=false;joy={x:0,y:0};k.style.left='35px';k.style.top='35px'};
  j.addEventListener('pointerup',up);j.addEventListener('pointercancel',up)})();
 $('btnTask').onclick=()=>openTaskMap();$('btnUse').onclick=doUse;$('btnRep').onclick=doReport;$('btnKill').onclick=doKill;$('btnShift').onclick=doShift;$('btnSab').onclick=doSab;
+
+
+/* ===== MỞ RỘNG: vai phụ, Admin, Vitals, Lò phản ứng ===== */
+const ROLE_INFO={
+ eng:{n:'KỸ SƯ',e:'🔧',c:'#ffb04a',d:'Bạn chui được cống như sát nhân: 3 lượt, mỗi lượt tối đa 12 giây, hồi 20 giây. Bot không nghi ngờ khi thấy bạn chui.'},
+ sci:{n:'NHÀ KHOA HỌC',e:'🧪',c:'#7dffb0',d:'Xem Sinh hiệu từ xa ở bất cứ đâu bằng nút G (pin 20 giây, tự sạc dần).'},
+ ang:{n:'THIÊN THẦN',e:'😇',c:'#fff2a0',d:'Sau khi chết, bạn bay lại gần một người sống và bấm G để cho họ khiên 10 giây (hồi 45 giây).'}};
+// Quyền theo vai trò; quyền sử dụng thực tế còn phụ thuộc G.abilities.vent và hostVent().
+function canVent(p){return !!p&&(!!p.imp||p.role==='eng')}
+function devSpot(ri,avoid){
+ const rm=ROOMS[ri],r=rm.r;let best=null,bs=-1e9;
+ for(let y=r[1]+50;y<r[1]+r[3]-50;y+=14)for(let x=r[0]+50;x<r[0]+r[2]-50;x+=14){
+  if(!pointInPoly(x,y,rm)||!canMove(x,y))continue;
+  let ok=true;for(let i=0;i<8&&ok;i++){const a=i*Math.PI/4;if(!canMove(x+Math.cos(a)*34,y+Math.sin(a)*34))ok=false}
+  if(!ok)continue;
+  const edge=Math.min(x-r[0],r[0]+r[2]-x,y-r[1],r[1]+r[3]-y);
+  let md=300;for(const a of avoid)md=Math.min(md,Math.hypot(a[0]-x,a[1]-y));
+  const sc=Math.min(md,240)+Math.min(edge,90)*.4;
+  if(sc>bs){bs=sc;best=[Math.round(x),Math.round(y)]}
+ }
+ if(!best){const n=rm.node;best=[Math.round(n[0]),Math.round(n[1])]}
+ return best;
+}
+function placeExtraDevices(secRoom){
+ const meet=roomAt(MEETBTN[0],MEETBTN[1]);
+ const gd=ROOMS.map(()=>99);gd[meet]=0;const q=[meet];
+ while(q.length){const a=q.shift();ADJ[a].forEach(b=>{if(gd[b]>gd[a]+1){gd[b]=gd[a]+1;q.push(b)}})}
+ const tc=ROOMS.map(()=>0);TASKDEFS.forEach(t=>{if(t.room>=0)tc[t.room]++});
+ const fixRoom=[roomAt(FIXP.l[0],FIXP.l[1]),roomAt(FIXP.p[0],FIXP.p[1])];
+ const vr=new Set(GAME_VENTS.map(v=>v.room));
+ const scanRoom=SCANPAD?roomAt(SCANPAD.x,SCANPAD.y):-1;
+ let cand=ROOMS.map((r,i)=>i).filter(i=>i!==secRoom&&i!==meet&&i!==scanRoom);
+ if(cand.length<2)cand=ROOMS.map((r,i)=>i).filter(i=>i!==secRoom);
+ // Phòng ít nhiệm vụ nhất, nhưng không quá xa nút họp (khoảng 1-2 phòng)
+ const sc=i=>tc[i]*40+Math.max(0,gd[i]-2)*160+(fixRoom.includes(i)?70:0)+(vr.has(i)?15:0);
+ cand.sort((a,b)=>sc(a)-sc(b));
+ const ra=cand[0],rv=cand.find(i=>i!==ra)??ra;
+ const avoid=TASKDEFS.map(t=>[t.x,t.y]).concat(GAME_VENTS.map(v=>[v.x,v.y]),[[SECURITY.x,SECURITY.y],FIXP.l,FIXP.p,MEETBTN]);
+ const A=devSpot(ra,avoid);avoid.push(A);const V=devSpot(rv,avoid);avoid.push(V);
+ ADMIN={x:A[0],y:A[1],room:ra};VITALS={x:V[0],y:V[1],room:rv};
+ // Lò phản ứng: hai bảng ở hai đầu xa nhau, xa nút họp
+ const far=ROOMS.map((r,i)=>i).filter(i=>i!==secRoom&&i!==meet&&i!==ra&&i!==rv);
+ const pool=far.length>=2?far:ROOMS.map((r,i)=>i);
+ let bp=[pool[0],pool[pool.length-1]],bsc=-1e9;
+ for(const a of pool)for(const b of pool){if(a>=b)continue;
+  const na=ROOMS[a].node,nb=ROOMS[b].node;
+  const s=Math.hypot(na[0]-nb[0],na[1]-nb[1])+.4*(Math.hypot(na[0]-MEETBTN[0],na[1]-MEETBTN[1])+Math.hypot(nb[0]-MEETBTN[0],nb[1]-MEETBTN[1]))-(fixRoom.includes(a)?500:0)-(fixRoom.includes(b)?500:0)-(tc[a]+tc[b])*20;
+  if(s>bsc){bsc=s;bp=[a,b]}}
+ const P1=devSpot(bp[0],avoid);avoid.push(P1);const P2=devSpot(bp[1],avoid);
+ FIXP.r1=P1;FIXP.r2=P2;
+}
+function nearAdmin(){const m=G.me;return m.alive&&Math.hypot(ADMIN.x-m.x,ADMIN.y-m.y)<66}
+function nearVitals(){const m=G.me;return m.alive&&Math.hypot(VITALS.x-m.x,VITALS.y-m.y)<66}
+function critSab(){return !!G&&(G.sab.p>0||G.sab.r>0)}
+let devTimer=null;
+function openAdmin(){
+ if(!canAct()||!nearAdmin())return;
+ G.busy=true;const b=$('mbox');b.className='box';
+ b.innerHTML='<div style="font-size:21px;font-weight:900">🗺️ BÀN ADMIN</div><div class="sub">Chấm màu = người đang sống trong từng khu vực. Không thấy người đang chui cống hoặc tàng hình.</div><canvas id="admCv"></canvas><div id="admList" class="task-list-grid"></div><button class="gray" onclick="closeModal()">Rời bàn</button>';
+ const draw=()=>{
+  const cv2=$('admCv');if(!cv2||!G)return;
+  const w=Math.min(960,Math.max(500,Math.round(BW*.5))),h=Math.round(w*BH/BW);if(cv2.width!==w){cv2.width=w;cv2.height=h}
+  const c=cv2.getContext('2d'),sc=w/BW;
+  if(BG)c.drawImage(BG,0,0,BW,BH,0,0,w,h);else{c.fillStyle='#08101b';c.fillRect(0,0,w,h)}
+  c.fillStyle='rgba(2,18,16,.72)';c.fillRect(0,0,w,h);
+  c.fillStyle='rgba(120,255,200,.06)';for(let y=0;y<h;y+=4)c.fillRect(0,y,w,1);
+  const per=ROOMS.map(()=>[]),dots=[];
+  G.players.forEach(p=>{if(!p.alive||p.inVent||(p.invT||0)>0)return;const L=lk(p);per[roomAt(p.x,p.y)].push(L.color);dots.push([p.x,p.y,L.color])});
+  c.textAlign='center';c.textBaseline='middle';
+  ROOMS.forEach((rm,i)=>{const r=rm.r,x=(r[0]+BOFF)*sc,y=(r[1]+BOFF)*sc;c.strokeStyle='rgba(120,255,210,.45)';c.lineWidth=1.5;c.strokeRect(x,y,r[2]*sc,r[3]*sc);
+   c.fillStyle='#bffff0';c.font='bold 11px system-ui';c.fillText(rm.n,x+r[2]*sc/2,y+10);
+   if(per[i].length){c.fillStyle='#ffd84a';c.font='bold 16px system-ui';c.fillText('×'+per[i].length,x+r[2]*sc/2,y+r[3]*sc-12)}});
+  dots.forEach(([px,py,col])=>{c.beginPath();c.arc((px+BOFF)*sc,(py+BOFF)*sc,6,0,7);c.fillStyle=col;c.fill();c.lineWidth=2;c.strokeStyle='#fff';c.stroke()});
+  const L=$('admList');if(L){let hh='';per.forEach((a,i)=>{if(a.length)hh+=`<div class="task-item"><span class="task-num">${a.length}</span><span class="tn"><b>${esc(ROOMS[i].n)}</b><br>${a.map(col=>`<span class="dot" style="background:${col};display:inline-block;margin-right:3px"></span>`).join('')}</span></div>`});L.innerHTML=hh||'<div class="sub">Không có ai trong các phòng.</div>'}
+ };
+ $('modal').classList.add('on');draw();clearInterval(camTimer);
+ camTimer=setInterval(()=>{if($('modal').classList.contains('on')&&$('admCv'))draw();else clearInterval(camTimer)},250);
+}
+function openVitals(remote){
+ if(!G||G.state!=='play'||G.busy||G.cineBusy||G.me.inVent||!G.me.alive)return;
+ if(!remote&&!nearVitals())return;
+ G.busy=true;G.vitRemote=!!remote;const b=$('mbox');b.className='box';
+ b.innerHTML=`<div style="font-size:21px;font-weight:900">💓 SINH HIỆU${remote?' (từ xa)':''}</div><div class="sub">Trạng thái sống/chết của mọi người.${remote?' <b id="vBat"></b>':''}</div><div class="vgrid" id="vGrid"></div><button class="gray" onclick="closeModal()">Đóng</button>`;
+ const draw=()=>{
+  if(!G||!$('vGrid'))return;
+  if(remote){const m=G.me;m.sciBat=(m.sciBat??20)-.2;if($('vBat'))$('vBat').textContent='Pin '+Math.max(0,Math.ceil(m.sciBat))+'s';if(m.sciBat<=0){m.sciBat=0;closeModal();toast('🔋 Hết pin — đang sạc lại');return}}
+  $('vGrid').innerHTML=G.players.map(p=>`<div class="vit ${p.alive?'alive':'dead'}">${crewSVG(p.color,!p.alive)}<div><b>${esc(p.name)}</b><small>${p.alive?'<b>♥</b> Còn sống':'✖ Đã chết'}</small></div></div>`).join('');
+ };
+ $('modal').classList.add('on');draw();clearInterval(camTimer);
+ camTimer=setInterval(()=>{if($('modal').classList.contains('on')&&$('vGrid'))draw();else clearInterval(camTimer)},200);
+}
+function hostAngel(p,id){
+ if(!G||G.state!=='play'||p.alive||p.role!=='ang'||p.imp||(p.angCd||0)>0)return false;
+ const q=G.players[id];if(!q||!q.alive||q===p||Math.hypot(q.x-p.x,q.y-p.y)>200)return false;
+ q.shT=10;p.angCd=45;beep(880,.25,'sine',.08);
+ if(p===G.me)toast('🛡️ Đã bảo vệ '+q.name+' trong 10 giây');
+ return true;
+}
+function roleAction(){
+ if(!G||G.state!=='play')return;const m=G.me;
+ if(m.role==='sci'&&m.alive){if(!canAct())return;if((m.sciBat??20)<3){toast('🔋 Pin còn yếu, đợi sạc thêm');return}openVitals(true);return}
+ if(m.role==='ang'&&!m.alive){
+  if((m.angCd||0)>0){toast('Khiên hồi chiêu '+Math.ceil(m.angCd)+' giây');return}
+  let best=null,bd=170;G.players.forEach(q=>{if(!q.alive||q===m)return;const d=dist(q,m);if(d<bd){bd=d;best=q}});
+  if(!best){toast('Bay lại gần một người còn sống');return}
+  if(NET.role==='client'){sendHost({t:'ang',id:best.id});toast('🛡️ Đã bảo vệ '+best.name)}else hostAngel(m,best.id);return}
+ toast('Vai của bạn không có năng lực chủ động');
+}
+function drawShields(T){
+ const m=G.me;
+ G.players.forEach(p=>{
+  if(!(p.shT>0)||!p.alive||p.inVent)return;
+  const show=p===m||!m.alive||m.imp||m.role==='ang';
+  if(!show)return;
+  if(m.alive&&p!==m&&(dist(p,m)>R_VIEW(m)+20||!hasLineOfSight(m.x,m.y,p.x,p.y)))return;
+  const pl=.5+.5*Math.sin(T*6);
+  ctx.save();ctx.translate(p.x,p.y-8);ctx.fillStyle=`rgba(130,210,255,${.12+.08*pl})`;ctx.strokeStyle=`rgba(190,240,255,${.6+.3*pl})`;ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.arc(0,0,31,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
+ });
+}
+function drawInfoDevices(T){
+ // Admin
+ ctx.save();ctx.translate(ADMIN.x,ADMIN.y);
+ ctx.fillStyle='#10211c';ctx.strokeStyle='#7dffc4';ctx.lineWidth=2.5;ctx.beginPath();ctx.roundRect?ctx.roundRect(-26,-17,52,34,6):ctx.rect(-26,-17,52,34);ctx.fill();ctx.stroke();
+ ctx.fillStyle='#052b20';ctx.fillRect(-21,-12,42,22);
+ ctx.strokeStyle='#5dffb0';ctx.lineWidth=1;ctx.strokeRect(-17,-8,14,7);ctx.strokeRect(-1,-8,14,7);ctx.strokeRect(-9,1,18,6);
+ const ph=T*3;ctx.fillStyle='#ffd84a';ctx.beginPath();ctx.arc(-10+Math.sin(ph)*4,-4,2,0,7);ctx.fill();ctx.fillStyle='#ff6b8a';ctx.beginPath();ctx.arc(6+Math.cos(ph*.8)*4,-4,2,0,7);ctx.fill();ctx.fillStyle='#6fd0ff';ctx.beginPath();ctx.arc(Math.sin(ph*.6)*5,4,2,0,7);ctx.fill();
+ ctx.fillStyle='#d9fff0';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText('ADMIN',0,-23);ctx.restore();
+ // Vitals
+ ctx.save();ctx.translate(VITALS.x,VITALS.y);
+ ctx.fillStyle='#1b1220';ctx.strokeStyle='#ff8fb0';ctx.lineWidth=2.5;ctx.beginPath();ctx.roundRect?ctx.roundRect(-24,-17,48,34,6):ctx.rect(-24,-17,48,34);ctx.fill();ctx.stroke();
+ ctx.fillStyle='#10040a';ctx.fillRect(-19,-12,38,22);
+ ctx.strokeStyle='#ff5a82';ctx.lineWidth=1.8;ctx.beginPath();for(let i=-17;i<=17;i++){const ph2=((i+T*22)%18+18)%18;const y=ph2<2?-7:ph2<4?5:ph2<5?-1:0;i===-17?ctx.moveTo(i,y):ctx.lineTo(i,y)}ctx.stroke();
+ ctx.fillStyle='#ffe6ee';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText('SINH HIỆU',0,-23);ctx.restore();
+ // Hai bảng điều khiển lò phản ứng
+ ['r1','r2'].forEach((k,i)=>{
+  const f=FIXP[k];if(!f)return;const on=G.sab.r>0,fl=on&&Math.floor(T*4)%2,held=((G.sab.rh|0)>>i)&1;
+  ctx.save();ctx.translate(f[0],f[1]);
+  ctx.fillStyle='#0004';ctx.beginPath();ctx.ellipse(0,18,22,6,0,0,7);ctx.fill();
+  ctx.fillStyle='#2a1c14';ctx.strokeStyle=on?(fl?'#ff3a3a':'#ff9a3a'):'#c98a4a';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect?ctx.roundRect(-18,-24,36,40,6):ctx.rect(-18,-24,36,40);ctx.fill();ctx.stroke();
+  const col=held?'#55ff9a':on?(fl?'#ff3a3a':'#ff8a3a'):'#ffb347';
+  ctx.fillStyle='#120a06';ctx.beginPath();ctx.arc(0,-6,11,0,7);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(0,-6,5,0,7);ctx.fill();
+  if(on||held)lglow(0,-6,on?52:30,col,.55);
+  ctx.fillStyle='#ffe3c4';ctx.font='bold 9px system-ui';ctx.textAlign='center';ctx.fillText('LÒ '+(i+1),0,-29);
+  if(on&&G.sab.rp>0){ctx.strokeStyle='#55ff9a';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-6,16,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,G.sab.rp));ctx.stroke()}
+  ctx.restore();
+ });
+}
+function reactorAssign(id){
+ const ag=aiG();let c=ag.reAs;if(c&&G.time-c.t<1)return c.m[id]||null;
+ const bots=G.players.filter(p=>p.isBot&&p.alive&&!p.imp),m={};
+ const d1=bots.map(p=>({id:p.id,d:estDist(p.x,p.y,FIXP.r1[0],FIXP.r1[1])})).sort((x,y)=>x.d-y.d);
+ if(d1.length){m[d1[0].id]='r1';const d2=bots.filter(p=>p.id!==d1[0].id).map(p=>({id:p.id,d:estDist(p.x,p.y,FIXP.r2[0],FIXP.r2[1])})).sort((x,y)=>x.d-y.d);if(d2.length)m[d2[0].id]='r2'}
+ ag.reAs={t:G.time,m};return m[id]||null;
+}
+function roleLabel(p){return(!p.imp&&p.role&&ROLE_INFO[p.role])?ROLE_INFO[p.role]:null}
+$('btnRole').onclick=roleAction;
 
 /* ===== ACTIONS ===== */
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
@@ -1336,7 +1505,7 @@ function canAct(){return G&&G.state==='play'&&!G.busy&&!G.cineBusy&&!G.me.inVent
 function useNearestVent(){
   if(!canAct())return false;
   const m=G.me,v=nearestVent();
-  if(!m.alive||!v||!(m.imp?G.abilities.vent:G.abilities.crewVent!==false)||(!m.imp&&(nearTask()||nearMeetBtn()||nearFix()||nearConsole())))return false;
+  if(!canVent(m)||!m.alive||!v||!G.abilities.vent)return false;
   if(NET.role==='client')sendHost({t:'vent',vid:v.i});else hostVent(m,v.i);
   return true;
 }
@@ -1344,14 +1513,16 @@ function doUse(){
   if(G&&G.state==='play'&&G.me.inVent&&G.me.ventT<=0){ventOut();return}
   if(!canAct())return;
   // For an impostor, E becomes the direct vent action whenever standing beside a hatch.
-  if(nearestVent()&&(G.me.imp||!(nearTask()||nearMeetBtn()||nearFix()||nearConsole()))){
-    if(!(G.me.imp?G.abilities.vent:G.abilities.crewVent!==false)){if(G.me.imp)toast('Chủ phòng đã khóa kỹ năng chui cống');}
-    else{useNearestVent();return;}
+  if(canVent(G.me)&&G.me.alive&&nearestVent()){
+    if(!G.abilities.vent){toast('Chủ phòng đã khóa kỹ năng chui cống');return;}
+    useNearestVent();return;
   }
   const fx=nearFix();if(fx){openFix(fx);return}
   if(nearConsole()){openCamera();return}
+  if(nearAdmin()){openAdmin();return}
+  if(nearVitals()){openVitals(false);return}
   const t=nearTask();
-  if(t){if(G.sab.p>0){toast('⚡ Mất điện! Hãy sửa cầu dao trước');return}openTask(t);return}
+  if(t){if(critSab()){toast(G.sab.r>0?'☢️ Lò phản ứng quá tải! Hãy ổn định lò trước':'🫧 Thiếu oxy! Hãy sửa hệ thống oxy trước');return}openTask(t);return}
   if(nearMeetBtn()){
     if(NET.role==='client')sendHost({t:'meet'});
     else{G.me.meetings--;startMeeting(G.me,null)}
@@ -1368,23 +1539,15 @@ function doKill(){
   if(m.cd>0){toast('Chờ hồi chiêu '+Math.ceil(m.cd)+'s');return}
   if(NET.role==='client')sendHost({t:'kill'});else hostKill(m);
 }
-function nearFix(){const m=G.me,s=G.sab;if(!m.alive||m.imp)return null;for(const k of['l','p'])if((k==='l'?s.l:s.p>0)&&Math.hypot(FIXP[k][0]-m.x,FIXP[k][1]-m.y)<60)return k;return null}
+function nearFix(){const m=G.me,s=G.sab;if(!m.alive||m.imp)return null;for(const k of['l','p','r1','r2'])if((k==='l'?s.l:k==='p'?s.p>0:s.r>0)&&Math.hypot(FIXP[k][0]-m.x,FIXP[k][1]-m.y)<60)return k;return null}
 function lk(p){return p.disg>=0&&G.players[p.disg]?G.players[p.disg]:p}
-function sabNote(k){toast(k==='l'?'💡 Đèn bị tắt! Ra bảng điện bật lại':'🫧 OXY THẤP! Khởi động lại hệ thống oxy trong 45 giây');beep(k==='p'?90:200,.5,'sawtooth',.12)}
-function hostSab(p,k){const s=G.sab;if(!G||G.state!=='play'||!G.abilities.sab||!p.imp||!p.alive||s.cd>0||s.l||s.p>0||s.d>0)return;
- if(k==='l'){if(G.abilities.light===false)return;s.l=1}else if(k==='p'){if(G.abilities.oxygen===false)return;s.p=45}else return;
- s.cd=40;s.bf=rnd(12,22);bcast({t:'sabn',k});sabNote(k)}
-function hostClean(p){
- if(!G||G.state!=='play'||G.abilities.clean===false||!p.imp||!p.alive||p.inVent||p.ventT>0||(p.cleanCd||0)>0||(p.cleanN||0)>=3)return false;
- let bi=-1,bd=110;G.bodies.forEach((b,i)=>{const d=Math.hypot(b.x-p.x,b.y-p.y);if(d<bd){bd=d;bi=i}});
- if(bi<0)return false;
- G.bodies.splice(bi,1);p.cleanCd=35;p.cleanN=(p.cleanN||0)+1;beep(180,.25,'sawtooth',.08);if(p===G.me)toast('🧹 Đã dọn xác ('+(3-p.cleanN)+' lần còn lại)');return true}
+function sabNote(k){if(k==='rfix'){toast('✅ Lò phản ứng đã ổn định');beep(700,.25);return}toast(k==='l'?'💡 Đèn bị tắt! Ra bảng điện bật lại':k==='r'?'☢️ LÒ PHẢN ỨNG QUÁ TẢI! 2 người phải giữ 2 bảng điều khiển cùng lúc trong 40 giây':'🫧 OXY THẤP! Khởi động lại hệ thống oxy trong 45 giây');beep(k==='l'?200:90,.5,'sawtooth',.12)}
+function hostSab(p,k){const s=G.sab;if(!G||G.state!=='play'||!G.abilities.sab||!p.imp||!p.alive||s.cd>0||s.l||s.p>0||s.d>0||s.r>0)return;
+ if(k==='l'){if(G.abilities.light===false)return;s.l=1}else if(k==='p'){if(G.abilities.oxygen===false)return;s.p=45}else if(k==='r'){if(G.abilities.reactor===false)return;s.r=40;s.rp=0;s.rh=0}else return;
+ s.cd=40;s.bf=k==='r'?rnd(24,34):rnd(12,22);bcast({t:'sabn',k});sabNote(k)}
 function hostInvis(p){
  if(!G||G.state!=='play'||G.abilities.invis===false||!p.imp||!p.alive||p.inVent||p.ventT>0||(p.invCd||0)>0||(p.invT||0)>0)return false;
  p.invT=6;p.invCd=45;beep(520,.2,'sine',.06);if(p===G.me)toast('👻 Tàng hình 6 giây — người khác không thấy bạn');return true}
-function hostBoost(p){
- if(!G||G.state!=='play'||G.abilities.speed===false||p.imp||!p.alive||p.inVent||p.ventT>0||(p.boostCd||0)>0||(p.boostT||0)>0)return false;
- p.boostT=3;p.boostCd=40;beep(700,.15,'square',.05);if(p===G.me)toast('⚡ Tăng tốc 3 giây');return true}
 function hostShift(p,id){if(!G.abilities.copy||!p.imp||!p.alive||G.state!=='play'||p.ventT>0||p.inVent)return;if(id<0)return;const q=G.players[id];if(!q||q===p||!q.alive||p.scd>0||p.disg>=0)return;p.disg=id;AI.onShift(p,id);p.sft=17;p.shiftPhase='in';p.shiftAnim=0;p.scd=40;beep(300,.25,'triangle')}
 function hostCloseDoor(p,i){
  if(!G||!G.abilities.doors||!p.imp||!p.alive||G.state!=='play'||!Number.isInteger(i)||i<0||i>=DOORS.length)return;
@@ -1402,11 +1565,13 @@ function ventExit(p){
  const v=GAME_VENTS[p.ventFrom];let ex=v;
  if(!v||!canMove(v.x,v.y)||doorHit(v.x,v.y))ex=findSafeVentPoint(v?v.room:0,true)||findSafeVentPoint(v?v.room:0,false)||v;
  if(ex){p.x=p.tx=ex.x;p.y=p.ty=ex.y}
- p.inVent=false;p.ventFrom=-1;p.ventTo=-1;p.ventT=.25;p.ventPop=.7;p.path=[];p.goalTask=null;p.atTask=null;p.wait=0;
+ if(p.role==='eng'&&!p.imp){p.engCd=20;p.engT=0}
+  p.inVent=false;p.ventFrom=-1;p.ventTo=-1;p.ventT=.25;p.ventPop=.7;p.path=[];p.goalTask=null;p.atTask=null;p.wait=0;
  if(p.conn)send(p.conn,{t:'tp',x:p.x,y:p.y});beep(130,.2,'triangle',.07);
 }
 function hostVent(p,vid,act){
- if(!G||!(p.imp?G.abilities.vent:G.abilities.crewVent!==false)||!p.alive||G.state!=='play'||p.ventT>0||!Number.isInteger(vid))return;
+ const eng=!!p&&!p.imp&&p.role==='eng';
+ if(!G||!G.abilities.vent||!canVent(p)||!p.alive||G.state!=='play'||p.ventT>0||!Number.isInteger(vid))return;
  const v=GAME_VENTS[vid];if(!v)return;
  if(p.inVent){
   const cur=GAME_VENTS[p.ventFrom];
@@ -1414,17 +1579,26 @@ function hostVent(p,vid,act){
   else if(act==='out'||vid===p.ventFrom)ventExit(p);
   return}
  if(!v.links.length||Math.hypot(v.x-p.x,v.y-p.y)>78)return;
- AI.onVent(p);
+ if(eng){
+  if((p.engLeft??3)<=0){if(p===G.me)toast('🔧 Bạn đã dùng hết 3 lượt chui cống');return}
+  if((p.engCd||0)>0){if(p===G.me)toast('🔧 Cống đang nguội, đợi '+Math.ceil(p.engCd)+' giây');return}
+  p.engLeft=(p.engLeft??3)-1;p.engT=12;
+ }
+ // Một mã sự kiện dùng chung cho mọi bot quan sát; lời tố lặp không tạo chứng cứ mới.
+ const ventEventId=(G.ventEventSeq=(G.ventEventSeq||0)+1);p.ventEventId=ventEventId;
+ AI.onVent(p,ventEventId);
  p.inVent=true;p.ventFrom=vid;p.ventTo=-1;p.ventT=.45;p.x=p.tx=v.x;p.y=p.ty=v.y;p.path=[];p.ventHops=1+(Math.random()<.5?1:0);p.ventW=.6;
  if(p.conn)send(p.conn,{t:'tp',x:v.x,y:v.y,keep:1});
- if(p===G.me)toast('🕳️ Trong cống: chọn cống để đi tiếp, hoặc thoát (E)');beep(115,.28,'triangle',.07);
+ if(p===G.me)toast('🕳️ Trong cống: chọn cống để đi tiếp, hoặc thoát (E)'+(eng?' • còn '+p.engLeft+' lượt, tối đa 12 giây':''));beep(115,.28,'triangle',.07);
 }
 function ventGo(j){if(!G||!G.me.inVent)return;if(NET.role==='client')sendHost({t:'vent',vid:j,act:'go'});else hostVent(G.me,j,'go')}
 function ventOut(){if(!G||!G.me.inVent)return;if(NET.role==='client')sendHost({t:'vent',vid:G.me.ventFrom,act:'out'});else hostVent(G.me,G.me.ventFrom,'out')}
 function hostSabTick(dt){if(!G)return;const s=G.sab;
  G.closedDoors=(G.closedDoors||[]).filter(d=>d.until>G.time);
  G.players.forEach(p=>{
-   for(const k of['invT','invCd','boostT','boostCd','cleanCd'])if(p[k]>0)p[k]=Math.max(0,p[k]-dt);
+   for(const k of['invT','invCd'])if(p[k]>0)p[k]=Math.max(0,p[k]-dt);
+   if(p.engCd>0)p.engCd=Math.max(0,p.engCd-dt);if(p.angCd>0)p.angCd=Math.max(0,p.angCd-dt);if(p.shT>0)p.shT=Math.max(0,p.shT-dt);
+   if(p.role==='eng'&&!p.imp&&p.inVent&&p.engT>0){p.engT-=dt;if(p.engT<=0&&p.ventT<=0){p.engT=0;ventExit(p)}}
    if(p.scd>0)p.scd=Math.max(0,p.scd-dt);if(p.doorCd>0)p.doorCd=Math.max(0,p.doorCd-dt);p.ventCd=0;if(p.ventPop>0)p.ventPop=Math.max(0,p.ventPop-dt);
    if(p.disg>=0){p.sft=Math.max(0,p.sft-dt);if(p.sft>16){p.shiftPhase='in';p.shiftAnim=17-p.sft}else if(p.sft>1){p.shiftPhase='hold';p.shiftAnim=0}else if(p.sft>0){p.shiftPhase='out';p.shiftAnim=p.sft}else{p.disg=-1;p.shiftPhase='none';p.shiftAnim=0}}
    if(p.ventT>0){p.ventT=Math.max(0,p.ventT-dt);if(p.ventT===0&&p.ventTo>=0){const d=GAME_VENTS[p.ventTo];if(d){p.ventFrom=p.ventTo;p.x=p.tx=d.x;p.y=p.ty=d.y;if(p.conn)send(p.conn,{t:'tp',x:d.x,y:d.y,keep:1})}p.ventTo=-1}}
@@ -1433,11 +1607,18 @@ function hostSabTick(dt){if(!G)return;const s=G.sab;
  if(G.state!=='play')return;
  if(s.cd>0)s.cd=Math.max(0,s.cd-dt);if(s.d>0)s.d=Math.max(0,s.d-dt);
  if(s.p>0){s.p-=dt;if(s.p<=0){s.p=0;endGame(true,'Hết oxy — sát nhân đã thắng!');return}}
- if((s.l||s.p>0)&&G.players.some(p=>p.isBot&&p.alive&&!p.imp)){s.bf-=dt;if(s.bf<=0){s.l=0;s.p=0}}
+ if(s.r>0){
+   s.r-=dt;if(s.r<=0){s.r=0;endGame(true,'Lò phản ứng nổ tung — sát nhân đã thắng!');return}
+   let h1=false,h2=false;
+   G.players.forEach(p=>{if(!p.alive||p.imp||!p.holdK||G.time-(p.holdT||0)>.7)return;const f=FIXP[p.holdK];if(!f||Math.hypot(f[0]-p.x,f[1]-p.y)>170)return;if(p.holdK==='r1')h1=true;else if(p.holdK==='r2')h2=true});
+   s.rh=(h1?1:0)|(h2?2:0);
+   if(h1&&h2){s.rp+=dt;if(s.rp>=1){s.r=0;s.rp=0;s.rh=0;bcast({t:'sabn',k:'rfix'});sabNote('rfix')}}else s.rp=Math.max(0,s.rp-dt*2);
+ }else{s.rh=0;s.rp=0}
+ if((s.l||s.p>0||s.r>0)&&G.players.some(p=>p.isBot&&p.alive&&!p.imp)){s.bf-=dt;if(s.bf<=0){s.l=0;s.p=0;s.r=0}}
 }
 function openSkillMenu(){
  if(!canAct())return;const m=G.me;if(!m.imp||!m.alive){toast('Chỉ sát nhân mới có kỹ năng này');return}
- const near=nearestVent(),busySab=G.sab.l||G.sab.p>0||G.sab.d>0;
+ const near=nearestVent(),busySab=G.sab.l||G.sab.p>0||G.sab.d>0||G.sab.r>0;
  G.busy=true;const b=$('mbox');b.className='box';
  const opt=(label,desc,action,disabled=false,cls='')=>`<button class="skill-option ${cls}" ${disabled?'disabled':''} onclick="skillAction('${action}')">${label}<small>${desc}</small></button>`;
  let h='<div style="font-size:21px;font-weight:900;margin-bottom:4px">🗡️ KỸ NĂNG SÁT NHÂN</div><div style="font-size:12px;opacity:.72;margin-bottom:10px">Chọn kỹ năng trước, rồi chọn mục tiêu.</div>';
@@ -1445,9 +1626,8 @@ function openSkillMenu(){
  h+=opt('🚪 Chọn cửa để khóa',G.closedDoors.length>=2?'Đã khóa đủ 2 cửa':m.doorCd>0&&G.closedDoors.length===0?`Hồi chiêu ${Math.ceil(m.doorCd)} giây`:'Chọn cửa cụ thể • có thể khóa 2 cửa cùng lúc','door',!G.abilities.doors||G.closedDoors.length>=2||(m.doorCd>0&&G.closedDoors.length===0));
  h+=opt('💡 Tắt đèn',!G.abilities.light?'Chủ phòng đã khóa kỹ năng này':busySab?'Đang có phá hoại hoạt động':G.sab.cd>0?`Hồi chiêu ${Math.ceil(G.sab.cd)} giây`:'Làm giảm tầm nhìn của mọi người','light',!G.abilities.sab||G.abilities.light===false||busySab||G.sab.cd>0);
  h+=opt('🫧 Phá hoại oxy',!G.abilities.oxygen?'Chủ phòng đã khóa kỹ năng này':busySab?'Đang có phá hoại hoạt động':G.sab.cd>0?`Hồi chiêu ${Math.ceil(G.sab.cd)} giây`:'Cư dân có 45 giây để sửa hệ thống','oxygen',!G.abilities.sab||G.abilities.oxygen===false||busySab||G.sab.cd>0,'red');
- h+=opt('🧹 Dọn xác',G.abilities.clean===false?'Chủ phòng đã khóa kỹ năng này':(m.cleanN||0)>=3?'Đã dùng hết 3 lần':(m.cleanCd||0)>0?`Hồi chiêu ${Math.ceil(m.cleanCd)} giây`:'Đứng cạnh xác rồi dùng • xóa xác khỏi bản đồ • tối đa 3 lần','clean',G.abilities.clean===false||(m.cleanN||0)>=3||(m.cleanCd||0)>0);
+  h+=opt('☢️ Phá hoại lò phản ứng',!G.abilities.reactor?'Chủ phòng đã khóa kỹ năng này':busySab?'Đang có phá hoại hoạt động':G.sab.cd>0?`Hồi chiêu ${Math.ceil(G.sab.cd)} giây`:'Lò nổ sau 40 giây — cần 2 người giữ 2 bảng ở 2 đầu bản đồ cùng lúc','reactor',!G.abilities.sab||G.abilities.reactor===false||busySab||G.sab.cd>0,'red');
  h+=opt('👻 Tàng hình',G.abilities.invis===false?'Chủ phòng đã khóa kỹ năng này':(m.invT||0)>0?`Đang tàng hình • còn ${Math.ceil(m.invT)} giây`:(m.invCd||0)>0?`Hồi chiêu ${Math.ceil(m.invCd)} giây`:'Người khác không thấy bạn trong 6 giây (giết người là hiện hình ngay)','invis',G.abilities.invis===false||(m.invT||0)>0||(m.invCd||0)>0);
- h+=opt('⚡ Tăng tốc',G.abilities.speed===false?'Chủ phòng đã khóa kỹ năng này':(m.boostT||0)>0?`Đang tăng tốc • còn ${Math.ceil(m.boostT)} giây`:(m.boostCd||0)>0?`Hồi chiêu ${Math.ceil(m.boostCd)} giây`:'Chạy nhanh hơn 50% trong 7 giây','speed',G.abilities.speed===false||(m.boostT||0)>0||(m.boostCd||0)>0);
  h+='<div style="font-size:12px;opacity:.78;padding:8px 10px;border:1px solid #ffffff22;border-radius:8px;margin:7px 0">🕳️ Chui cống là thao tác thường: đứng cạnh miệng cống rồi nhấn E. Không có hồi chiêu.</div>';
  h+='<button class="gray" onclick="closeModal()">Đóng</button>';b.innerHTML=h;$('modal').classList.add('on');
 }
@@ -1463,17 +1643,17 @@ function skillAction(action){
    if(!G.abilities.doors||(m.doorCd>0&&G.closedDoors.filter(d=>d.until>G.time).length===0)||G.closedDoors.filter(d=>d.until>G.time).length>=2){closeModal();toast('Không thể khóa thêm cửa lúc này');return}
    renderDoorChooser();return;
  }
- if(action==='clean'||action==='invis'||action==='speed'){
-   closeModal();const ty=action==='clean'?'clean':action==='invis'?'invis':'boost';
-   if(NET.role==='client')sendHost({t:ty});else{const ok=ty==='clean'?hostClean(m):ty==='invis'?hostInvis(m):hostBoost(m);if(!ok)toast(ty==='clean'?'Cần đứng cạnh một cái xác (trong tầm ~1 mét)':'Chưa dùng được lúc này')}
+ if(action==='invis'){
+   closeModal();
+   if(NET.role==='client')sendHost({t:'invis'});else{if(!hostInvis(m))toast('Chưa dùng được lúc này')}
    return;
  }
  if(action==='vent'){
    const v=nearestVent();if(!G.abilities.vent||!v){closeModal();toast('Hãy đứng gần miệng cống trước');return}
    closeModal();if(NET.role==='client')sendHost({t:'vent',vid:v.i});else hostVent(m,v.i);return;
  }
- if(action==='light'||action==='oxygen'){
-   const k=action==='light'?'l':'p';closeModal();if(!G.abilities.sab||(action==='light'&&G.abilities.light===false)||(action==='oxygen'&&G.abilities.oxygen===false)){toast('Chủ phòng đã khóa kỹ năng này');return;}
+ if(action==='light'||action==='oxygen'||action==='reactor'){
+   const k=action==='light'?'l':action==='reactor'?'r':'p';closeModal();if(!G.abilities.sab||(action==='light'&&G.abilities.light===false)||(action==='oxygen'&&G.abilities.oxygen===false)||(action==='reactor'&&G.abilities.reactor===false)){toast('Chủ phòng đã khóa kỹ năng này');return;}
    if(NET.role==='client')sendHost({t:'sab',k});else hostSab(m,k);return;
  }
 }
@@ -1547,18 +1727,32 @@ function pickSab(k){closeModal();if(NET.role==='client')sendHost({t:'sab',k});el
  const ok=()=>{if(NET.role==='client')sendHost({t:'fix',k});else{if(k==='l')G.sab.l=0;else G.sab.p=0}beep(700,.2);closeModal()};
  if(k==='l'){b.innerHTML='<div style="font-weight:800;font-size:18px">💡 Bật tất cả cầu dao</div><div id="sw" style="display:flex;gap:10px"></div>'+close;
   const st=[0,1,0,1,0].map(v=>v);const draw=()=>{$('sw').innerHTML='';st.forEach((v,i)=>{const d=document.createElement('div');d.style.cssText=`width:44px;height:84px;border-radius:8px;cursor:pointer;background:${v?'#3ddc84':'#444'};border:3px solid #fff4`;d.onclick=()=>{st[i]^=1;beep(300+i*60,.06);draw();if(st.every(x=>x))setTimeout(ok,300)};$('sw').appendChild(d)})};draw();
- }else{b.innerHTML='<div style="font-weight:800;font-size:18px">🫧 Khởi động lại hệ thống oxy</div><div class="pbar"><div id="pf" style="background:#ffd84a"></div></div><button id="fb">GIỮ ĐỂ NẠP</button>'+close;
+ }else if(k==='p'){b.innerHTML='<div style="font-weight:800;font-size:18px">🫧 Khởi động lại hệ thống oxy</div><div class="pbar"><div id="pf" style="background:#ffd84a"></div></div><button id="fb">GIỮ ĐỂ NẠP</button>'+close;
   let p=0,h=false;const fb=$('fb');fb.onpointerdown=()=>h=true;fb.onpointerup=fb.onpointerleave=()=>h=false;
   openTask.iv=setInterval(()=>{p=h?p+1.8:Math.max(0,p-2.5);$('pf').style.width=p+'%';if(p>=100){clearInterval(openTask.iv);ok()}},50)}
+  else{
+   b.innerHTML='<div style="font-weight:800;font-size:18px">☢️ Ổn định lò phản ứng</div><div class="sub">Giữ nút này trong khi một người KHÁC giữ bảng điều khiển còn lại.</div><div id="rst" style="font-weight:700;margin:6px 0"></div><div class="pbar"><div id="pf" style="background:#ff8a3a"></div></div><button id="fb">GIỮ</button>'+close;
+   let h=false;const fb=$('fb');fb.onpointerdown=()=>h=true;fb.onpointerup=fb.onpointerleave=()=>h=false;
+   const tick=()=>{
+    if(!G||!(G.sab.r>0)){clearInterval(openTask.iv);closeModal();toast('✅ Lò phản ứng đã ổn định');return}
+    if(h){if(NET.role==='client')sendHost({t:'hold',k});else{G.me.holdK=k;G.me.holdT=G.time}}
+    const hs=G.sab.rh|0,mine=k==='r1'?1:2,other=k==='r1'?2:1;
+    if(h){const gm=NET.role==='client'?null:1;void gm}
+    $('rst').innerHTML='Bảng này: <span style="color:'+(h?'#5dff9a':'#ff8a8a')+'">'+(h?'ĐANG GIỮ':'chưa giữ')+'</span> • Bảng còn lại: <span style="color:'+((hs&other)?'#5dff9a':'#ff8a8a')+'">'+((hs&other)?'ĐANG GIỮ':'chưa có ai')+'</span> • Còn '+Math.ceil(G.sab.r)+'s';
+    $('pf').style.width=Math.min(100,(G.sab.rp||0)*100)+'%';
+   };
+   tick();openTask.iv=setInterval(tick,120);
+  }
  $('modal').classList.add('on')}
 function hostKill(k){
   if(!k.imp||!k.alive||k.cd>0||k.inVent||k.ventT>0)return;
   let v=null,bd=95;
-  G.players.forEach(q=>{if(q.alive&&!q.imp&&!(q.shT>0)){const d=dist(q,k);if(d<bd){bd=d;v=q}}});
+  G.players.forEach(q=>{if(q.alive&&!q.imp&&!q.inVent){const d=dist(q,k);if(d<bd){bd=d;v=q}}});
   if(v){k.invT=0;kill(k,v)}
 }
 function kill(k,v,weapon){
   if(!G||!k||!v||!v.alive)return;
+  if(v.shT>0){k.cd=10;k.invT=0;if(k.conn)send(k.conn,{t:'blocked'});if(k===G.me){toast('🛡️ Mục tiêu có khiên thiên thần — đòn tấn công bị chặn!');beep(300,.3,'square',.1)}beep(660,.2,'sine',.08);return}
   weapon=KILL_WEAPONS.includes(weapon)?weapon:pick(KILL_WEAPONS);
   AI.onKill(k,v);
   scanRelease(v.id);v.alive=false;G.bodies.push({x:v.x,y:v.y,color:v.color,name:v.name,id:v.id,killer:k.id,t:G.time,weapon});
@@ -1572,13 +1766,15 @@ function kill(k,v,weapon){
 }
 function completeTask(p,t){
   if(t.done)return;
-  if(G&&p&&t&&NET.role!=='client')AI.onTask(p,t);
   t.done=true;
   if(NET.role==='client'){
     if(p===G.me){sendHost({t:'task',di:t.di});beep(660,.2);if(p.imp)toast('Nhiệm vụ giả hoàn tất (để ngụy trang)')}
     return;
   }
+  const beforeDone=G.done;
   if(!p.imp){G.done++;}
+  // Chỉ truyền cho AI tín hiệu tiến độ công khai; không truyền/đọc vai trò bí mật của người làm.
+  if(G.done>beforeDone)AI.onTask(p,t,{publicProgress:true});
   if(p===G.me){beep(660,.2);if(p.imp)toast('Nhiệm vụ giả hoàn tất (để ngụy trang)');}
   checkWin();
 }
@@ -1715,7 +1911,7 @@ function openScanTask(t,b,head,hint,close,done,tk,A){
   };
 }
 
-function closeModal(){if(CAM_VIEWING)setCameraWatching(false);$('modal').classList.remove('on');if(G)G.busy=false;curTask=null;clearInterval(openTask.iv);clearInterval(camTimer);camTimer=null;openTask.tk=(openTask.tk||0)+1;$('mbox').className='box';if(G&&G.me&&G.scan&&G.scan.by===G.me.id){G.scan=null;if(NET.role==='client')sendHost({t:'scan',on:0})}}
+function closeModal(){if(G)G.vitRemote=false;if(CAM_VIEWING)setCameraWatching(false);$('modal').classList.remove('on');if(G)G.busy=false;curTask=null;clearInterval(openTask.iv);clearInterval(camTimer);camTimer=null;openTask.tk=(openTask.tk||0)+1;$('mbox').className='box';if(G&&G.me&&G.scan&&G.scan.by===G.me.id){G.scan=null;if(NET.role==='client')sendHost({t:'scan',on:0})}}
 function openTask(t){
   if((TASK_ALIAS[t.type]||t.type)==='scan'&&scanBusy(G.me.id)){toast('🔬 Máy quét đang có người dùng — đợi một chút!');return}
   curTask=t;G.busy=true;const b=$('mbox');b.className='box th'+(ST===2?0:ST);const A=ST!==1;
@@ -1933,16 +2129,16 @@ function cineType(el,str,delay,cb){
 function cineRole(done){
   const imp=G.me.imp;
   const list=imp?G.players.filter(p=>p.imp):G.players.slice();
-  const title=imp?'SÁT NHÂN':'CƯ DÂN',sub=imp?(list.length>1?'Cùng đồng đội hạ gục mọi người — đừng để bị lộ!':'Hạ gục mọi người — đừng để bị lộ!'):`Trong làng có ${G.ni} sát nhân ẩn nấp…`;
+  const rl=roleLabel(G.me),title=imp?'SÁT NHÂN':(rl?rl.n:'CƯ DÂN'),sub=imp?(list.length>1?'Cùng đồng đội hạ gục mọi người — đừng để bị lộ!':'Hạ gục mọi người — đừng để bị lộ!'):(rl?rl.d:`Trong làng có ${G.ni} sát nhân ẩn nấp…`);
   beep(imp?150:420,.5,imp?'sawtooth':'triangle',.14);
-  cineRun(imp?'t-red':'t-blue',`<div class="stage"><div class="cin-title" style="color:${imp?'#ff5a6a':'#8fd8ff'}">${title}</div><div class="cin-sub">${sub}</div>${lineup(list)}</div>`,3400,done);
+  cineRun(imp?'t-red':'t-blue',`<div class="stage"><div class="cin-title" style="color:${imp?'#ff5a6a':(rl?rl.c:'#8fd8ff')}">${title}</div><div class="cin-sub">${sub}</div>${lineup(list)}</div>`,3400,done);
 }
 /* 3) BÁO XÁC */
 function cineReport(by,body,done){
   beep(160,.55,'sawtooth',.18);setTimeout(()=>beep(120,.4,'square',.12),380);
   cineRun('t-red',`<div class="flash"></div><div class="stage rep"><div class="band"><div class="band-t">XÁC ĐÃ ĐƯỢC BÁO CÁO!</div><div class="band-s">${esc(by.name)} phát hiện xác của ${esc(body.name)}</div></div>`+
     `<div class="row"><div class="who"><div class="bubble ex">!</div>${critter(by.color,{look:'r'})}<span class="nm">${esc(by.name)}</span></div>`+
-    `<div class="who"><div class="lying">${critter(body.color||'#888',{dead:true})}</div><span class="nm">${esc(body.name)}</span><span class="weapon-note">${weaponInfo(body.weapon).icon} DẤU VẾT: ${weaponInfo(body.weapon).label}</span></div></div></div>`,3100,done);
+    `<div class="who"><div class="lying">${critter(body.color||'#888',{dead:true})}</div><span class="nm">${esc(body.name)}</span></div></div></div>`,3100,done);
 }
 /* 4) HỌP KHẨN */
 function cineMeet(by,done){
@@ -2318,7 +2514,7 @@ function aiOf(b){return b.ai||(b.ai=newAI(b))}
 function newAI(b){return{
   pers:{pace:.94+Math.random()*.14,bold:Math.random(),chatty:.3+Math.random()*.7,trust:.35+Math.random()*.45,
         curious:Math.random(),tidy:Math.random(),casual:Math.random()<.55},
-  pt:Math.random()*.2,seen:{},trail:{},contact:{},ev:[],sus:{},clear:{},hear:{},claims:[],knownBodies:{},scanSeen:{},visited:{},
+  pt:Math.random()*.2,seen:{},trail:{},contact:{},ev:[],sus:{},clear:{},hear:{},roleKnown:{},ventTalk:{},ventClaims:{},claims:[],knownBodies:{},scanSeen:{},visited:{},
   fear:0,react:null,goal:null,pathFor:null,stuck:0,chkT:0,chkX:b.x,chkY:b.y,doorWait:0,doorTried:false,
   mylog:[],myRoom:-1,cam:null,thinkT:Math.random()*.4,
   imp:{phase:'blend',target:null,post:null,shiftT:-99,decoy:null,lockT:-99,huntT:0,seenByAt:-99,dark:false},
@@ -2344,6 +2540,88 @@ function recentEv(a,type,who,win){
   return null;
 }
 
+// Chỉ tin vai trò được xác nhận bằng chứng công khai; tuyệt đối không đọc G.players[pid].role.
+function knownRoleOf(a,pid){
+  const r=a&&a.roleKnown&&a.roleKnown[pid];
+  return r&&r.confirmed===true&&r.source==='public'?r.role:null;
+}
+function engineerCouldBeInRound(){
+  if(!G||!G.abilities||G.abilities.rEng===false)return false;
+  // Phải khớp cách startGame() phân vai: số ô vai phụ = số dân - 2.
+  // Khóa kỹ năng cống KHÔNG xóa vai Kỹ sư khỏi lượt phân vai.
+  const crewCount=Math.max(0,(G.players||[]).length-(G.ni||0));
+  const roleSlots=Math.max(0,crewCount-2);
+  const availableRoles=[];
+  if(G.abilities.rEng!==false)availableRoles.push('eng');
+  if(G.abilities.rSci!==false)availableRoles.push('sci');
+  if(G.abilities.rAng!==false)availableRoles.push('ang');
+  return roleSlots>0&&availableRoles.includes('eng');
+}
+function anotherEngineerConfirmed(a,pid){
+  if(!a||!a.roleKnown)return false;
+  return Object.keys(a.roleKnown).some(k=>+k!==+pid&&knownRoleOf(a,+k)==='eng');
+}
+function ventEngineerConfirmed(a,pid,claim){
+  // Không xác nhận suy luận Kỹ sư từ một hành động cống khi cống đã bị khóa.
+  if(!G||!G.abilities||G.abilities.vent===false)return false;
+  const role=knownRoleOf(a,pid);
+  if(role==='eng'||role==='engineer')return true;
+  if(role==='imp'||role==='impostor')return false;
+  // Scan chỉ chứng minh phe dân; chỉ được suy luận Kỹ sư nếu vai này
+  // thực sự có thể được phân trong ván hiện tại.
+  if(!engineerCouldBeInRound())return false;
+  const observed=!!(claim&&claim.eventId!==undefined&&claim.eventId!==null)||!!recentEv(a,'vent',pid,240);
+  return !!(a&&a.clear&&a.clear[pid]==='scan'&&observed&&!anotherEngineerConfirmed(a,pid));
+}
+// 'legal': có bằng chứng mục tiêu được phép dùng cống; 'illegal': đã xác nhận là phe dân không có quyền;
+// 'impostorOnly': không thể có Kỹ sư, nên hành động cống hợp lệ chỉ có thể do Sát nhân;
+// 'unknown': Kỹ sư vẫn có thể được phân nhưng chưa xác minh; 'disabled': chủ phòng khóa cống.
+function ventVerdict(a,pid,claim){
+  if(!G||!G.abilities)return 'unknown';
+  // Khóa cống làm mọi lần chui cống không thể được xác nhận là hành động hợp lệ,
+  // nhưng không thay đổi vai trò mà người đó được phân.
+  if(G.abilities.vent===false)return 'disabled';
+  const role=knownRoleOf(a,pid);
+  // Cả Kỹ sư lẫn Sát nhân đều có quyền dùng cống; vai trò xác nhận không được kết tội hành vi hợp lệ.
+  if(role==='eng'||role==='engineer'||role==='imp'||role==='impostor')return 'legal';
+  if(role==='citizen'||role==='crewmate'||role==='sci'||role==='scientist'||role==='ang'||role==='angel')return 'illegal';
+  // Scan chỉ xác nhận phe dân. Chỉ suy luận Kỹ sư nếu vai này có thể
+  // được phân trong ván; nếu đã tắt vai thì dân đã scan chui cống là bất thường.
+  const hasObservedClaim=!!(claim&&claim.eventId!==undefined&&claim.eventId!==null);
+  if(a&&a.clear&&a.clear[pid]==='scan'&&(recentEv(a,'vent',pid,240)||hasObservedClaim)){
+    if(!engineerCouldBeInRound())return 'illegal';
+    return anotherEngineerConfirmed(a,pid)?'illegal':'legal';
+  }
+  if(!engineerCouldBeInRound())return 'impostorOnly';
+  return 'unknown';
+}
+// Điểm từ cống: manh mối nhẹ nếu còn khả năng là Kỹ sư; không có điểm khi cống bị khóa.
+function ventEvidenceScore(a,pid,claim){
+  const status=ventVerdict(a,pid,claim);
+  if(status==='legal'||status==='disabled')return 0;
+  return status==='illegal'||status==='impostorOnly'?720:140;
+}
+// Chặn việc nhiều bot lặp lại cùng một lời tố làm tăng điểm vô hạn.
+// Không có eventId (chat người chơi) thì khóa theo mục tiêu trong cửa sổ chứng cứ 240 giây.
+function ventClaimIsFresh(a,pid,m,own){
+  a.ventClaims=a.ventClaims||{};
+  const now=G.time,eventId=m&&m.eventId!=null?m.eventId:(own&&own.eventId!=null?own.eventId:null);
+  let prev=a.ventClaims[pid];const isNew=!prev;
+  if(!prev)prev=a.ventClaims[pid]={t:now,ids:[],noIdSeen:false};
+  if(eventId!==null&&eventId!==undefined){
+    const key=String(eventId);
+    if(prev.ids.includes(key))return false; // chỉ loại đúng sự kiện đã ghi nhận
+    // Một eventId mới là một lần chui cống mới, kể cả xảy ra sát sự kiện trước.
+    prev.ids.push(key);
+    prev.noIdSeen=true;prev.t=now;return true;
+  }
+  // Chat không mang eventId không thể chứng minh đây là lần chui cống mới,
+  // nên chỉ được ghi nhận một lần cho mục tiêu trong suốt ván.
+  if(isNew){prev.noIdSeen=true;return true}
+  if(prev.noIdSeen||prev.ids.length||now-prev.t<240)return false;
+  prev.noIdSeen=true;prev.t=now;return true;
+}
+
 /* ---------- quan sát ---------- */
 function noteSeen(b,a,q,T,viaCam){
   const id=lookId(q),room=roomAt(q.x,q.y);
@@ -2354,7 +2632,10 @@ function noteSeen(b,a,q,T,viaCam){
   if(T-c.l>4){c.s=T;c.tot=0}else c.tot+=T-c.l;c.l=T;c.room=room;
   if((q.shiftPhase==='in'||q.shiftPhase==='out')&&q.disg>=0&&!recentEv(a,'morph',q.id,20))
     addEv(a,{type:'morph',who:q.id,as:q.disg,room,t:T});
-  if(q.ventPop>.3&&!recentEv(a,'vent',id,4))addEv(a,{type:'vent',who:id,room,t:T});
+  if(q.ventPop>.3&&!recentEv(a,'vent',id,4)){
+    const eventId=q.ventEventId!=null?q.ventEventId:(G.ventEventSeq=(G.ventEventSeq||0)+1);q.ventEventId=eventId;
+    addEv(a,{type:'vent',who:id,room,t:T,source:'visual',eventId});
+  }
   if(G.scan&&G.scan.by===q.id)a.scanSeen[q.id]=T;
 }
 function perceive(b,dt,a){
@@ -2400,16 +2681,19 @@ AI.onKill=function(k,v){
     }
   });
 };
-AI.onVent=function(p){
+AI.onVent=function(p,eventId){
   if(!G)return;const T=G.time;
+  const eid=eventId!=null?eventId:(G.ventEventSeq=(G.ventEventSeq||0)+1);
   G.players.forEach(w=>{
     if(!w.isBot||!w.alive||w===p||w.imp)return;
-    const a=aiOf(w);
+    const a=aiOf(w),id=lookId(p);
     if(canSeePt(w,p.x,p.y,viewR(w))||(a.cam&&a.cam.on&&inCamView(p.x,p.y,a.cam.sel))){
-      if(!recentEv(a,'vent',lookId(p),4))addEv(a,{type:'vent',who:lookId(p),room:roomAt(p.x,p.y),t:T});
+      if(!recentEv(a,'vent',id,4))addEv(a,{type:'vent',who:id,room:roomAt(p.x,p.y),t:T,source:'observed',eventId:eid});
     }
   });
 };
+// Không có cơ chế công khai vai trò trong game hiện tại; roleKnown chỉ được cập nhật
+// từ bằng chứng quan sát hợp lệ và meta xác minh do bot phát biểu, không đọc p.role.
 AI.onShift=function(p,as){
   if(!G)return;const T=G.time;
   G.players.forEach(w=>{
@@ -2417,8 +2701,9 @@ AI.onShift=function(p,as){
     if(canSeePt(w,p.x,p.y,viewR(w))){const a=aiOf(w);if(!recentEv(a,'morph',p.id,20))addEv(a,{type:'morph',who:p.id,as,room:roomAt(p.x,p.y),t:T})}
   });
 };
-AI.onTask=function(p,t){
-  if(!G||!p.alive)return;
+AI.onTask=function(p,t,info){
+  // Chỉ dùng tín hiệu tiến độ nhiệm vụ công khai; không đọc vai trò bí mật của người làm.
+  if(!G||!p||!p.alive||!info||info.publicProgress!==true)return;
   if(t.type==='scan'){
     G.players.forEach(w=>{
       if(!w.isBot||!w.alive||w===p||w.imp)return;
@@ -2433,14 +2718,21 @@ AI.onTask=function(p,t){
 function suspicion(b,pid){
   const a=aiOf(b),p=G.players[pid];if(!p||pid===b.id)return -1e3;
   if(b.imp)return p.imp?-1e3:0;
-  let s=a.sus[pid]||0,hard=false;
+  let s=a.sus[pid]||0,hard=false,ventCounted=false;
   for(const e of a.ev){
     if(e.type==='kill'&&e.killer===pid){s+=1000;hard=true}
     else if(e.type==='morph'&&e.who===pid){s+=900;hard=true}
-    else if(e.type==='vent'&&e.who===pid){s+=720;hard=true}
+    else if(e.type==='vent'&&e.who===pid&&G.time-e.t<240&&!ventCounted){
+      // Nhiều lần thấy cùng một người chui cống không được cộng dồn vô hạn nếu vai trò còn bí mật.
+      ventCounted=true;
+      const v=ventEvidenceScore(a,pid,e);
+      s+=v;if(v>=700)hard=true;
+    }
     else if(e.type==='body'&&e.near&&e.near.includes(pid)){s+=e.near.length===1?280:150}
   }
-  if(a.clear[pid]&&!hard)return -400;
+  // Bằng chứng sạch/Kỹ sư chỉ triệt tiêu nghi ngờ từ cống; không xóa bằng chứng độc lập
+  // như đứng gần xác, bám đuôi, lời khai mâu thuẫn hoặc chứng cứ giết người.
+  if(a.clear[pid]||knownRoleOf(a,pid)==='eng'||knownRoleOf(a,pid)==='engineer')s-=hard?0:120;
   s+=a.hear[pid]||0;
   return s;
 }
@@ -2451,7 +2743,7 @@ function crowdOf(pid){const M=G.mt&&G.mt.ai;if(!M||!M.acc[pid])return 0;return M
    BOT AI v2 — HÀNH ĐỘNG: di chuyển, nhiệm vụ, cư dân, sát nhân, bot ma
    =================================================================== */
 /* ---------- di chuyển ---------- */
-const speedOf=(b,a,urgent)=>(b.alive?140:168)*a.pers.pace*(urgent?1.18:1)*((b.boostT||0)>0?1.5:1);
+const speedOf=(b,a,urgent)=>(b.alive?140:168)*a.pers.pace*(urgent?1.18:1);
 function walkStep(b,dt,a,urgent){
   if(!b.path||!b.path.length)return;
   const ghost=!b.alive,sp=speedOf(b,a,urgent)*dt;
@@ -2535,7 +2827,7 @@ function execTask(b,dt,a,g){
     if(!scanBusy(b.id)){const dd=rnd(8,10);scanStart(b.id,dd);g.scanned=true;g.phase='work';g.left=dd;return}
     if(g.qT>16){(a.skip||(a.skip={}))[t.di]=G.time+35;dropGoal(b,a)}
   }else{
-    if(G.sab.p>0&&!b.imp)return;
+    if(critSab()&&!b.imp)return;
     g.left-=dt;
     if(g.left<=0){
       if(g.scanned){scanRelease(b.id);g.scanned=false}
@@ -2559,8 +2851,12 @@ function execGoal(b,dt,a){
       }
       break;
     case 'fix':{
-      const s=G.sab,active=g.fk==='l'?s.l:s.p>0;
+      const s=G.sab,fk=g.fk,active=fk==='l'?s.l:fk==='p'?s.p>0:s.r>0;
       if(!active){a.goal=null;break}
+      if(fk==='r1'||fk==='r2'){
+        if(g.phase==='go'){if(goPt(b,dt,a,FIXP[fk],34,true)){g.phase='work';g.left=30}}
+        else{b.holdK=fk;b.holdT=G.time;g.left-=dt;if(g.left<=0)a.goal=null}
+        break}
       if(g.phase==='go'){if(goPt(b,dt,a,FIXP[g.fk],34,true)){g.phase='work';g.left=g.fk==='p'?rnd(3,4.2):rnd(2.5,3.6)}}
       else{g.left-=dt;if(g.left<=0){if(g.fk==='l')G.sab.l=0;else G.sab.p=0;a.goal=null;aiG().sabFix[g.fk]=null}}
       break}
@@ -2653,7 +2949,16 @@ function crewDecide(b,a){
   }
   if(urgent)return;
   // 3) phá hoại
-  if(s.p>0||s.l){
+  if(s.r>0){
+    const pr=reactorAssign(b.id);
+    if(pr){
+      if(!(g&&g.k==='fix'&&g.fk===pr)){
+        if(!a.sabAt)a.sabAt=T+(.8+Math.random()*1.6)*lv.react;
+        if(T>=a.sabAt){setGoal(b,a,{k:'fix',fk:pr,phase:'go'});a.sabAt=0}
+      }
+      return;
+    }
+  }else if(s.p>0||s.l){
     const k=s.p>0?'p':'l',rank=sabRank(k).ids.indexOf(b.id),lim=k==='p'?3:2;
     if(rank>=0&&rank<lim){
       if(!(g&&g.k==='fix'&&g.fk===k)){
@@ -2680,6 +2985,8 @@ function crewDecide(b,a){
 /* ---------- BOT MA: vẫn làm nhiệm vụ, xuyên cửa ---------- */
 function ghostThink(b,dt,a){
   if(a.cam&&a.cam.on)stopCam(b,a);
+  if(b.role==='ang'&&!b.imp&&(b.angCd||0)<=0){a.angT=(a.angT===undefined?rnd(4,9):a.angT)-dt;
+    if(a.angT<=0){a.angT=rnd(6,12);let best=null,bd=190;G.players.forEach(q=>{if(!q.alive||q===b)return;const d=Math.hypot(q.x-b.x,q.y-b.y);if(d<bd){bd=d;best=q}});if(best)hostAngel(b,best.id)}}
   let g=a.goal;
   if(!g||g.k!=='task'||g.task.done){
     const t=b.tasks.find(t=>!t.done);
@@ -2688,7 +2995,7 @@ function ghostThink(b,dt,a){
   }
   if(g.phase==='go'){
     if(goPt(b,dt,a,[g.task.x,g.task.y],12,false)){g.phase='work';g.left=rnd(3,5)}
-  }else{if(G.sab.p>0)return;g.left-=dt;if(g.left<=0){completeTask(b,g.task);a.goal=null}}
+  }else{if(critSab())return;g.left-=dt;if(g.left<=0){completeTask(b,g.task);a.goal=null}}
 }
 
 /* ---------- SÁT NHÂN ---------- */
@@ -2758,7 +3065,7 @@ function execVent(b,dt,a,g){
 function impSabotage(b,a,lv,T,target,wit){
   const s=G.sab,ab=G.abilities;
   if(!ab.sab||b.cd>=0&&false)return false;
-  if(s.cd>0||s.l||s.p>0||s.d>0)return false;
+  if(s.cd>0||s.l||s.p>0||s.d>0||s.r>0)return false;
   // tắt đèn để ra tay khi có nhân chứng
   if(ab.light!==false&&target&&wit>=1&&b.cd<=3&&lv.tricks>0&&Math.random()<.45*lv.tricks){hostSab(b,'l');return true}
   // phá hoại oxy để kéo cả làng đi chỗ khác, rồi phục kích người đến sửa
@@ -2766,6 +3073,11 @@ function impSabotage(b,a,lv,T,target,wit){
     const crew=crewAliveList();let cluster=0;
     crew.forEach(q=>{if(crew.filter(o=>o!==q&&Math.hypot(o.x-q.x,o.y-q.y)<320).length>=1)cluster++});
     if(cluster>=3){hostSab(b,'p');a.imp.ambush=T+42;return true}
+  }
+  // phá hoại lò phản ứng: kéo cả làng ra hai đầu bản đồ rồi săn người đơn lẻ
+  if(ab.reactor!==false&&T>90&&lv.tricks>0&&Math.random()<.01*lv.tricks){
+    const crew=crewAliveList();
+    if(crew.length>=3){hostSab(b,'r');a.imp.ambush=T+38;return true}
   }
   return false;
 }
@@ -2780,8 +3092,6 @@ function impDecide(b,a){
     // tự báo xác nếu có người đang tiến lại gần (giả vờ vô tội)
     let near=0;crew.forEach(q=>{if(!q.inVent&&Math.hypot(q.x-b.x,q.y-b.y)<300&&hasLineOfSight(b.x,b.y,q.x,q.y))near++});
     if(bd&&near>0&&lv.tricks>0&&Math.random()<.4*lv.tricks&&G.state==='play'){startMeeting(b,bd);return}
-    if(bd&&near===0&&G.abilities.clean!==false&&lv.tricks>0&&Math.random()<.5*lv.tricks&&hostClean(b)){setGoal(b,a,{k:'flee',to:chooseFlee(b,a,I.post.x,I.post.y)});return}
-    if(near>0&&G.abilities.speed!==false&&lv.tricks>0&&Math.random()<.6*lv.tricks)hostBoost(b);
     if(lv.tricks>0)lockDoorsBehind(b,I.post.x,I.post.y);
     // chui cống để biến mất nếu cống gần và không ai thấy
     if(G.abilities.vent&&lv.tricks>0&&witnessCount(b,b.x,b.y)===0&&Math.random()<.65*lv.tricks){
@@ -2839,7 +3149,7 @@ function impDecide(b,a){
         const sc=heat*1.3+(T-(a.visited[i]||-100))/60-estDist(b.x,b.y,rm.node[0],rm.node[1])/1400+Math.random()*.5;
         if(sc>bs){bs=sc;best=rm}
       });
-      if(I.ambush&&T<I.ambush&&G.sab.p>0){best={node:[FIXP.p[0]+rnd(-140,140),FIXP.p[1]+rnd(-100,100)]}}
+      if(I.ambush&&T<I.ambush&&(G.sab.p>0||G.sab.r>0)){const fp=G.sab.r>0?FIXP[Math.random()<.5?'r1':'r2']:FIXP.p;best={node:[fp[0]+rnd(-140,140),fp[1]+rnd(-100,100)]}}
       if(best)setGoal(b,a,{k:'idle',phase:'go',to:[best.node[0]+rnd(-60,60),best.node[1]+rnd(-40,40)],left:rnd(2,5)});
       return;
     }
@@ -2897,10 +3207,11 @@ function update(dt){
       let dx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0)+joy.x;
       let dy=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0)+joy.y;
       const l=Math.hypot(dx,dy);
-      if(l>.05){if(l>1){dx/=l;dy/=l}const sp=(m.alive?200:240)*((m.boostT||0)>0?1.5:1)*dt;
+      if(l>.05){if(l>1){dx/=l;dy/=l}const sp=(m.alive?200:240)*dt;
         const ok=(a,b)=>m.alive?(canMove(a,b)&&(!doorHit(a,b)||doorHit(m.x,m.y))):ghostBounds(a,b);if(ok(m.x+dx*sp,m.y))m.x+=dx*sp;if(ok(m.x,m.y+dy*sp))m.y+=dy*sp;if(Math.abs(dx)>.1)m.face=dx>0?1:-1}
     }
     if(m.cd>0)m.cd-=dt;
+    if(m.role==='sci'&&!G.vitRemote)m.sciBat=Math.min(20,(m.sciBat??20)+dt*.7);
     const k=Math.min(1,dt*14);
     if(net!=='client'){hostSabTick(dt);
       if(G.state==='play')G.players.forEach(p=>{if(p.isBot&&G&&G.state==='play')botUpdate(p,dt)});
@@ -2916,18 +3227,18 @@ function update(dt){
   updateHUD();
 }
 function snapshot(){
-  const base={t:'s',p:G.players.map(p=>[Math.round(p.x),Math.round(p.y),p.face,p.alive?1:0,p.disg,Math.round(p.sft*10)/10,p.shiftPhase,p.shiftAnim,Math.round(p.ventT*10)/10,p.inVent?1:0,Math.round(p.ventPop*10)/10,Math.round(p.ventCd*10)/10,p.ventFrom??-1,p.ventTo??-1,Math.round((p.invT||0)*10)/10,Math.round((p.boostT||0)*10)/10,Math.ceil(p.invCd||0),Math.ceil(p.boostCd||0),Math.ceil(p.cleanCd||0),p.cleanN||0,Math.round((p.shT||0)*10)/10,Math.ceil(p.shCd||0)]),
-    b:G.bodies.map(b=>[Math.round(b.x),Math.round(b.y),b.color,b.name,b.weapon||'knife']),d:G.done,sb:[G.sab.l?1:0,Math.ceil(G.sab.p),Math.ceil(G.sab.d),Math.round(G.sab.dx),Math.round(G.sab.dy),Math.ceil(Math.max(0,G.sab.cd))],doors:G.closedDoors.map(d=>[d.i,Math.max(0,d.until-G.time),d.owner]),sn:scanActive()?[G.scan.by,Math.round((G.time-G.scan.t0)*100)/100,G.scan.dur]:0};
-  G.players.forEach(p=>{if(p.conn)send(p.conn,Object.assign({c:Math.ceil(Math.max(0,p.cd)),mt:p.meetings,sc:Math.ceil(Math.max(0,p.scd))},base))});
+  const base={t:'s',p:G.players.map(p=>[Math.round(p.x),Math.round(p.y),p.face,p.alive?1:0,p.disg,Math.round(p.sft*10)/10,p.shiftPhase,p.shiftAnim,Math.round(p.ventT*10)/10,p.inVent?1:0,Math.round(p.ventPop*10)/10,Math.round(p.ventCd*10)/10,p.ventFrom??-1,p.ventTo??-1,Math.round((p.invT||0)*10)/10,Math.round((p.boostT||0)*10)/10,Math.ceil(p.invCd||0),Math.ceil(p.boostCd||0),Math.ceil(p.cleanCd||0),p.cleanN||0,Math.round((p.shT||0)*10)/10]),
+    b:G.bodies.map(b=>[Math.round(b.x),Math.round(b.y),b.color,b.name,b.weapon||'knife']),d:G.done,sb:[G.sab.l?1:0,Math.ceil(G.sab.p),Math.ceil(G.sab.d),Math.round(G.sab.dx),Math.round(G.sab.dy),Math.ceil(Math.max(0,G.sab.cd)),Math.ceil(G.sab.r),G.sab.rh|0,Math.round(G.sab.rp*100)/100],doors:G.closedDoors.map(d=>[d.i,Math.max(0,d.until-G.time),d.owner]),sn:scanActive()?[G.scan.by,Math.round((G.time-G.scan.t0)*100)/100,G.scan.dur]:0};
+  G.players.forEach(p=>{if(p.conn)send(p.conn,Object.assign({c:Math.ceil(Math.max(0,p.cd)),mt:p.meetings,sc:Math.ceil(Math.max(0,p.scd)),er:[p.engLeft??3,Math.ceil(p.engCd||0),Math.ceil(p.engT||0)],an:Math.ceil(p.angCd||0)},base))});
 }
 function updateHUD(){
   const m=G.me;
   $('barf').style.width=Math.min(100,G.done/G.total*100)+'%';
   {const tb=$('btnTask'),lb='NHIỆM VỤ<br>'+m.tasks.filter(t=>t.done).length+'/'+m.tasks.length;tb.hidden=G.state!=='play';if(tb._lb!==lb){tb._lb=lb;tb.innerHTML=lb}}
   const play=G.state==='play'&&!G.busy&&!G.cineBusy;
-  const ventHere=!!(play&&m.alive&&(m.imp?G.abilities.vent:G.abilities.crewVent!==false)&&nearestVent()&&(m.imp||!(nearTask()||nearMeetBtn()||nearFix()||nearConsole())));
-  $('btnUse').hidden=!(play&&!m.inVent&&(ventHere||nearTask()||nearMeetBtn()||nearFix()||nearConsole()));
-  if(ventHere)$('btnUse').innerHTML='CHUI CỐNG<br>(E)';else if(nearConsole()&&play)$('btnUse').innerHTML='CAMERA<br>(E)';else $('btnUse').innerHTML='DÙNG<br>(E)';
+  const ventHere=!!(play&&canVent(m)&&m.alive&&G.abilities.vent&&nearestVent());
+  $('btnUse').hidden=!(play&&!m.inVent&&(ventHere||nearTask()||nearMeetBtn()||nearFix()||nearConsole()||(m.alive&&(nearAdmin()||nearVitals()))));
+  if(ventHere)$('btnUse').innerHTML='CHUI CỐNG<br>(E)';else if(nearConsole()&&play)$('btnUse').innerHTML='CAMERA<br>(E)';else if(play&&nearAdmin())$('btnUse').innerHTML='ADMIN<br>(E)';else if(play&&nearVitals())$('btnUse').innerHTML='SINH HIỆU<br>(E)';else $('btnUse').innerHTML='DÙNG<br>(E)';
   {const u=$('ventUI'),vi=(m.inVent&&m.ventT<=0&&m.alive&&play)?m.ventFrom:-1;
    if(u._k!==vi){u._k=vi;const cur=GAME_VENTS[vi];if(!cur){u.style.display='none';u.innerHTML=''}else{u.style.display='flex';
     u.innerHTML=(cur.links||[]).map((j,n)=>{const t=GAME_VENTS[j],a=Math.atan2(t.y-cur.y,t.x-cur.x),ar='→↘↓↙←↖↑↗'[(Math.round(a/(Math.PI/4))+8)%8];return `<button class="gray" onclick="ventGo(${j})">${ar} [${n+1}]<br>${esc(ROOMS[t.room].n)}</button>`}).join('')+'<button class="red" onclick="ventOut()">THOÁT<br>(E)</button>'}}}
@@ -2937,6 +3248,12 @@ function updateHUD(){
   $('btnKill').style.opacity=m.cd>0?.45:1;
   $('btnShift').hidden=!(m.imp&&m.alive&&play&&!m.inVent);$('btnSab').hidden=true;
   $('btnShift').innerHTML=m.disg>=0?`HÓA HÌNH<br>${Math.ceil(m.sft)}s`:'KỸ NĂNG<br>(F)';
+  {const br=$('btnRole');let show=false,lb='';
+   if(m.role==='sci'&&!m.imp&&m.alive&&!m.inVent&&play){show=true;const bt=Math.floor(m.sciBat??20);lb=bt>=3?`SINH HIỆU<br>pin ${bt}s`:'SINH HIỆU<br>đang sạc'}
+   else if(m.role==='ang'&&!m.imp&&!m.alive&&play){show=true;lb=(m.angCd||0)>0?`KHIÊN<br>${Math.ceil(m.angCd)}s`:'KHIÊN<br>BẢO VỆ (G)'}
+   br.hidden=!show;if(show&&br._lb!==lb){br._lb=lb;br.innerHTML=lb}}
+  if(m.shT>0&&!G._shn){G._shn=1;toast('🛡️ Thiên thần đang bảo vệ bạn 10 giây!')}else if(!(m.shT>0))G._shn=0;
+  if(m.role==='eng'&&!m.imp&&m.alive&&m.inVent&&play){const u=$('ventUI');void u}
 }
 function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h)}
 function drawChar(x,y,color,face,alpha,name,dead,nameCol){
@@ -3077,6 +3394,7 @@ function draw(){
   let LM=lk(m);if(m.disg>=0&&((m.shiftPhase==='in'&&m.shiftAnim<.5)||(m.shiftPhase==='out'&&m.shiftAnim<=.5)))LM=m;if(!m.inVent){if(m.ventPop>0)drawVentPulse(m.x,m.y,T,m.ventPop);if(m.shiftPhase==='in'||m.shiftPhase==='out')drawShiftPulse(m.x,m.y,T,m.shiftAnim,m.shiftPhase);drawChar(m.x,m.y,LM.color,m.face,m.alive?1:.45,LM.name,false,m.imp?'#ff5a6a':'#fff');}else drawVentPulse(m.x,m.y,T,Math.min(1,m.ventT));
   // Draw corpses above player sprites so a killer standing at the kill spot cannot hide the body.
   G.bodies.forEach(b=>{if(!m.inVent&&(!m.alive||(dist(b,m)<=R_VIEW(m)+20&&hasLineOfSight(m.x,m.y,b.x,b.y))))drawChar(b.x,b.y,b.color,1,1,null,true)});
+  drawShields(T);
   drawScanFx(T);
   drawParticles(cx,cy,W,H,T);
   ctx.restore();
@@ -3137,8 +3455,8 @@ function draw(){
     fogCtx.restore();
     ctx.drawImage(fogCanvas,0,0,W,H);
   }
-  if(G.sab.p>0){ctx.fillStyle=`rgba(255,35,35,${.025+.025*Math.sin(G.time*6)})`;ctx.fillRect(0,0,W,H)}
-  {const sb=G.sab,msg=sb.p>0?`🫧 OXY ĐANG CẠN — còn ${Math.ceil(sb.p)}s! Hãy sửa hệ thống oxy`:sb.l?'💡 ĐÈN ĐANG TẮT — ra bảng điện bật lại':sb.d>0?'🚪 CỬA BỊ KHÓA '+Math.ceil(sb.d)+'s':'';
+  if(G.sab.p>0||G.sab.r>0){ctx.fillStyle=`rgba(255,35,35,${.025+.025*Math.sin(G.time*6)})`;ctx.fillRect(0,0,W,H)}
+  {const sb=G.sab,msg=sb.r>0?`☢️ LÒ PHẢN ỨNG QUÁ TẢI — còn ${Math.ceil(sb.r)}s! 2 người giữ 2 bảng LÒ 1 & LÒ 2`:sb.p>0?`🫧 OXY ĐANG CẠN — còn ${Math.ceil(sb.p)}s! Hãy sửa hệ thống oxy`:sb.l?'💡 ĐÈN ĐANG TẮT — ra bảng điện bật lại':sb.d>0?'🚪 CỬA BỊ KHÓA '+Math.ceil(sb.d)+'s':'';
    if(msg){ctx.font='bold 20px system-ui';ctx.textAlign='center';ctx.fillStyle='#ff6b6b';ctx.strokeStyle='#000';ctx.lineWidth=4;ctx.strokeText(msg,W/2,36);ctx.fillText(msg,W/2,36)}}
   if(G.flash>0){ctx.fillStyle=`rgba(200,0,20,${G.flash*.5})`;ctx.fillRect(0,0,W,H)}
   drawMini(W,H);
@@ -3152,6 +3470,7 @@ function drawMini(W,H){
   if(ST===2){ROOMS.forEach(rm=>{const r=rm.r;ctx.beginPath();rm.shape.forEach((p,i)=>{const x=ox+(r[0]+p[0]*r[2])*sc,y=oy+(r[1]+p[1]*r[3])*sc;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath();ctx.fill()});CORR.forEach(r=>ctx.fillRect(ox+r[0]*sc,oy+r[1]*sc,r[2]*sc,r[3]*sc))}
   else ALLR.forEach(r=>ctx.fillRect(ox+r[0]*sc,oy+r[1]*sc,r[2]*sc,r[3]*sc));
   ctx.fillStyle='#ff5a6a';ctx.beginPath();ctx.arc(ox+MEETBTN[0]*sc,oy+MEETBTN[1]*sc,3.5,0,7);ctx.fill();
+  if(G.sab.r>0&&Math.floor(G.time*3)%2===0){ctx.fillStyle='#ff3a3a';['r1','r2'].forEach(k=>{ctx.beginPath();ctx.arc(ox+FIXP[k][0]*sc,oy+FIXP[k][1]*sc,4.5,0,7);ctx.fill()})}
   const m=G.me;ctx.fillStyle='#ffd84a';ctx.beginPath();ctx.arc(ox+m.x*sc,oy+m.y*sc,3,0,7);ctx.fill();
   m.tasks.forEach(t=>{if(!t.done){ctx.fillStyle='#fff';ctx.fillRect(ox+t.x*sc-2,oy+t.y*sc-2,4,4)}});
 }
@@ -3164,7 +3483,7 @@ requestAnimationFrame(loop);
 </script>
 <script>
 /* =====================================================================
-   bot_data.js — TỪ ĐIỂN & KHO CÂU ĐÁP CỦA BOT (LÀNG MỘT MẮT)
+   bot_data.js — TỪ ĐIỂN & KHO CÂU ĐÁP CỦA BOT (WHOISKILL)
    =====================================================================
    File này CHỈ CHỨA DỮ LIỆU (chuỗi chữ). Không có logic game.
    Người/AI nâng cấp chỉ cần THÊM THẬT NHIỀU DÒNG vào các mảng bên dưới.
@@ -3721,7 +4040,7 @@ window.BOT_DATA = {
       "[hien] Mình đang cố nhớ lại, chờ chút nha."
     ],
     ID_BOT: [
-      "Mình là cư dân làng Một Mắt, hỏi chi mà sâu xa vậy.",
+      "Mình là cư dân WhoIsKill, hỏi chi mà sâu xa vậy.",
       "Bot hay người thì cũng phải tìm ra sát nhân đã.",
       "[hai] Ừ thì mình là bot đó, sao nào, bot thì không được vote hả?",
       "[hai] Bot hay người gì, quan trọng là mình không giết ai.",
@@ -4479,9 +4798,9 @@ B("BEG",[
 
 /* ---- ASKINFO: hỏi đời tư bot ---- */
 B("ASKINFO",[
- "Mình mới vào làng Một Mắt thôi, chưa kịp tính tuổi.",
- "Hỏi chi vậy {who}, mình là cư dân làng Một Mắt thôi.",
- "Quê mình ở trong game này nè, làng Một Mắt.",
+ "Mình mới vào WhoIsKill thôi, chưa kịp tính tuổi.",
+ "Hỏi chi vậy {who}, mình là cư dân WhoIsKill thôi.",
+ "Quê mình ở trong game này nè, WhoIsKill.",
  "Mình không có tuổi, chỉ có tinh thần thám tử thôi.",
  "Mình là bot, không phân biệt nam nữ, chỉ phân biệt sát nhân với cư dân.",
  "[hai] Mình bao nhiêu tuổi hả? Hơn 18 và dưới 100, tính vậy nha 😂",
@@ -4708,7 +5027,7 @@ B("TEASE",[
  "[hien] Mình đang cố nhớ, đợi mình xíu nha.","[hien] Xin lỗi {who}, mình hơi chậm."
 ]);
 B("ID_BOT",[
- "Mình là cư dân làng Một Mắt, tên {me}. Mình hiểu tiếng Việt, cả mấy câu chửi nữa.",
+ "Mình là cư dân WhoIsKill, tên {me}. Mình hiểu tiếng Việt, cả mấy câu chửi nữa.",
  "Bot hay người cũng tìm ra sát nhân là được rồi {who}.","Mình là {me}, đang cố gắng sống sót trong ván này.","Ừ, mình là bot đó, nhưng mình biết suy nghĩ nha.",
  "[hai] Bot hay người gì, quan trọng là có vote đúng không thôi 😂","[hai] Mình là bot, được lập trình để vote đúng, mà lúc nào cũng sai 😂","[hai] Hỏi vậy {who} sợ mình là sát nhân hả? Yên tâm, mình chỉ là bot hiền thôi.",
  "[hai] Biết nói chuyện, biết chửi nhẹ, biết đùa, bot thế là ngon rồi nha 😎",
@@ -4911,7 +5230,7 @@ G("pre",[
 </script>
 <script>
 /* =====================================================================
-   bot_brain.js — NÃO CHAT & HỌP CỦA BOT (LÀNG MỘT MẮT)
+   bot_brain.js — NÃO CHAT & HỌP CỦA BOT (WHOISKILL)
    =====================================================================
    File LOGIC. Đọc chat, hiểu, suy luận, soạn câu, bỏ phiếu trong cuộc họp.
    Mọi CHỮ (từ điển + câu đáp) nằm ở bot_data.js.  Muốn bot nói hay hơn,
@@ -4948,7 +5267,7 @@ AI.onMeetingStart=function(by,body){
   mt.t=G.discT>0?G.discT:60;mt.inf=!(G.discT>0);
   G.players.forEach(b=>{
     if(!b.isBot||!b.alive)return;
-    const a=aiOf(b);a.path=[];a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
+    const a=aiOf(b);a.path=[];a.ventTalk={};a.say={intents:[],next:0,count:0,last:'',used:{},frame:null};
     a.goal=null;b.path=[];a.pathFor=null;if(a.cam&&a.cam.on)stopCam(b,a);
     buildIntents(b,a,M);
     if(typeof mindIntents==='function')mindIntents(b,a,M);
@@ -4994,7 +5313,13 @@ function buildIntents(b,a,M){
     const kills=a.ev.filter(e=>e.type==='kill'&&T-e.t<240).slice(-1);
     kills.forEach(e=>add('witness',rnd(.9,1.8),9,{ev:e}));
     a.ev.filter(e=>e.type==='morph'&&T-e.t<240).slice(-1).forEach(e=>add('morph',rnd(1,2.2),9,{ev:e}));
-    a.ev.filter(e=>e.type==='vent'&&T-e.t<240).slice(-1).forEach(e=>add('vent',rnd(1.2,2.6),8,{ev:e}));
+    a.ev.filter(e=>e.type==='vent'&&T-e.t<240).slice(-1).forEach(e=>{
+      const status=ventVerdict(a,e.who,e);
+      if(status==='illegal'||status==='impostorOnly')add('vent',rnd(1.2,2.6),8,{ev:e});
+      else if(status==='unknown')add('ventCheck',rnd(1.2,2.6),7,{ev:e});
+      else if(status==='legal'&&ventEngineerConfirmed(a,e.who,e))add('ventProtect',rnd(1.2,2.6),8,{ev:e});
+      // 'disabled': cấu hình khóa cống, sự kiện không được dùng để kết luận vai trò.
+    });
     a.ev.filter(e=>e.type==='scan'&&T-e.t<240).slice(-1).forEach(e=>add('clearScan',t0+rnd(1,3),3,{ev:e}));
   }
   if(M.by===b&&M.body)add('report',rnd(.5,.9),10,{});
@@ -5168,8 +5493,20 @@ function compose(b,it){
       meta={k:'accuse',t:A.id,why:'witness',victim:M.victim};break}
     case 'vent':{
       const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
-      text=tp('ven',{A:A.name,room:rname(e.room)});
-      meta={k:'accuse',t:A.id,why:'vent'};break}
+      const verdict=ventVerdict(a,A.id,e);if(verdict!=='illegal'&&verdict!=='impostorOnly')return null;
+      text=verdict==='impostorOnly'?`Mình thấy ${A.name} chui cống ở ${rname(e.room)}. Phòng này không có vai Kỹ sư, nên theo luật chỉ Sát nhân mới dùng được cống. Đây là bằng chứng rất mạnh, nhưng mình vẫn muốn đối chiếu thêm.`:tp('ven',{A:A.name,room:rname(e.room)});
+      meta={k:'accuse',t:A.id,why:'vent',eventId:e.eventId,room:e.room};break}
+    case 'ventCheck':{
+      const e=it.ev,A=e&&G.players[e.who];if(!A||!A.alive)return null;
+      if(ventVerdict(a,A.id,e)!=='unknown')return null;
+      a.ventTalk[A.id]='unknown';
+      text=`Mình thấy ${A.name} chui cống ở ${rname(e.room)}. Nhưng Kỹ sư cũng có quyền dùng cống, nên riêng chuyện này chưa đủ kết luận. Có ai xác minh được vai trò hoặc thấy thêm bằng chứng không?`;
+      meta={k:'ventClue',t:A.id,room:e.room,eventId:e.eventId};break}
+    case 'ventProtect':{
+      const e=it.ev,A=e&&G.players[e.who];if(!A||!A.alive||ventVerdict(a,A.id,e)!=='legal'||!ventEngineerConfirmed(a,A.id,e))return null;
+      a.ventTalk[A.id]='legal';
+      text=`Khoan, ${A.name} là Kỹ sư đã được xác nhận. Kỹ sư được phép chui cống, nên không thể lấy hành động đó làm bằng chứng buộc tội.`;
+      meta={k:'clear',t:A.id,why:'engineer',verified:true,eventId:e.eventId};break}
     case 'clearScan':{
       const e=it.ev;const A=G.players[e.who];if(!A||!A.alive)return null;
       text=tp('clr',{A:A.name,room:rname(e.room)});
@@ -5323,7 +5660,11 @@ function speak(b,msg){
 function announce(s,m){
   const M=G.mt.ai;
   if(m.k==='accuse'&&m.t!==undefined){
-    const r=M.acc[m.t]||(M.acc[m.t]={by:new Set(),certain:false});r.by.add(s.id);if(m.why==='witness')r.certain=true;
+    const r=M.acc[m.t]||(M.acc[m.t]={by:new Set(),certain:false,ventBy:new Set(),ventEvents:new Set()});
+    if(m.why==='vent'){
+      r.ventBy.add(s.id); // lời tố chỉ dựa vào cống không được tính là đồng thuận bỏ phiếu
+      if(m.eventId!=null)r.ventEvents.add(m.eventId);
+    }else{r.by.add(s.id);if(m.why==='witness')r.certain=true}
   }
   G.players.forEach(l=>{if(l.isBot&&l.alive&&l!==s)try{hear(l,s,m)}catch(e){console.error('AI hear',e)}});
 }
@@ -5367,10 +5708,49 @@ function credOf(l,s){
   c-=Math.max(0,(a.sus[s.id]||0))/1100;
   return clamp01(c)*lv.ded+(1-lv.ded)*.45;
 }
+function processVentClaim(l,s,m){
+  const a=aiOf(l),pid=m.t,target=G.players[pid];
+  if(l.imp||!target||!target.alive)return;
+  const own=recentEv(a,'vent',pid,240),status=ventVerdict(a,pid,m);
+  const fresh=ventClaimIsFresh(a,pid,m,own);
+  if(status==='legal'){
+    if(!ventEngineerConfirmed(a,pid,m))return; // Sát nhân dùng cống hợp lệ nhưng không phải Kỹ sư để bot tuyên bố bảo vệ.
+    const prior=a.ventTalk[pid];
+    // Nếu trước đó bot chỉ yêu cầu xác minh, nay có bằng chứng Kỹ sư hợp lệ,
+    // nâng trạng thái và thay lời hỏi bằng lời bảo vệ.
+    if(a.say&&Array.isArray(a.say.intents))a.say.intents=a.say.intents.filter(it=>!(it.k==='ventCheck'&&it.t===pid));
+    if(prior!=='legal'){
+      a.ventTalk[pid]='legal';
+      queueReply(l,{k:'ventProtect',t:pid,ev:{who:pid,room:m.room??(own?own.room:roomAt(target.x,target.y)),eventId:m.eventId??(own&&own.eventId)},pr:9});
+    }
+    // Một lời tố sai về người đã được xác minh chỉ làm người tố hơi đáng ngờ; lặp lại không cộng dồn.
+    if(fresh)a.sus[s.id]=(a.sus[s.id]||0)+25;
+    return;
+  }
+  if(status==='disabled')return; // cấu hình khóa cống: không suy luận vai trò từ sự kiện bất khả thi.
+  if(status==='unknown'){
+    if(a.ventTalk[pid]!=='unknown'&&a.ventTalk[pid]!==1&&a.ventTalk[pid]!=='legal'){
+      a.ventTalk[pid]='unknown';
+      queueReply(l,{k:'ventCheck',t:pid,ev:{who:pid,room:m.room??(own?own.room:roomAt(target.x,target.y)),eventId:m.eventId??(own&&own.eventId)},pr:9});
+    }
+    // Không cộng điểm nghi ngờ cho lời tố chưa xác minh; quan sát trực tiếp (140 điểm)
+    // đã được tính trong suspicion(), và không thể bị nhân lên bởi nhiều người nói.
+    return;
+  }
+  if((status==='illegal'||status==='impostorOnly')&&fresh&&!own){
+    // Tin báo gián tiếp chỉ được tính một lần, yếu hơn quan sát trực tiếp (720 điểm).
+    a.hear[pid]=(a.hear[pid]||0)+220*credOf(l,s);
+  }
+}
 function hear(l,s,m){
   const a=aiOf(l),M=G.mt.ai,T=G.time;
+  if(m.k==='ventClue'){
+    if(m.t===l.id){queueReply(l,{k:'reply',t:s.id,m,pr:9});return}
+    processVentClaim(l,s,m);return
+  }
   if(m.k==='accuse'){
     if(m.t===l.id){queueReply(l,{k:'reply',t:s.id,m,pr:9});return}
+    if(m.why==='vent'&&!l.imp){processVentClaim(l,s,m);return}
     const target=G.players[m.t];if(!target||!target.alive)return;
     if(l.imp){
       if(isMate(l,m.t)){
@@ -5394,8 +5774,19 @@ function hear(l,s,m){
       if(nearBody){w*=.6;a.sus[s.id]=(a.sus[s.id]||0)+90}
       if(a.clear[m.t]){a.sus[s.id]=(a.sus[s.id]||0)+380;queueReply(l,{k:'defendFor',t:m.t,pr:8});return}
     }else if(m.why==='vent'){
-      const own=a.ev.find(e=>e.type==='vent'&&e.who===m.t);
-      w=own?60:330*cred;
+      const own=recentEv(a,'vent',m.t,240),status=ventVerdict(a,m.t);
+      if(status==='legal'){
+        if(!a.ventTalk[m.t]){a.ventTalk[m.t]=1;queueReply(l,{k:'ventProtect',t:m.t,ev:{who:m.t,room:own?own.room:roomAt(target.x,target.y)},pr:9})}
+        a.sus[s.id]=(a.sus[s.id]||0)+25;return;
+      }
+      if(status==='unknown'){
+        if(!a.ventTalk[m.t]){
+          a.ventTalk[m.t]=1;a.hear[m.t]=(a.hear[m.t]||0)+(own?75:45*cred);
+          queueReply(l,{k:'ventCheck',t:m.t,ev:{who:m.t,room:own?own.room:roomAt(target.x,target.y)},pr:9});
+        }
+        return;
+      }
+      w=own?560:300*cred;
     }else if(m.why==='near'||m.why==='lie'){w=210*cred}
     else if(m.why==='follow'){w=50*cred}
     else if(m.why==='tail'){w=230*cred}
@@ -5432,6 +5823,19 @@ function hear(l,s,m){
     if(m.to===l.id)queueReply(l,{k:'where',pr:9});
   }else if(m.k==='clear'){
     if(l.imp)return;
+    if(m.why==='engineer'&&m.verified===true){
+      a.roleKnown[m.t]={role:'eng',confirmed:true,source:'public',t:T};a.clear[m.t]='engineer';
+      a.hear[m.t]=Math.min(0,a.hear[m.t]||0);
+      // Khi một bot khác công khai xác minh Kỹ sư, bot đã từng hỏi xác minh
+      // cũng phải đổi sang bảo vệ, không giữ nguyên kết luận mơ hồ.
+      if(a.ventTalk[m.t]==='unknown'&&G.players[m.t]&&G.players[m.t].alive){
+        const ev=recentEv(a,'vent',m.t,240);
+        a.say.intents=a.say.intents.filter(it=>!(it.k==='ventCheck'&&it.t===m.t));
+        a.ventTalk[m.t]='legal';
+        queueReply(l,{k:'ventProtect',t:m.t,ev:{who:m.t,room:m.room??(ev?ev.room:roomAt(G.players[m.t].x,G.players[m.t].y)),eventId:m.eventId??(ev&&ev.eventId)},pr:9});
+      }
+      return;
+    }
     if(!a.clear[m.t]&&!(a.sus[m.t]>=400)){a.hear[m.t]=(a.hear[m.t]||0)-120*credOf(l,s)}
   }else if(m.k==='defend'){
     if(l.imp)return;
@@ -5501,8 +5905,9 @@ function parseChat(text,by){
   if(men.length){
     const t=men[0].id,M=G.mt&&G.mt.ai;
     if(has('SAW')&&has('KILL'))metas.push({k:'accuse',t,why:'witness',victim:M?M.victim:undefined});
-    else if(has('VENT')&&has('SAW'))metas.push({k:'accuse',t,why:'vent'});
+    else if(has('VENT')&&(has('SAW')||has('ACC')))metas.push({k:'accuse',t,why:'vent'});
     else if(has('DEF')&&!has('ACC_CORE'))metas.push({k:'defend',t,why:'alibi'});
+    else if(has('VENT'))metas.push({k:'ventClue',t,room:null});
     else if(has('ACC'))metas.push({k:'accuse',t,why:has('SAW')?'near':'vague'});
     else if(has('FOLLOW'))metas.push({k:'accuse',t,why:'tail'});
     else if(has('LIE'))metas.push({k:'accuse',t,why:'lie'});
@@ -5525,11 +5930,11 @@ function maybeBanter(p,metas){
   const bots=G.players.filter(x=>x.isBot&&x.alive&&x!==p&&x.ai&&x.ai.say);
   if(!bots.length)return;
   const addressed=(metas.men||[]).map(m=>G.players[m.id]).filter(x=>x&&x.isBot&&x.alive&&x.ai&&x.ai.say)[0]||null;
-  const gameMeta=metas.some(m=>m.k==='accuse'||m.k==='defend'||m.k==='ask'||m.k==='where'||m.k==='askAll'||m.k==='skip');
+  const gameMeta=metas.some(m=>m.k==='accuse'||m.k==='ventClue'||m.k==='defend'||m.k==='ask'||m.k==='where'||m.k==='askAll'||m.k==='skip');
   let cat=metas.cat;
   // câu chuyện vụ án thì để logic game lo; riêng các thể loại "nói thẳng với bot" (D.overrideCats: chửi, chan, thách...)
   // vẫn được đáp, trừ khi tin nhắn là buộc tội / bênh vực / hỏi vị trí thật sự.
-  const hardMeta=metas.some(m=>m.k==='accuse'||m.k==='defend'||m.k==='where'||m.k==='askAll'||m.k==='skip');
+  const hardMeta=metas.some(m=>m.k==='accuse'||m.k==='ventClue'||m.k==='defend'||m.k==='where'||m.k==='askAll'||m.k==='skip');
   const ovr=Array.isArray(D.overrideCats)&&D.overrideCats.indexOf(cat)>=0;
   if(gameMeta&&cat!=='INSULT'&&!(ovr&&!hardMeta))return;
   if(!cat){
@@ -5680,7 +6085,7 @@ function mindRecord(ejId){
     const t=+k,acc=M.acc[k];if(t===ejId||!acc||!acc.by)continue;
     const tp=G.players[t];if(!tp||!tp.alive)continue;
     // đếm số câu người bị tố tự bào chữa sau lời tố đầu tiên
-    let first=-1;M.log.forEach((l,i)=>{if(first<0&&l.metas&&l.metas.some(x=>x.k==='accuse'&&x.t===t))first=i});
+    let first=-1;M.log.forEach((l,i)=>{if(first<0&&l.metas&&l.metas.some(x=>x.k==='accuse'&&x.why!=='vent'&&x.t===t))first=i});
     let def=0;if(first>=0)for(let i=first+1;i<M.log.length;i++)if(M.log[i].by===t)def++;
     acc.by.forEach(sid=>{
       if(sid===t)return;
@@ -5843,7 +6248,7 @@ AI.onResult=function(ejId){
         const defenders=new Set(),accusers=new Set();
         M.log.forEach(l=>{(l.metas||[]).forEach(m=>{
           if(m.k==='defend'&&m.t===ejId)defenders.add(l.by);
-          if(m.k==='accuse'&&m.t===ejId)accusers.add(l.by)})});
+          if(m.k==='accuse'&&m.why!=='vent'&&m.t===ejId)accusers.add(l.by)})});
         G.players.forEach(b=>{
           if(!b.isBot||!b.alive||b.imp)return;const a=aiOf(b);
           for(const vk in V){
@@ -5895,270 +6300,6 @@ window.mindIntents=function(b,a,M){
 };
 })();
 
-</script>
-<script>
-/* ===== BỔ SUNG: 3 mini-game mới thay cho nhiệm vụ lặp + thống kê thắng/thua ===== */
-(function(){
-const _open=openTask;
-const hd=t=>`<div style="font-weight:800;font-size:19px">${t.n}</div>`;
-const ht=s=>`<div style="font-size:13px;opacity:.85;text-align:center;max-width:300px">${s}</div>`;
-const cl=`<button class="gray" onclick="closeModal()">Đóng</button>`;
-function memory(b,t,done){
-  const em=shuffle(['🍄','🔮','⚙️','🌙','🔥','💧']),cs=shuffle(em.concat(em));let first=null,lock=false,ok=0;
-  b.innerHTML=hd(t)+ht('🧠 Lật thẻ, tìm đủ 6 cặp giống nhau')+'<div id="mg" style="display:grid;grid-template-columns:repeat(4,60px);gap:8px"></div>'+cl;
-  cs.forEach(e=>{const d=document.createElement('button');d.style.cssText='height:60px;font-size:26px;background:#2b3a66';d.textContent='❔';
-    d.onclick=()=>{if(lock||d.dataset.o)return;d.textContent=e;d.dataset.o=1;d.style.background='#3a5aa8';beep(520,.05);
-      if(!first){first=d;return}
-      if(first.textContent===e){ok++;first.style.background=d.style.background='#2e9d57';first=null;beep(700,.08);if(ok===6)setTimeout(done,350)}
-      else{lock=true;const f=first;first=null;beep(150,.12);setTimeout(()=>{[f,d].forEach(x=>{x.textContent='❔';delete x.dataset.o;x.style.background='#2b3a66'});lock=false},650)}};
-    $('mg').appendChild(d)});
-}
-function asteroid(b,t,done){
-  b.innerHTML=hd(t)+ht('☄️ Chạm vào thiên thạch để phá — cần phá 10 cái!')+'<div id="ast" style="position:relative;width:300px;height:200px;background:#0a1022;border-radius:12px;overflow:hidden"></div><div id="ac" style="font-weight:800">0 / 10</div>'+cl;
-  const box=$('ast');let n=0,rocks=[];
-  const spawn=()=>{const d=document.createElement('b');d.textContent='☄️';
-    d.style.cssText='position:absolute;font-size:30px;cursor:pointer;left:'+(Math.random()*260)+'px;top:-30px';
-    d.vy=1.5+Math.random()*2.2;d.vx=(Math.random()-.5)*1.6;
-    d.onpointerdown=()=>{if(d.dead)return;d.dead=1;d.textContent='💥';n++;beep(420+n*30,.06);$('ac').textContent=n+' / 10';
-      setTimeout(()=>d.remove(),150);if(n>=10){clearInterval(openTask.iv);setTimeout(done,300)}};
-    box.appendChild(d);rocks.push(d)};
-  spawn();let k=0;clearInterval(openTask.iv);
-  openTask.iv=setInterval(()=>{if(!$('ast')){clearInterval(openTask.iv);return}
-    if(++k%14===0&&rocks.filter(r=>!r.dead).length<5)spawn();
-    rocks=rocks.filter(r=>{if(r.dead)return false;r.style.top=(parseFloat(r.style.top)+r.vy)+'px';r.style.left=(parseFloat(r.style.left)+r.vx)+'px';
-      if(parseFloat(r.style.top)>200){r.remove();return false}return true})},30);
-}
-function breaker(b,t,done){
-  const N=5;let s=Array(N).fill(true);
-  const tog=i=>{[i-1,i,i+1].forEach(j=>{if(j>=0&&j<N)s[j]=!s[j]})};
-  do{for(let r=0;r<5;r++)tog((Math.random()*N)|0)}while(s.every(x=>x));
-  b.innerHTML=hd(t)+ht('🔌 Bật SÁNG cả 5 cầu dao. Mỗi lần gạt sẽ đảo luôn cầu dao hai bên!')+'<div id="sw" style="display:flex;gap:10px"></div>'+cl;
-  const draw=()=>{$('sw').innerHTML='';s.forEach((on,i)=>{const d=document.createElement('button');d.style.cssText='width:48px;height:84px;font-size:22px;background:'+(on?'#2e9d57':'#38425f');d.textContent=on?'▲':'▼';
-    d.onclick=()=>{tog(i);beep(on?300:500,.06);draw();if(s.every(x=>x))setTimeout(done,350)};$('sw').appendChild(d)})};
-  draw();
-}
-const VAR={download:[null,memory,breaker],fuel:[null,asteroid,memory]};
-openTask=function(t){
-  _open(t);
-  const ty=TASK_ALIAS[t.type]||t.type,v=VAR[ty]&&VAR[ty][(t.di||0)%3];
-  if(!v||!curTask)return;
-  clearInterval(openTask.iv);
-  v($('mbox'),t,()=>{completeTask(G.me,t);closeModal()});
-};
-/* ---- thống kê thắng/thua lưu trong máy ---- */
-const K='lmm_stats',ld=()=>{try{return JSON.parse(localStorage.getItem(K))||{w:0,l:0,iw:0,cw:0}}catch(e){return{w:0,l:0,iw:0,cw:0}}};
-const box=document.createElement('div');box.className='sub';box.style.cssText='font-size:13px;opacity:.8';
-const mn=document.querySelector('#menu .panel');if(mn)mn.after(box);
-const show2=()=>{const s=ld();box.textContent='🏆 Thắng '+s.w+' • Thua '+s.l+' • (Sát nhân thắng '+s.iw+' • Phe dân thắng '+s.cw+')'};show2();
-const _end=endGame;
-endGame=function(impWin){const was=G&&G.state==='end';const r=_end.apply(this,arguments);
-  if(!was&&G&&G.state==='end'){try{const s=ld(),win=(impWin===G.me.imp);win?s.w++:s.l++;if(win)(G.me.imp?s.iw++:s.cw++);localStorage.setItem(K,JSON.stringify(s));show2()}catch(e){}}
-  return r};
-})();
-</script>
-<script>
-/* ===== BỔ SUNG 2: hồi chiêu giết tùy chỉnh • mũ & thú cưng • bảng Admin ===== */
-(function(){
-const LS=(k,d)=>{try{return localStorage.getItem(k)||d}catch(e){return d}};
-const SS=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
-const selCss='padding:8px;border-radius:8px;background:#0a1022;color:#fff;border:1px solid #34467a';
-/* 1) Hồi chiêu giết: chủ phòng chọn trong phòng chờ */
-const sb=document.querySelector('#lobby .settingsBlock');
-if(sb){const r=document.createElement('div');r.className='row';
-  r.innerHTML='<label style="flex:2">🗡 Hồi chiêu giết</label><select id="kcdSel" style="flex:3;'+selCss+'"><option value="10">10 giây</option><option value="15">15 giây</option><option value="20" selected>20 giây</option><option value="30">30 giây</option><option value="45">45 giây</option><option value="60">60 giây</option></select>';
-  sb.before(r)}
-const _kill=kill;
-kill=function(k){const r=_kill.apply(this,arguments);const el=$('kcdSel');
-  if(el&&k&&k.imp&&NET.role!=='client')k.cd=+el.value;return r};
-/* 3) Bảng Admin: đứng gần nút họp khẩn, bấm V — xem số người sống trong từng khu */
-let AD=null,ADm=-1;
-const adminPos=()=>{if(AD&&ADm===MAPI)return AD;ADm=MAPI;
-  const mr=roomAt(MEETBTN[0],MEETBTN[1]);
-  const arr=ROOMS.map((rm,i)=>({i,cx:rm.r[0]+rm.r[2]/2,cy:rm.r[1]+rm.r[3]/2,h:rm.r[3]})).filter(o=>o.i!==mr);
-  arr.sort((a,b)=>Math.hypot(a.cx-MEETBTN[0],a.cy-MEETBTN[1])-Math.hypot(b.cx-MEETBTN[0],b.cy-MEETBTN[1]));
-  const o=arr[Math.floor(arr.length*.4)]||arr[0];let y=o.cy-o.h*.2;if(roomAt(o.cx,y)!==o.i)y=o.cy;
-  AD={x:o.cx,y,room:o.i};return AD};
-const nearAdmin=()=>{if(!G||G.state!=='play'||!G.me||!G.me.alive||typeof ROOMS==='undefined'||!ROOMS||!MEETBTN)return false;const a=adminPos();return Math.hypot(a.x-G.me.x,a.y-G.me.y)<80};
-const _dmb=drawMeetBtn;
-drawMeetBtn=function(){_dmb.apply(this,arguments);
-  try{if(!G||G.state!=='play'||!ROOMS||!MEETBTN)return;const a=adminPos(),t=performance.now()/500;
-    ctx.save();ctx.translate(a.x,a.y);ctx.shadowColor='#7bfff0';ctx.shadowBlur=10+Math.sin(t)*5;
-    ctx.fillStyle='#0b3d47';ctx.strokeStyle='#7bfff0';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(-34,-22,68,44,8);ctx.fill();ctx.stroke();ctx.shadowBlur=0;
-    ctx.fillStyle='#0a1a22';ctx.fillRect(-27,-16,54,22);ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='15px serif';ctx.fillText('🗺',0,-5);
-    ctx.fillStyle='#7bfff0';ctx.font='bold 10px sans-serif';ctx.fillText('ADMIN',0,14);ctx.restore()}catch(e){}};
-const RN=i=>(typeof rname==='function'?rname(i):'')||('Khu '+(i+1));
-function openAdmin(){
-  if(!nearAdmin()||G.busy||G.cineBusy||G.me.inVent)return;
-  const cnt={};let off=0;
-  G.players.forEach(p=>{if(!p.alive||p.inVent)return;const i=roomAt(p.x,p.y);if(i===undefined||i===null||i<0)off++;else cnt[i]=(cnt[i]||0)+1});
-  const rows=Object.keys(cnt).map(Number).sort((a,b)=>cnt[b]-cnt[a]).map(i=>'<div style="display:flex;justify-content:space-between;gap:24px;background:#0a1022;padding:6px 12px;border-radius:8px"><span>'+RN(i)+'</span><b style="color:#ffd84a">'+'●'.repeat(Math.min(cnt[i],10))+' '+cnt[i]+'</b></div>').join('');
-  G.busy=true;$('mbox').className='box';
-  $('mbox').innerHTML='<div style="font-weight:800;font-size:19px">🗺 BẢNG ADMIN</div><div style="font-size:13px;opacity:.8">Số người còn sống trong từng khu (không thấy ai chui cống)</div><div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;width:100%">'+(rows||'<i>Không ai trong các khu</i>')+'</div>'+(off?'<div style="font-size:12px;opacity:.7">+ '+off+' người ở hành lang</div>':'')+'<button class="gray" onclick="closeModal()">Đóng</button>';
-  $('modal').classList.add('on')}
-addEventListener('keydown',e=>{if((e.key==='v'||e.key==='V')&&!/INPUT|TEXTAREA/.test((document.activeElement||{}).tagName||''))openAdmin()});
-const ab=document.createElement('button');ab.id='btnAdmin';ab.hidden=true;ab.innerHTML='ADMIN<br>(V)';ab.style.background='#0e8a8a';ab.onclick=openAdmin;
-const bt=$('btns');if(bt)bt.appendChild(ab);
-setInterval(()=>{try{ab.hidden=!(nearAdmin()&&!G.busy)}catch(e){ab.hidden=true}},200);
-})();
-</script>
-<script>
-/* ===== BỔ SUNG 3: Tăng tốc dành cho DÂN • menu kỹ năng gọn, ẩn kỹ năng bị khóa ===== */
-(function(){
-const grid='display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%';
-const bs='margin:0;text-align:center;padding:12px 6px;min-height:68px;font-size:15px;line-height:1.25';
-openSkillMenu=function(){
-  if(!canAct())return;const m=G.me;
-  if(!m.alive){toast('Hồn ma không dùng được kỹ năng');return}
-  if(!m.imp){ // DÂN: bấm là tăng tốc luôn
-    if(G.abilities.speed===false){toast('Chủ phòng đã khóa Tăng tốc');return}
-    if((m.boostT||0)>0){toast('Đang tăng tốc!');return}
-    if((m.boostCd||0)>0){toast('⚡ Hồi chiêu '+Math.ceil(m.boostCd)+'s');return}
-    skillAction('speed');return}
-  const A=G.abilities,busy=G.sab.l||G.sab.p>0||G.sab.d>0,nDoor=G.closedDoors.length;
-  const items=[];
-  const add=(on,label,st,act,dis,cls)=>{if(on)items.push(`<button class="skill-option ${cls||''}" style="${bs}" ${dis?'disabled':''} onclick="skillAction('${act}')">${label}<small>${st}</small></button>`)};
-  add(A.copy,'🪞 Sao chép',m.disg>=0?'Đang: '+Math.ceil(m.sft)+'s':m.scd>0?'Chờ '+Math.ceil(m.scd)+'s':'Sẵn sàng','copy',m.disg>=0||m.scd>0);
-  add(A.doors,'🚪 Khóa cửa',nDoor>=2?'Đủ 2 cửa':(m.doorCd>0&&nDoor===0)?'Chờ '+Math.ceil(m.doorCd)+'s':'Sẵn sàng','door',nDoor>=2||(m.doorCd>0&&nDoor===0));
-  add(A.sab&&A.light!==false,'💡 Tắt đèn',busy?'Đang phá hoại':G.sab.cd>0?'Chờ '+Math.ceil(G.sab.cd)+'s':'Sẵn sàng','light',busy||G.sab.cd>0);
-  add(A.sab&&A.oxygen!==false,'🫧 Phá oxy',busy?'Đang phá hoại':G.sab.cd>0?'Chờ '+Math.ceil(G.sab.cd)+'s':'Sẵn sàng','oxygen',busy||G.sab.cd>0,'red');
-  add(A.clean!==false,'🧹 Dọn xác',(m.cleanN||0)>=3?'Hết lượt':(m.cleanCd||0)>0?'Chờ '+Math.ceil(m.cleanCd)+'s':'Đứng cạnh xác','clean',(m.cleanN||0)>=3||(m.cleanCd||0)>0);
-  add(A.invis!==false,'👻 Tàng hình',(m.invT||0)>0?'Còn '+Math.ceil(m.invT)+'s':(m.invCd||0)>0?'Chờ '+Math.ceil(m.invCd)+'s':'Sẵn sàng','invis',(m.invT||0)>0||(m.invCd||0)>0);
-  G.busy=true;const b=$('mbox');b.className='box';
-  b.innerHTML='<div style="font-size:20px;font-weight:900">🗡️ KỸ NĂNG</div>'+(items.length?'<div style="'+grid+'">'+items.join('')+'</div>':'<i>Chủ phòng đã khóa hết kỹ năng</i>')+'<div style="font-size:11px;opacity:.65">🕳️ Chui cống: đứng cạnh miệng cống rồi nhấn E</div><button class="gray" style="width:100%" onclick="closeModal()">Đóng</button>';
-  $('modal').classList.add('on')};
-/* nút kỹ năng cho dân */
-const _hud=updateHUD;
-updateHUD=function(){
-  _hud.apply(this,arguments);
-  try{const m=G.me,b=$('btnShift');if(!m||m.imp)return;
-    const ok=m.alive&&G.state==='play'&&!m.inVent&&G.abilities.speed!==false;
-    b.hidden=!ok;if(!ok)return;
-    const t=(m.boostT||0)>0?'⚡ '+Math.ceil(m.boostT)+'s':(m.boostCd||0)>0?'Chờ '+Math.ceil(m.boostCd)+'s':'TĂNG TỐC<br>(F)';
-    if(b._lb!==t){b._lb=t;b.innerHTML=t}b.style.opacity=((m.boostCd||0)>0&&!(m.boostT>0))?.45:1}catch(e){}};
-})();
-</script>
-<style>
-#btns button{width:calc(78px*var(--bsz,1));height:calc(78px*var(--bsz,1));font-size:calc(12px*var(--bsz,1))}
-#gearBtn{position:absolute;right:10px;top:52px;width:42px;height:42px;padding:0;border-radius:50%;font-size:22px;background:#000a;border:2px solid #fff4;z-index:8}
-#gearPanel{position:absolute;right:10px;top:100px;width:min(280px,86vw);background:#121a2ff2;border:1px solid #4a5d99;border-radius:14px;padding:12px;display:none;flex-direction:column;gap:10px;z-index:8;font-size:14px}
-#gearPanel.on{display:flex}
-#gearPanel .gr{display:flex;align-items:center;justify-content:space-between;gap:10px}
-#gearPanel input[type=range]{width:100%}
-#gMouse{min-width:64px;padding:8px 12px}
-</style>
-<script>
-/* ===== BỔ SUNG 4: bánh răng cài đặt • di chuyển bằng chuột • cỡ nút kỹ năng ===== */
-(function(){
-const LG=(k,d)=>{try{return localStorage.getItem(k)||d}catch(e){return d}},LSv=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
-let mouseOn=LG('lmm_mouse','0')==='1',bsz=Math.min(1.7,Math.max(.6,+LG('lmm_bsz','1')||1));
-const root=document.documentElement,game=$('game');
-const gb=document.createElement('button');gb.id='gearBtn';gb.textContent='⚙️';gb.title='Cài đặt';
-const gp=document.createElement('div');gp.id='gearPanel';
-gp.innerHTML='<div style="font-weight:800;font-size:16px">⚙️ Cài đặt</div>'
-+'<div class="gr"><span>🖱 Di chuyển bằng chuột</span><button id="gMouse"></button></div>'
-+'<div style="font-size:12px;opacity:.75;line-height:1.4">Bật: nhấn chuột trái để đi tới đó (giữ chuột để đi theo). Bấm vào nhiệm vụ để đi tới và làm. Sát nhân bấm vào người để đuổi và giết.</div>'
-+'<div><div class="gr"><span>Cỡ nút kỹ năng</span><b id="gSz"></b></div><input type="range" id="gRange" min="60" max="170" step="5"></div>'
-+'<button class="gray" id="gClose">Đóng</button>';
-game.appendChild(gb);game.appendChild(gp);
-const apply=()=>{root.style.setProperty('--bsz',bsz);$('gSz').textContent=Math.round(bsz*100)+'%';$('gRange').value=Math.round(bsz*100);
-  const b=$('gMouse');b.textContent=mouseOn?'BẬT':'TẮT';b.className=mouseOn?'green':'gray'};
-gb.onclick=()=>gp.classList.toggle('on');$('gClose').onclick=()=>gp.classList.remove('on');
-$('gMouse').onclick=()=>{mouseOn=!mouseOn;LSv('lmm_mouse',mouseOn?'1':'0');if(!mouseOn)stop();apply()};
-$('gRange').oninput=e=>{bsz=+e.target.value/100;LSv('lmm_bsz',bsz);apply()};
-apply();
-/* --- di chuyển bằng chuột --- */
-const MM={mode:null,tg:null,down:false,cx:0,cy:0,wx:0,wy:0,joyOn:false,px:0,py:0,t0:0};
-function stop(){MM.mode=null;MM.tg=null;MM.down=false;if(MM.joyOn){joy={x:0,y:0};MM.joyOn=false}}
-const world=(cx,cy)=>({x:G.me.x+(cx-cv.width/2),y:G.me.y+(cy-cv.height/2)});
-cv.addEventListener('pointerdown',e=>{
-  if(!mouseOn||e.button>0||!G||G.state!=='play'||G.busy||G.cineBusy||G.me.inVent||G.me.ventT>0)return;
-  gp.classList.remove('on');
-  const m=G.me,w=world(e.clientX,e.clientY);MM.cx=e.clientX;MM.cy=e.clientY;MM.px=m.x;MM.py=m.y;MM.t0=performance.now();
-  let p=null,t=null;
-  if(m.imp&&m.alive)p=G.players.find(q=>q!==m&&q.alive&&!q.imp&&Math.hypot(q.x-w.x,q.y-w.y)<38);
-  if(!p)t=m.tasks.find(k=>!k.done&&Math.hypot(k.x-w.x,k.y-w.y)<46);
-  if(p){MM.mode='kill';MM.tg=p}else if(t){MM.mode='task';MM.tg=t}
-  else{MM.mode='move';MM.tg=null;MM.down=true;MM.wx=w.x;MM.wy=w.y}
-});
-cv.addEventListener('pointermove',e=>{MM.cx=e.clientX;MM.cy=e.clientY});
-addEventListener('pointerup',()=>{MM.down=false});
-addEventListener('keydown',e=>{if(MM.mode==='move'&&/^(w|a|s|d|arrowup|arrowdown|arrowleft|arrowright)$/.test(e.key.toLowerCase()))stop()});
-function tick(){
-  requestAnimationFrame(tick);
-  if(!MM.mode)return;
-  const m=G&&G.me;
-  if(!G||G.state!=='play'||G.busy||G.cineBusy||!m||m.inVent||m.ventT>0||!mouseOn){stop();return}
-  if(MM.down&&MM.mode==='move'){const w=world(MM.cx,MM.cy);MM.wx=w.x;MM.wy=w.y}
-  let tx,ty,sd;
-  if(MM.mode==='kill'){const p=MM.tg;if(!p||!p.alive||!m.imp||!m.alive){stop();return}tx=p.x;ty=p.y;sd=70}
-  else if(MM.mode==='task'){const t=MM.tg;if(!t||t.done){stop();return}tx=t.x;ty=t.y;sd=34}
-  else{tx=MM.wx;ty=MM.wy;sd=8}
-  const d=Math.hypot(tx-m.x,ty-m.y);
-  if(d<=sd){const md=MM.mode,tg=MM.tg;stop();if(md==='kill')doKill();else if(md==='task'&&canAct())openTask(tg);return}
-  joy={x:(tx-m.x)/d,y:(ty-m.y)/d};MM.joyOn=true;
-  const now=performance.now();
-  if(now-MM.t0>600){if(Math.hypot(m.x-MM.px,m.y-MM.py)<3&&!MM.down){stop();return}MM.px=m.x;MM.py=m.y;MM.t0=now}
-}
-requestAnimationFrame(tick);
-})();
-</script>
-<script>
-/* ===== BỔ SUNG 5: Khiên an toàn cho DÂN (10 giây, sát nhân không giết được) ===== */
-(function(){
-window.hostShield=function(p){
-  if(!G||G.state!=='play'||G.abilities.shield===false||p.imp||!p.alive||p.inVent||(p.shT||0)>0||(p.shCd||0)>0)return false;
-  p.shT=10;p.shCd=45;beep(560,.2,'sine',.07);if(p===G.me)toast('🛡️ Khiên an toàn 10 giây!');return true};
-const _skill=skillAction;
-skillAction=function(a){
-  if(a!=='shield')return _skill.apply(this,arguments);
-  if(!G)return;const m=G.me;closeModal();
-  if(NET.role==='client')sendHost({t:'shield'});else if(!hostShield(m))toast('Chưa dùng được lúc này');
-};
-/* chặn giết */
-const _kill=kill;
-kill=function(k,v){
-  if(v&&(v.shT||0)>0){if(k){k.cd=Math.max(k.cd||0,4)}if(k===G.me||v===G.me){toast('🛡️ Khiên chặn đòn giết!');beep(900,.12,'square',.06)}return}
-  return _kill.apply(this,arguments)};
-/* menu kỹ năng của dân: tăng tốc + khiên */
-const _menu=openSkillMenu;
-openSkillMenu=function(){
-  if(!G||!G.me||G.me.imp)return _menu.apply(this,arguments);
-  if(!canAct())return;const m=G.me;
-  if(!m.alive){toast('Hồn ma không dùng được kỹ năng');return}
-  const A=G.abilities,it=[];
-  const add=(on,label,st,act,dis)=>{if(on)it.push(`<button class="skill-option" style="margin:0;min-height:72px;font-size:15px;text-align:center" ${dis?'disabled':''} onclick="skillAction('${act}')">${label}<small>${st}</small></button>`)};
-  add(A.speed!==false,'⚡ Tăng tốc',(m.boostT||0)>0?'Còn '+Math.ceil(m.boostT)+'s':(m.boostCd||0)>0?'Chờ '+Math.ceil(m.boostCd)+'s':'3 giây','speed',(m.boostT||0)>0||(m.boostCd||0)>0);
-  add(A.shield!==false,'🛡️ Khiên',(m.shT||0)>0?'Còn '+Math.ceil(m.shT)+'s':(m.shCd||0)>0?'Chờ '+Math.ceil(m.shCd)+'s':'An toàn 10 giây','shield',(m.shT||0)>0||(m.shCd||0)>0);
-  if(!it.length){toast('Chủ phòng đã khóa kỹ năng của dân');return}
-  G.busy=true;const b=$('mbox');b.className='box';
-  b.innerHTML='<div style="font-size:20px;font-weight:900">🧑‍🌾 KỸ NĂNG DÂN</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%">'+it.join('')+'</div><div style="font-size:11px;opacity:.65">🕳️ Chui cống: đứng cạnh miệng cống rồi nhấn E</div><button class="gray" style="width:100%" onclick="closeModal()">Đóng</button>';
-  $('modal').classList.add('on')};
-/* nhãn nút */
-const _hud=updateHUD;
-updateHUD=function(){
-  _hud.apply(this,arguments);
-  try{const m=G.me,b=$('btnShift');if(!m||m.imp||b.hidden)return;
-    const A=G.abilities;if(A.speed===false&&A.shield===false){b.hidden=true;return}
-    const t=(m.shT||0)>0?'🛡️ '+Math.ceil(m.shT)+'s':(m.boostT||0)>0?'⚡ '+Math.ceil(m.boostT)+'s':'KỸ NĂNG<br>(F)';
-    if(b._lb!==t){b._lb=t;b.innerHTML=t}b.style.opacity=1}catch(e){}};
-/* đếm thời gian khiên */
-let lt=performance.now();
-(function loop(){requestAnimationFrame(loop);const n=performance.now(),dt=Math.min(.1,(n-lt)/1000);lt=n;
-  if(!G||G.state!=='play')return;G.players.forEach(p=>{if(p.shT>0)p.shT=Math.max(0,p.shT-dt);if(p.shCd>0)p.shCd=Math.max(0,p.shCd-dt)})})();
-/* vòng khiên bay quanh người */
-const _dc=drawChar;
-drawChar=function(x,y,color,face,alpha,name,dead,nameCol){
-  _dc.apply(this,arguments);
-  try{if(!G||dead||!ctx)return;const p=G.players.find(q=>q.color===color&&q.alive);if(!p||!(p.shT>0))return;
-    const t=performance.now()/1000,blink=p.shT<2&&Math.floor(t*6)%2===0;if(blink)return;
-    ctx.save();ctx.globalAlpha=(alpha==null?1:alpha)*.9;ctx.translate(x,y-4);
-    ctx.shadowColor='#4de3ff';ctx.shadowBlur=14;ctx.strokeStyle='#8df0ff';ctx.lineWidth=3;
-    ctx.beginPath();ctx.ellipse(0,0,36,40,0,0,7);ctx.stroke();
-    ctx.fillStyle='#4de3ff22';ctx.fill();
-    for(let i=0;i<3;i++){const a=t*2.6+i*Math.PI*2/3;ctx.save();ctx.translate(Math.cos(a)*38,Math.sin(a)*42);ctx.rotate(a+Math.PI/2);
-      ctx.fillStyle='#d8fbff';ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(6,-2);ctx.lineTo(4,7);ctx.lineTo(0,10);ctx.lineTo(-4,7);ctx.lineTo(-6,-2);ctx.closePath();ctx.fill();ctx.restore()}
-    ctx.restore()}catch(e){}};
-})();
 </script>
 </body>
 </html>
