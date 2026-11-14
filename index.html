@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Khoi Chide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{
+    font-family:"Be Vietnam Pro",system-ui,sans-serif;
+    color:#fff;background:#7fb6f0;overflow-x:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  /* ===== Nền động (sáng, không bị tối) ===== */
+  .bg{position:fixed;inset:0;z-index:-3}
+  .bg video{width:100%;height:100%;object-fit:cover}
+  /* Điện thoại (màn hình dọc): lia chậm từ cô gái sang cảnh bướm rồi quay lại */
+  @media (orientation: portrait){
+    .bg video{object-position:18% 50%;animation:pan 36s ease-in-out infinite}
+  }
+  @keyframes pan{
+    0%,30%{object-position:18% 50%}
+    50%,80%{object-position:85% 50%}
+    100%{object-position:18% 50%}
+  }
+  @media (prefers-reduced-motion: reduce){ .bg video{animation:none} }
+
+  /* ===== Lấp lánh ===== */
+  .sky{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+
+  /* lấp lánh */
+  .spark{position:absolute;width:6px;height:6px;border-radius:50%;background:#fff;
+    box-shadow:0 0 10px 3px rgba(255,255,255,.9);animation:twinkle 3s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:0;transform:scale(.4)}50%{opacity:1;transform:scale(1)}}
+
+  /* ===== Màn hình chạm để vào ===== */
+  .gate{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;cursor:pointer;
+    background:rgba(120,170,240,.35);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    transition:opacity .7s ease, visibility .7s}
+  .gate.hide{opacity:0;visibility:hidden}
+  .gate h1{font-size:clamp(32px,8vw,52px);font-weight:800;text-shadow:0 4px 0 #3b7be0,0 10px 30px rgba(0,40,120,.4)}
+  .gate p{font-size:16px;font-weight:600;padding:10px 22px;border-radius:999px;
+    background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.6);animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.06);opacity:1}}
+
+  /* ===== Nội dung ===== */
+  main{max-width:460px;margin:0 auto;padding:56px 20px 90px;
+    display:flex;flex-direction:column;gap:26px}
+  header{text-align:center}
+  .avatar-wrap{position:relative;width:110px;height:110px;margin:0 auto 14px;animation:float 4s ease-in-out infinite}
+  .avatar-wrap::before{content:"";position:absolute;inset:-6px;border-radius:50%;
+    background:conic-gradient(#ff7eb3,#7c5cff,#5bc8ff,#ff7eb3);animation:spin 6s linear infinite;filter:blur(2px)}
+  .avatar{position:relative;width:100%;height:100%;border-radius:50%;
+    background:linear-gradient(135deg,#ff7eb3,#7c5cff);display:grid;place-items:center;
+    font-size:42px;font-weight:800;border:4px solid #fff}
+  @keyframes float{50%{transform:translateY(-8px)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  header h2{font-size:30px;font-weight:800;text-shadow:0 3px 0 #3b7be0,0 6px 18px rgba(0,40,120,.35)}
+  header p{margin-top:8px;font-size:14px;font-weight:600;display:inline-block;padding:5px 14px;border-radius:999px;
+    background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45)}
+
+  section h3{font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;
+    margin:0 6px 12px;text-shadow:0 2px 6px rgba(0,40,120,.5);display:flex;align-items:center;gap:8px}
+  section h3::after{content:"";flex:1;height:2px;border-radius:2px;background:linear-gradient(90deg,rgba(255,255,255,.7),transparent)}
+  .list{display:flex;flex-direction:column;gap:14px}
+
+  /* ===== Nút kính trong suốt, có mây bên trong ===== */
+  .list{gap:14px}
+  .item{position:relative;overflow:hidden;isolation:isolate;display:flex;align-items:center;gap:14px;
+    padding:16px 18px;border-radius:22px;text-decoration:none;color:#fff;
+    background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(30,50,110,.16));border:1px solid rgba(255,255,255,.5);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:0 8px 24px rgba(0,30,90,.18), inset 0 1px 0 rgba(255,255,255,.5);
+    transition:transform .2s cubic-bezier(.3,1.6,.5,1), background .2s;
+    opacity:0;animation:popin .7s cubic-bezier(.3,1.5,.5,1) forwards}
+  .list .item:nth-child(1){animation-delay:.1s}
+  .list .item:nth-child(2){animation-delay:.22s}
+  .list .item:nth-child(3){animation-delay:.34s}
+  @keyframes popin{from{opacity:0;transform:translateY(24px) scale(.9)}to{opacity:1;transform:none}}
+  .cin{position:absolute;z-index:-1;fill:#fff;pointer-events:none}
+
+  /* tia sáng lướt qua */
+  .shine{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:-1}
+  .shine::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);
+    transform:skewX(-20deg);animation:sweep 5s ease-in-out infinite}
+  .list .item:nth-child(2) .shine::after{animation-delay:1.2s}
+  .list .item:nth-child(3) .shine::after{animation-delay:2.4s}
+  @keyframes sweep{0%,60%{left:-60%}100%{left:130%}}
+
+  a.item:hover{transform:translateY(-4px) scale(1.02);background:rgba(255,255,255,.26)}
+  a.item:active{transform:translateY(4px)}
+
+  .ico{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;flex-shrink:0;
+    box-shadow:0 4px 10px rgba(0,0,0,.18);transition:transform .3s}
+  a.item:hover .ico{transform:rotate(-10deg) scale(1.1)}
+  .ico svg{width:24px;height:24px;fill:#fff}
+  .tt{background:linear-gradient(135deg,#111,#333);box-shadow:-2px -2px 0 #25f4ee inset,2px 2px 0 #fe2c55 inset,0 4px 10px rgba(0,0,0,.2)}
+  .yt{background:linear-gradient(135deg,#ff3355,#e0001b)}
+  .fb{background:linear-gradient(135deg,#3b8bff,#1360d8)}
+  .gm{background:linear-gradient(135deg,#ff7eb3,#7c5cff)}
+  .txt{flex:1;min-width:0}
+  .txt b{display:block;font-size:17px;font-weight:800;text-shadow:0 1px 3px rgba(0,20,70,.6),0 0 12px rgba(0,20,70,.35)}
+  .txt span{display:block;font-size:13px;color:rgba(255,255,255,.92);text-shadow:0 1px 3px rgba(0,20,70,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .go{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;
+    background:rgba(255,255,255,.25);color:#fff;transition:transform .2s}
+  a.item:hover .go{transform:translateX(4px);background:#3b7be0;color:#fff}
+
+  .badge{font-size:11px;font-weight:800;padding:5px 10px;border-radius:999px;color:#fff;
+    background:linear-gradient(135deg,#ff7eb3,#7c5cff);animation:pulse 1.6s ease-in-out infinite}
+
+  footer{text-align:center;font-size:12px;font-weight:600;opacity:.9;text-shadow:0 1px 4px rgba(0,40,120,.5)}
+
+  /* ===== Nút nhạc ===== */
+  .music{position:fixed;right:16px;bottom:16px;z-index:10;width:56px;height:56px;border-radius:50%;
+    border:3px solid #fff;background:linear-gradient(135deg,#ff7eb3,#7c5cff);color:#fff;cursor:pointer;
+    box-shadow:0 6px 20px rgba(20,60,140,.35);display:grid;place-items:center;transition:opacity .2s}
+  .music svg{width:24px;height:24px;fill:#fff}
+  .music.on{animation:spin 4s linear infinite}
+  .music.off{opacity:.65}
+  .music.off::after{content:"";position:absolute;width:30px;height:3px;background:#fff;transform:rotate(-45deg);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="bg">
+  <video autoplay muted loop playsinline poster="poster.jpg">
+    <source src="bg.mp4" type="video/mp4">
+  </video>
+</div>
+<div class="sky" id="sky">
+</div>
+
+<div class="gate" id="gate">
+  <h1>Khoi Chide</h1>
+  <p>☁️ Chạm để vào ☁️</p>
+</div>
+
+<main>
+  <header>
+    <div class="avatar-wrap"><div class="avatar">K</div></div>
+    <h2>Khoi Chide</h2>
+    <p>Video • Game • Giải trí 🎮</p>
+  </header>
+
+  <section>
+    <h3>Kênh của tôi</h3>
+    <div class="list">
+      <a class="item" href="https://www.tiktok.com/@nhantin123" target="_blank" rel="noopener">
+        <div class="shine"></div>
+        <div class="ico tt"><svg viewBox="0 0 24 24"><path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.09v12.4a2.59 2.59 0 0 1-2.59 2.5c-1.42 0-2.6-1.16-2.6-2.6 0-1.72 1.66-3.01 3.37-2.48V9.66c-3.45-.46-6.47 2.22-6.47 5.64 0 3.33 2.76 5.7 5.69 5.7 3.14 0 5.69-2.55 5.69-5.7V9.01a7.35 7.35 0 0 0 4.3 1.38V7.3s-1.88.09-3.24-1.48z"/></svg></div>
+        <div class="txt"><b>TikTok</b><span>@nhantin123</span></div>
+        <div class="go">›</div>
+      </a>
+      <a class="item" href="https://www.youtube.com/channel/UCOBov8IPdRpdJuUdEEUuwVg" target="_blank" rel="noopener">
+        <div class="shine"></div>
+        <div class="ico yt"><svg viewBox="0 0 24 24"><path d="M9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg></div>
+        <div class="txt"><b>YouTube</b><span>Đăng ký kênh nhé!</span></div>
+        <div class="go">›</div>
+      </a>
+      <a class="item" href="https://www.facebook.com/people/Khoi-Chide/pfbid0MrpsxGaPWUSef31TCLVfXXckdqB18WgwMGu1pF1Vnx6iCexof3knaedCzZfMTufbl/?locale=vi_VN" target="_blank" rel="noopener">
+        <div class="shine"></div>
+        <div class="ico fb"><svg viewBox="0 0 24 24"><path d="M14 8.5V6.8c0-.8.2-1.3 1.4-1.3H17V2.6c-.3 0-1.2-.1-2.3-.1-2.3 0-3.9 1.4-3.9 4v2H8.3v3.2h2.5V22H14v-10.3h2.5l.4-3.2H14z"/></svg></div>
+        <div class="txt"><b>Facebook</b><span>Khoi Chide</span></div>
+        <div class="go">›</div>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h3>Game của tôi</h3>
+    <div class="list">
+      <a class="item game" href="game.html">
+        <div class="shine"></div>
+        <div class="ico gm"><svg viewBox="0 0 24 24"><path d="M21 6H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1zM10 13H8v2H6v-2H4v-2h2V9h2v2h2v2zm4.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></div>
+        <div class="txt"><b>Cá Mập Nhảy Mây ☁️</b><span>Nhảy càng cao càng giỏi!</span></div>
+        <span class="badge">CHƠI</span>
+      </a>
+    </div>
+  </section>
+
+  <footer>© 2026 Khoi Chide ☁️</footer>
+</main>
+
+<button class="music off" id="musicBtn" aria-label="Bật/tắt nhạc">
+  <svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+</button>
+
+<audio id="bgm" src="music.mp3" loop preload="auto"></audio>
+
+<script>
+  // lấp lánh ngẫu nhiên
+  const sky = document.getElementById('sky');
+  for (let i = 0; i < 18; i++) {
+    const s = document.createElement('div');
+    s.className = 'spark';
+    s.style.left = Math.random() * 100 + '%';
+    s.style.top = Math.random() * 100 + '%';
+    s.style.animationDelay = (Math.random() * 3) + 's';
+    s.style.animationDuration = (2 + Math.random() * 3) + 's';
+    sky.appendChild(s);
+  }
+
+  // mấy đám mây trong suốt nằm bên trong mỗi nút (đứng yên)
+  const CLOUD = '<path d="M25 52h52a15 15 0 0 0 1-30 21 21 0 0 0-40-6 15 15 0 0 0-24 11 12 12 0 0 0 11 25z"/>';
+  const layouts = [
+    [[58, -6, 70, .45], [80, 40, 54, .38], [34, 52, 40, .28]],
+    [[70, -10, 64, .42], [46, 46, 50, .3], [88, 30, 44, .34]],
+    [[52, 34, 66, .4], [76, -12, 52, .34], [92, 54, 38, .28]],
+    [[62, 20, 72, .42], [40, -14, 44, .28], [86, -4, 50, .34]],
+  ];
+  document.querySelectorAll('.item').forEach((it, i) => {
+    for (const [x, y, w, o] of layouts[i % layouts.length]) {
+      it.insertAdjacentHTML('afterbegin',
+        `<svg class="cin" viewBox="0 0 100 60" style="left:${x}%;top:${y}%;width:${w}px;opacity:${o};transform:translate(-50%,-30%)">${CLOUD}</svg>`);
+    }
+  });
+
+  const bgm = document.getElementById('bgm');
+  const btn = document.getElementById('musicBtn');
+  const gate = document.getElementById('gate');
+  bgm.volume = 0.6;
+
+  function setState(on){
+    btn.classList.toggle('on', on);
+    btn.classList.toggle('off', !on);
+  }
+  async function play(){
+    try { await bgm.play(); setState(true); } catch(e){ setState(false); }
+  }
+  gate.addEventListener('click', () => { gate.classList.add('hide'); play(); });
+  btn.addEventListener('click', () => {
+    if (bgm.paused) play(); else { bgm.pause(); setState(false); }
+  });
+</script>
+</body>
+</html>
